@@ -18,7 +18,8 @@ import {
   type Backend,
 } from "../adapters";
 import { relayGateRefusal } from "../provider-policy";
-import type { EntitlementTokenSource, EntitlementView } from "../relay/entitlement";
+import type { EntitlementTokenSource } from "../relay/entitlement";
+import type { EntitlementView, RelayOffReason } from "../protocol";
 import {
   createSubscriptionThrottle,
   type SubscriptionActions,
@@ -90,7 +91,7 @@ export type ConnectionOptions = {
   /** Why remote access is off, when it is (protocol.ts `agents.relayOff`).
    *  The local WS path passes it so the pair button can say so; a remote
    *  viewport is proof the relay is on and never receives it. */
-  relayOff?: "unentitled" | "opt-out" | "malformed-url";
+  relayOff?: RelayOffReason;
   /** True for a viewport arriving over the paid relay. The relay gate
    *  refuses to attach such a viewport to a subscription-backed session;
    *  local viewports are never gated. */
@@ -289,7 +290,13 @@ export function openConnection(
   // sessions — plus home, so the client can show paths in ~-form.
   // Re-sent whole on refresh_agents — availableAgents() reads the live
   // probe cache, so a re-send after a re-probe carries newly started servers.
-  const sendAgents = () =>
+  // The license-key read rides after EVERY hello (refresh_agents re-sends
+  // the hello every few seconds from the picker) and on each change, so a
+  // client that resets on hello is never left without it.
+  const sendEntitlement = (v: EntitlementView | undefined) => {
+    if (v && !remote) viewport({ type: "entitlement", ...v });
+  };
+  const sendAgents = () => {
     viewport({
       type: "agents",
       agents: availableAgents(),
@@ -302,12 +309,9 @@ export function openConnection(
       ...(relayOff && !remote ? { relayOff } : {}),
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
     });
-  sendAgents();
-
-  const sendEntitlement = (v: EntitlementView | undefined) => {
-    if (v && !remote) viewport({ type: "entitlement", ...v });
+    sendEntitlement(entitlement?.state());
   };
-  sendEntitlement(entitlement?.state());
+  sendAgents();
   const unsubscribeEntitlement = remote ? undefined : entitlement?.onChange(sendEntitlement);
 
   // The `!` lifecycle — PTY spawn, output budgets, cwd handoff, burst

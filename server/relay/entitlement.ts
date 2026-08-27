@@ -19,12 +19,9 @@
 // relay-client already prints the actionable line.
 
 import { createLogger } from "../log";
-import type { WireMsg } from "../protocol";
+import type { EntitlementView } from "../protocol";
 import { carriesCredentialInClear } from "./relay-url";
-
-/** What the daemon tells local viewports about its key (protocol.ts
- *  `entitlement`, minus the tag). Undefined outside license-key mode. */
-export type EntitlementView = Omit<Extract<WireMsg, { type: "entitlement" }>, "type">;
+export type { EntitlementView };
 
 const log = createLogger("relay");
 
@@ -34,9 +31,9 @@ const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // well inside the 48h token TT
 // backoff into an HTTP hammer.
 const FORCED_REFRESH_MIN_GAP_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
-// The backend's refusal line rides to the pair card verbatim — bounded, like
-// subscription.ts bounds the manage card's.
-const MAX_REASON_CHARS = 200;
+// A backend line rides to the pair/manage card verbatim — bounded. Shared
+// with subscription.ts so both cards cap alike.
+export const MAX_REASON_CHARS = 200;
 
 export type EntitlementTokenSource = {
   /** Current token, or undefined if none is available. `refresh: true` (after
@@ -121,10 +118,30 @@ export function createEntitlementTokenSource(env: {
   // sets it, and only a CHANGED read reaches listeners.
   let view: EntitlementView = { state: "checking" };
   const listeners = new Set<(v: EntitlementView) => void>();
+  // Dispatch runs OUTSIDE the exchange's try/catch (below) and each listener
+  // is guarded: a throwing subscriber must not relabel the read or turn the
+  // fire-and-forget refresh into an unhandled rejection.
   const setView = (next: EntitlementView) => {
     if (next.state === view.state && next.reason === view.reason && next.cached === view.cached) return;
     view = next;
-    for (const cb of listeners) cb(view);
+    for (const cb of listeners) {
+      try {
+        cb(view);
+      } catch (err) {
+        log.warn(`entitlement listener threw: ${String(err)}`);
+      }
+    }
+  };
+  // `unreachable` + a cached token: the QR stays only while that token is
+  // unexpired, so its expiry must flip the read — not wait for the next
+  // 12-hourly exchange.
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const watchExpiry = (expMs: number) => {
+    clearTimeout(expiry);
+    expiry = setTimeout(() => {
+      if (view.state === "unreachable" && view.cached) setView({ state: "unreachable", cached: false });
+    }, Math.max(0, expMs - Date.now()));
+    expiry.unref();
   };
   let denied = false; // a 403 already warned — suppresses repeat WARNINGS only (the request throttle is FORCED_REFRESH_MIN_GAP_MS)
   let lastFetchMs = 0;
@@ -132,10 +149,13 @@ export function createEntitlementTokenSource(env: {
 
   const exchange = async (): Promise<void> => {
     lastFetchMs = Date.now();
+    let next: EntitlementView;
     try {
       const res = await postLicenseKey(url, licenseKey, FETCH_TIMEOUT_MS);
       if (res.status === 403) {
-        const reason = ((await res.json().catch(() => ({}))) as { reason?: string }).reason;
+        // The backend's `reason` is untrusted JSON: only a string is quoted.
+        const raw = ((await res.json().catch(() => ({}))) as { reason?: unknown }).reason;
+        const reason = typeof raw === "string" ? raw : undefined;
         if (!denied) {
           log.warn(
             `entitlement refused for license ${mask(licenseKey)}: ` +
@@ -145,24 +165,27 @@ export function createEntitlementTokenSource(env: {
         }
         denied = true;
         cached = undefined;
-        setView({ state: "invalid", ...(reason ? { reason: reason.slice(0, MAX_REASON_CHARS) } : {}) });
-        return;
+        next = { state: "invalid", ...(reason ? { reason: reason.slice(0, MAX_REASON_CHARS) } : {}) };
+      } else {
+        if (!res.ok) throw new Error(`http ${res.status}`);
+        const body = (await res.json()) as { token?: unknown; exp?: unknown };
+        if (typeof body.token !== "string" || typeof body.exp !== "number") {
+          throw new Error("malformed response");
+        }
+        cached = { token: body.token, expMs: body.exp * 1000 };
+        denied = false;
+        next = { state: "valid" };
       }
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      const body = (await res.json()) as { token?: unknown; exp?: unknown };
-      if (typeof body.token !== "string" || typeof body.exp !== "number") {
-        throw new Error("malformed response");
-      }
-      cached = { token: body.token, expMs: body.exp * 1000 };
-      denied = false;
-      setView({ state: "valid" });
     } catch {
       // Endpoint down/unreachable: keep serving the cached token while it's
       // unexpired; otherwise we just have none. Quiet in the log — the
       // refusal line at dial time is the terminal's signal; the pair card
       // gets the honest read (and whether the cached token still carries it).
-      setView({ state: "unreachable", cached: !!cached && cached.expMs > Date.now() });
+      const carried = !!cached && cached.expMs > Date.now();
+      if (carried) watchExpiry(cached!.expMs);
+      next = { state: "unreachable", cached: carried };
     }
+    setView(next);
   };
 
   // Single-flight: dial + timer colliding must not double-POST.
@@ -184,7 +207,10 @@ export function createEntitlementTokenSource(env: {
       else if (inflight) await inflight;
       return cached && cached.expMs > Date.now() ? cached.token : undefined;
     },
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(timer);
+      clearTimeout(expiry);
+    },
     state: () => view,
     onChange: (cb) => {
       listeners.add(cb);

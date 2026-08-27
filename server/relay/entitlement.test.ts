@@ -201,3 +201,61 @@ test("outside license-key mode the read is undefined and listeners never fire", 
   none.stop();
   override.stop();
 });
+
+// Review 2026-08-26: the backend's JSON is untrusted; a listener is someone
+// else's code; a cached token's expiry is a read change of its own.
+test("a 403 whose reason is not a string is still a refusal, quoted as nothing", async () => {
+  const fetchMock = mock.method(globalThis, "fetch", async () => jsonResponse(403, { reason: 42 }));
+  try {
+    const src = createEntitlementTokenSource({ MIRAFOLD_LICENSE_KEY: "mf_test", MIRAFOLD_ENTITLEMENT_URL: "http://b.test/api/entitlement" });
+    await src.get();
+    assert.deepEqual(src.state(), { state: "invalid" });
+    src.stop();
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
+test("a throwing listener neither relabels the read nor rejects the refresh", async () => {
+  const fetchMock = mock.method(globalThis, "fetch", async () => jsonResponse(200, { token: "t", exp: futureExp() }));
+  try {
+    const src = createEntitlementTokenSource({ MIRAFOLD_LICENSE_KEY: "mf_test", MIRAFOLD_ENTITLEMENT_URL: "http://b.test/api/entitlement" });
+    const heard: string[] = [];
+    src.onChange(() => {
+      throw new Error("subscriber bug");
+    });
+    src.onChange((v) => heard.push(v.state));
+    await src.get(); // would reject here if the throw escaped exchange()
+    assert.deepEqual(src.state(), { state: "valid" });
+    assert.deepEqual(heard, ["valid"], "the listener after the throwing one still hears");
+    src.stop();
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
+test("unreachable with a cached token flips to uncached when that token expires", async () => {
+  let up = true;
+  const fetchMock = mock.method(globalThis, "fetch", async () => {
+    if (!up) throw new Error("ECONNREFUSED");
+    return jsonResponse(200, { token: "t", exp: Math.floor(Date.now() / 1000) + 3600 });
+  });
+  mock.timers.enable({ apis: ["Date", "setTimeout"] });
+  try {
+    const src = createEntitlementTokenSource({ MIRAFOLD_LICENSE_KEY: "mf_test", MIRAFOLD_ENTITLEMENT_URL: "http://b.test/api/entitlement" });
+    const heard: string[] = [];
+    src.onChange((v) => heard.push(`${v.state}${v.cached ? ":cached" : ""}`));
+    await src.get();
+    up = false;
+    mock.timers.tick(61_000);
+    await src.get({ refresh: true });
+    assert.deepEqual(src.state(), { state: "unreachable", cached: true }, "the hour-long token still carries");
+    mock.timers.tick(3600_000);
+    assert.deepEqual(src.state(), { state: "unreachable", cached: false }, "expiry is a read change");
+    assert.deepEqual(heard, ["valid", "unreachable:cached", "unreachable"]);
+    src.stop();
+  } finally {
+    mock.timers.reset();
+    fetchMock.mock.restore();
+  }
+});

@@ -15,7 +15,7 @@ import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { createSubscriptionActions } from "./relay/subscription";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { carriesCredentialInClear, resolveRelayPlan, type RelayPlan } from "./relay/relay-url";
+import { carriesCredentialInClear, presentsOnEntitlement, resolveRelayPlan, type RelayPlan } from "./relay/relay-url";
 import {
   COOKIE_NAME,
   cookieToken,
@@ -282,7 +282,10 @@ wss.on("connection", (ws) => {
     relay: relay?.info,
     relayOff,
     subscription: subscriptionActions,
-    entitlement,
+    // The read reaches the pair card only where the exchange IS the relay's
+    // gate (relay-url.ts presentsOnEntitlement) — an ungated self-hosted
+    // relay carries a refused key just fine, and the card must not hide it.
+    entitlement: presentsOnEntitlement(relayPlan, process.env) ? entitlement : undefined,
   });
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);

@@ -2361,6 +2361,7 @@ test("no relay: the pair button is still there and opens the Mirafold Pro offer"
   if (!(await page.locator(".agent-picker-card").count())) await page.locator(".fleet-new").click();
   await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
+  await page.waitForSelector(".prompt-box textarea");
   await page.locator(".status-bar .sb-pair").click();
   await page.waitForSelector(".pair-card");
   assert.equal(await page.locator(".pair-qr").count(), 0, "no QR without a relay");
@@ -2384,6 +2385,7 @@ test("no relay: the pair button is still there and opens the Mirafold Pro offer"
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
     await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
+    await p.waitForSelector(".prompt-box textarea");
     await p.locator(".status-bar .sb-pair").click();
     await p.waitForSelector(".pair-card");
     assert.equal(await p.locator(".pair-cta").count(), 0, "an opted-out daemon is not upsold");
@@ -2423,6 +2425,7 @@ test("PB.2: a refused license key — no QR, the reason, the pay link; a phone i
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
     await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
+    await p.waitForSelector(".prompt-box textarea");
     await p.locator(".status-bar .sb-pair").click();
     await p.waitForSelector(".pair-card");
     await p.waitForSelector(".pair-card q:has-text('unknown license key')");

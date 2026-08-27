@@ -3565,6 +3565,28 @@ ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
   (local gets it, phone doesn't, key never on the wire), `app.e2e` "PB.2: a
   refused license key…" incl. axe; the CS e2e stub now answers the exchange
   as a valid subscriber and asserts the QR. Done 2026-08-26.
+- [x] **PB.R — cold review of the branch (`/code-review next high`, 2026-08-26).**
+  Nine confirmed findings, all fixed with a test per class: a stale read
+  surviving a hello from a relaunched daemon without a key (kept only while
+  `billing: "license-key"`, and the daemon now re-sends the read after EVERY
+  hello); a non-string 403 `reason` throwing a refusal into `unreachable`;
+  the no-relay arm dropping a subscriber's only manage link (the link now
+  rides every resting arm — `PairCardBody`, pure); the at-rest tooltip
+  pitching Pro to an opted-out user (`pairTitle`); `unreachable.cached`
+  never flipping at token expiry (an expiry timer); presenting on the
+  exchange against an ungated self-hosted relay hid a working QR (reads sent
+  only where the exchange IS the gate: hosted default or an explicit
+  entitlement URL — `presentsOnEntitlement`); the backend's refusal quoted
+  mid-sentence above a payment link without bidi isolation
+  (`visibleControls` + `unicode-bidi: isolate`, the manage card's line too);
+  listener dispatch inside the exchange's try/catch; the R.4h turn still
+  pinning `turn[0]` while the grammar turn didn't (one helper, plus a
+  per-turn re-emit guard). Cleanups folded in: one `MAX_REASON_CHARS`, one
+  `EntitlementView`/`RelayOffReason` in protocol.ts, escaped regexes, stale
+  comments. Left as noted, not fixed: the fake billing server is hand-rolled
+  in four tests (a helper is a test-harness change, out of this pass); the
+  residual gap that the card presents on the exchange, not the relay dial —
+  a paired/refused relay state is a step of its own (PB.3, Kyle's call).
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 

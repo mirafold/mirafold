@@ -2,7 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ConnectDevice, LicenseGate, PAY_URL, RemoteAccessOff, entitlementGates } from "./ConnectDevice";
+import {
+  ConnectDevice,
+  LicenseGate,
+  PAY_URL,
+  PairCardBody,
+  RemoteAccessOff,
+  entitlementGates,
+  pairTitle,
+} from "./ConnectDevice";
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PAY_ANCHOR = new RegExp(`href="${escapeRe(PAY_URL)}" target="_blank" rel="noopener noreferrer"`);
 
 // The pair button is a fixture of every LOCAL viewport: with a relay it opens
 // the QR; without one it opens the honest reason — and, when the reason is
@@ -23,7 +34,7 @@ test("the pair button renders with a relay, without one, and not for a remote vi
 test("no subscription: the card carries the pay link as a plain, opener-less anchor", () => {
   const html = renderToStaticMarkup(createElement(RemoteAccessOff, { reason: "unentitled" }));
   assert.equal(PAY_URL, "https://mirafold.com/pay");
-  assert.match(html, new RegExp(`<a class="pair-cta" href="${PAY_URL}" target="_blank" rel="noopener noreferrer">`));
+  assert.match(html, PAY_ANCHOR);
   assert.match(html, /Mirafold Pro/);
   assert.match(html, /MIRAFOLD_LICENSE_KEY/, "an existing subscriber is told how to connect the key");
   assert.doesNotMatch(html, /OpenAI permits|free/i);
@@ -61,12 +72,54 @@ test("a refused key: no QR, the backend's reason quoted, the pay link, the butto
   const gate = renderToStaticMarkup(
     createElement(LicenseGate, { view: { state: "invalid", reason: "unknown license key" } }),
   );
-  assert.match(gate, /<q>unknown license key<\/q>/);
-  assert.match(gate, new RegExp(`href="${PAY_URL}" target="_blank" rel="noopener noreferrer"`));
+  assert.match(gate, /<q class="pair-quote">unknown license key<\/q>/);
+  assert.match(gate, PAY_ANCHOR);
   assert.doesNotMatch(gate, /pair-qr/);
   const outage = renderToStaticMarkup(createElement(LicenseGate, { view: { state: "unreachable", cached: false } }));
-  assert.match(outage, /Couldn.{1,6}t reach mirafold\.com/);
+  assert.match(outage, /Couldn.{1,6}t reach the billing service/);
   assert.doesNotMatch(outage, /pair-cta/, "an outage is not a sales opportunity");
   const checking = renderToStaticMarkup(createElement(LicenseGate, { view: { state: "checking" } }));
   assert.match(checking, /checking your license key/);
+});
+
+// Review 2026-08-26: the tooltip is part of what the button claims at rest.
+test("pairTitle sells only to the unentitled; an opt-out or a bad URL gets a plain off-line", () => {
+  assert.match(pairTitle({ gated: false, relayOff: "unentitled" }), /Mirafold Pro/);
+  assert.doesNotMatch(pairTitle({ gated: false, relayOff: "opt-out" }), /Mirafold Pro/);
+  assert.doesNotMatch(pairTitle({ gated: false, relayOff: "malformed-url" }), /Mirafold Pro/);
+  assert.match(pairTitle({ gated: true }), /license key/);
+  assert.match(pairTitle({ href: "http://x/#code=y", gated: false }), /scan a QR/);
+});
+
+// Review 2026-08-26: a subscriber whose relay is off still has exactly one
+// path to their subscription — the card the feature draws for them.
+test("the manage link rides every resting arm when the daemon runs on a key", () => {
+  const base = { billing: true, subRequest: () => "id", manage: false, setManage() {}, copied: false, onCopy() {} };
+  const offButBilled = renderToStaticMarkup(createElement(PairCardBody, { ...base, relayOff: "opt-out" }));
+  assert.match(offButBilled, /MIRAFOLD_RELAY_URL=off/);
+  assert.match(offButBilled, /manage subscription/);
+  const gate = renderToStaticMarkup(
+    createElement(PairCardBody, { ...base, entitlement: { state: "invalid", reason: "lapsed" } }),
+  );
+  assert.match(gate, /<q class="pair-quote">lapsed<\/q>/);
+  assert.match(gate, /manage subscription/);
+  const qr = renderToStaticMarkup(createElement(PairCardBody, { ...base, href: "http://x/#code=y" }));
+  assert.match(qr, /pair-qr/);
+  assert.match(qr, /manage subscription/);
+  // No key → no link, on either arm.
+  const unbilled = renderToStaticMarkup(
+    createElement(PairCardBody, { ...base, billing: false, subRequest: undefined, relayOff: "unentitled" }),
+  );
+  assert.doesNotMatch(unbilled, /manage subscription/);
+});
+
+// Review 2026-08-26: the backend's refusal line is quoted inside OUR sentence
+// above a payment link — a direction control in it is rendered as a token,
+// never obeyed (the Trojan-Source class the audit closed for engine strings).
+test("a refusal reason's control characters are made visible, not obeyed", () => {
+  const gate = renderToStaticMarkup(
+    createElement(LicenseGate, { view: { state: "invalid", reason: "\u202Eactive — key renewed" } }),
+  );
+  assert.match(gate, /‹U\+202E›active/);
+  assert.doesNotMatch(gate, /\u202E/);
 });

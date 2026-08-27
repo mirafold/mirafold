@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { ModalCard } from "./ModalCard";
+import { visibleControls } from "../visible-controls";
 import type { SubscriptionAct } from "../session-bus";
 import {
   acting,
@@ -98,7 +99,7 @@ function ManageSubscription({
   if (state.phase === "failed") {
     return (
       <div role="alert">
-        <div className="sub-line">{state.message}</div>
+        <div className="sub-line">{visibleControls(state.message)}</div>
         <button className="sub-btn" onClick={() => setState(loading(request("status")))}>
           try again
         </button>
@@ -173,12 +174,15 @@ export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
       </div>
     );
   }
-  return (
-    <div className="pair-hint">
-      <code>MIRAFOLD_RELAY_URL</code> is not a valid <code>ws://</code> or <code>wss://</code>{" "}
-      address, so remote access is off for this launch. Fix it and relaunch to pair a phone.
-    </div>
-  );
+  if (reason === "malformed-url") {
+    return (
+      <div className="pair-hint">
+        <code>MIRAFOLD_RELAY_URL</code> is not a valid <code>ws://</code> or <code>wss://</code>{" "}
+        address, so remote access is off for this launch. Fix it and relaunch to pair a phone.
+      </div>
+    );
+  }
+  return reason satisfies never;
 }
 
 /** With a relay AND a license-key read that doesn't carry it, the QR would
@@ -202,8 +206,13 @@ export function LicenseGate({ view }: { view: EntitlementView }) {
     return (
       <>
         <div className="pair-hint" role="alert">
-          Your license key was refused{view.reason ? <>: <q>{view.reason}</q></> : null}. Remote
-          access is off until a subscription is active — local sessions are unaffected.
+          Your license key was refused
+          {view.reason ? (
+            <>
+              : <q className="pair-quote">{visibleControls(view.reason)}</q>
+            </>
+          ) : null}
+          . Remote access is off until a subscription is active — local sessions are unaffected.
         </div>
         <a className="pair-cta" href={PAY_URL} target="_blank" rel="noopener noreferrer">
           renew or get Mirafold Pro ↗
@@ -213,9 +222,102 @@ export function LicenseGate({ view }: { view: EntitlementView }) {
   }
   return (
     <div className="pair-hint" role="alert">
-      Couldn't reach mirafold.com to check your license key, so remote access is off until it
-      can — local sessions are unaffected.
+      Couldn't reach the billing service to check your license key, so remote access is off
+      until it can — local sessions are unaffected.
     </div>
+  );
+}
+
+/** The pair button's at-rest tooltip — true in every state, never a pitch
+ *  to someone who turned remote access off. */
+export function pairTitle(a: { href?: string; gated: boolean; relayOff?: RelayOff }): string {
+  if (a.href) return "Connect a device — scan a QR to open this daemon's sessions on your phone";
+  if (a.gated) return "Connect a device — remote access is off: your license key isn't carrying it";
+  if (a.relayOff === "unentitled") {
+    return "Connect a device — open this daemon's sessions on your phone with Mirafold Pro";
+  }
+  return "Connect a device — remote access is off for this daemon";
+}
+
+/** What the card shows below its head, by state. Pure, so Tier 1 pins every
+ *  arm: the manage view; the license gate (relay configured, key not
+ *  carrying it); no relay (why, and the offer when nothing is configured);
+ *  the QR. The neutral "manage subscription" link rides EVERY resting arm
+ *  when this daemon runs on a key — a subscriber must never lose the one
+ *  path to their subscription, whatever the relay is doing. */
+export function PairCardBody({
+  href,
+  relayOff,
+  entitlement,
+  billing,
+  subRequest,
+  subReply,
+  manage,
+  setManage,
+  copied,
+  onCopy,
+}: {
+  href?: string;
+  relayOff?: RelayOff;
+  entitlement?: EntitlementView;
+  billing?: boolean;
+  subRequest?: SubscriptionRequest;
+  subReply?: SubscriptionReply | null;
+  manage: boolean;
+  setManage: (on: boolean) => void;
+  copied: boolean;
+  onCopy: (href: string) => void;
+}) {
+  const manageLink = billing && subRequest && (
+    <button className="pair-manage" onClick={() => setManage(true)}>
+      manage subscription
+    </button>
+  );
+  if (manage && subRequest) {
+    return (
+      <>
+        <ManageSubscription request={subRequest} reply={subReply ?? null} titleId={TITLE_ID} />
+        <button className="pair-manage" onClick={() => setManage(false)}>
+          ← back
+        </button>
+      </>
+    );
+  }
+  if (!href) {
+    const gate = relayOff === undefined && entitlement;
+    return (
+      <>
+        {gate ? <LicenseGate view={entitlement} /> : <RemoteAccessOff reason={relayOff as RelayOff} />}
+        {manageLink}
+      </>
+    );
+  }
+  return (
+    <>
+      <QrSvg text={href} />
+      {entitlement?.state === "unreachable" && (
+        <div className="pair-hint pair-hint-sub">
+          Couldn't re-check your license key just now — remote access continues on the last
+          successful check.
+        </div>
+      )}
+      <div className="pair-hint">
+        Scan from your phone. The pairing code rides the URL fragment — it never reaches the
+        relay, and every frame is end-to-end encrypted.
+      </div>
+      {/* Can't scan? Copy the link and send it to your own phone. Copy is
+          the one action, full width; the URL below it wraps to a couple of
+          readable lines — a one-line box would scroll sideways. */}
+      <button className="pair-copy" onClick={() => onCopy(href)}>
+        {copied ? "copied" : "copy link"}
+      </button>
+      <code className="pair-url" tabIndex={0}>
+        {href}
+      </code>
+      {/* Deliberately neutral wording — the resting card invites managing,
+          never leaving; cancel appears only inside, behind its own confirm. */}
+      {manageLink}
+    </>
   );
 }
 
@@ -263,32 +365,18 @@ export function ConnectDevice({
           relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
         }${sessionId ? `&s=${sessionId}` : ""}`
       : undefined;
+  const dismiss = () => {
+    setOpen(false);
+    setManage(false);
+  };
 
   return (
     <>
-      <button
-        className="sb-pair"
-        onClick={() => setOpen(true)}
-        title={
-          href
-            ? "Connect a device — scan a QR to open this daemon's sessions on your phone"
-            : gated
-              ? "Connect a device — remote access is off: your license key isn't carrying it"
-              : "Connect a device — open this daemon's sessions on your phone with Mirafold Pro"
-        }
-      >
+      <button className="sb-pair" onClick={() => setOpen(true)} title={pairTitle({ href, gated, relayOff })}>
         ⧉ pair
       </button>
       {open && (
-        <ModalCard
-          overlayClass="pair-backdrop"
-          cardClass="pair-card"
-          titleId={TITLE_ID}
-          onDismiss={() => {
-            setOpen(false);
-            setManage(false);
-          }}
-        >
+        <ModalCard overlayClass="pair-backdrop" cardClass="pair-card" titleId={TITLE_ID} onDismiss={dismiss}>
           <div className="pair-head">
             <span className="glyph" aria-hidden="true">
               ❯
@@ -298,74 +386,30 @@ export function ConnectDevice({
             </span>
             <button
               className="pair-close"
-              onClick={() => {
-                setOpen(false);
-                setManage(false);
-              }}
+              onClick={dismiss}
               title="Close (Esc)"
               aria-label={manage ? "Close subscription" : "Close connect a device"}
             >
               ✕
             </button>
           </div>
-          {manage && subRequest ? (
-            <>
-              <ManageSubscription request={subRequest} reply={subReply ?? null} titleId={TITLE_ID} />
-              <button className="pair-manage" onClick={() => setManage(false)}>
-                ← back
-              </button>
-            </>
-          ) : gated ? (
-            <>
-              <LicenseGate view={entitlement as EntitlementView} />
-              {billing && subRequest && (
-                <button className="pair-manage" onClick={() => setManage(true)}>
-                  manage subscription
-                </button>
-              )}
-            </>
-          ) : !href ? (
-            <RemoteAccessOff reason={relayOff as RelayOff} />
-          ) : (
-            <>
-              <QrSvg text={href} />
-              {entitlement?.state === "unreachable" && (
-                <div className="pair-hint pair-hint-sub">
-                  Couldn't re-check your license key just now — remote access continues on the
-                  last successful check.
-                </div>
-              )}
-              <div className="pair-hint">
-                Scan from your phone. The pairing code rides the URL fragment — it never
-                reaches the relay, and every frame is end-to-end encrypted.
-              </div>
-              {/* Can't scan? Copy the link and send it to your own phone. Copy is
-                  the one action, full width; the URL below it wraps to a couple of
-                  readable lines — a one-line box would scroll sideways. */}
-              <button
-                className="pair-copy"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(href).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  });
-                }}
-              >
-                {copied ? "copied" : "copy link"}
-              </button>
-              <code className="pair-url" tabIndex={0}>
-                {href}
-              </code>
-              {/* Deliberately neutral wording — the resting card
-                  invites managing, never leaving; cancel appears only inside,
-                  behind its own confirm. */}
-              {billing && subRequest && (
-                <button className="pair-manage" onClick={() => setManage(true)}>
-                  manage subscription
-                </button>
-              )}
-            </>
-          )}
+          <PairCardBody
+            href={href}
+            relayOff={relayOff}
+            entitlement={gated ? entitlement : relay ? entitlement : undefined}
+            billing={billing}
+            subRequest={subRequest}
+            subReply={subReply}
+            manage={manage}
+            setManage={setManage}
+            copied={copied}
+            onCopy={(h) => {
+              void navigator.clipboard?.writeText(h).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              });
+            }}
+          />
         </ModalCard>
       )}
     </>

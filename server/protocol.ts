@@ -729,3 +729,9 @@ export type ClientMsg =
   // the server re-caps per connection and treats the text as untrusted:
   // logged only, never broadcast, never echoed back into any surface.
   | { type: "client_error"; message: string; clientVersion?: string };
+
+/** Why remote access is off (`agents.relayOff`) — declared once here. */
+export type RelayOffReason = NonNullable<Extract<WireMsg, { type: "agents" }>["relayOff"]>;
+
+/** The daemon's license-key read (`entitlement`), minus the tag — declared once here. */
+export type EntitlementView = Omit<Extract<WireMsg, { type: "entitlement" }>, "type">;
