@@ -142,6 +142,8 @@ const WIRE: WireByType = {
     home: "/home/u",
     folderPicker: true,
     relay: { url: "wss://relay.mirafold.sh", code: "abc123def456ghij" },
+    // Phase PB: the license-key read rides ON the hello (local viewports).
+    entitlement: { state: "invalid", reason: "unknown license key" },
     version: "0.0.1",
   },
   folder_picked: { type: "folder_picked", id: "fp1", path: "/home/u/other-project" },
@@ -342,6 +344,7 @@ test("Q.2 nested shapes carry their exact field names", () => {
     ],
   });
   assert.deepEqual(WIRE.agents.relay, { url: "wss://relay.mirafold.sh", code: "abc123def456ghij" });
+  assert.deepEqual(WIRE.agents.entitlement, { state: "invalid", reason: "unknown license key" });
   // SessionMeta — the fleet row's exact key set.
   assert.deepEqual(Object.keys(SESSION_META).sort(), [
     "agent",

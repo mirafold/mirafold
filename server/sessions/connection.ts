@@ -101,9 +101,10 @@ export type ConnectionOptions = {
    *  actions never ride the relay (the key stays with the machine that holds
    *  it), so remote viewports get error replies and no hello flag. */
   subscription?: SubscriptionActions;
-  /** The daemon's license-key read (protocol.ts `entitlement`): the local WS
-   *  path passes the source so the pair card can present on validity — sent
-   *  after each hello and on every change. Never to a remote viewport. */
+  /** The daemon's license-key read source: the local WS path passes it so
+   *  the pair card can present on validity — the current read rides ON
+   *  every hello (`agents.entitlement`); a change between hellos rides the
+   *  standalone `entitlement` message. Never to a remote viewport. */
   entitlement?: Pick<EntitlementTokenSource, "state" | "onChange">;
 };
 
