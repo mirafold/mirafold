@@ -116,8 +116,12 @@ test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async (
 test("a template turn follows the full wire grammar", async () => {
   const turn = await runTurn(c, "hello from the integration suite");
 
-  assert.equal(turn[0].type, "user_prompt");
-  assert.equal(turn[0].text, "hello from the integration suite");
+  // The first SEQUENCED frame is the echo. The unsequenced prompt_options
+  // catalog (below) can land ahead of it too — deterministically when the
+  // prompt follows session creation at once, and under load otherwise.
+  const first = turn.find((m) => typeof m.seq === "number")!;
+  assert.equal(first.type, "user_prompt");
+  assert.equal(first.text, "hello from the integration suite");
 
   // seq strictly increases across the whole broadcast stream. The one frame
   // the registry deliberately never sequences is the replaceable
