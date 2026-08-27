@@ -17,7 +17,7 @@
 
 import { createLogger } from "../log";
 import { inflightSlot, minInterval } from "../throttle";
-import { DEFAULT_ENTITLEMENT_URL, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
+import { DEFAULT_ENTITLEMENT_URL, MAX_REASON_CHARS, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
 
 const log = createLogger("billing");
 
@@ -25,7 +25,6 @@ const FETCH_TIMEOUT_MS = 10_000;
 // A cancel is a hand-clicked action; anything faster than this per action
 // burst is a stuck client or a hostile one — serve the refusal, not Paddle.
 const MIN_GAP_MS = 2_000;
-const MAX_REASON_CHARS = 200;
 
 /** What the manage-subscription card renders — nothing more rides back. */
 export type SubscriptionView = { status: string; periodEnd?: string; cancelAt?: string };

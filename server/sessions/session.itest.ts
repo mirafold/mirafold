@@ -30,11 +30,22 @@ async function runTurn(client: TestClient, text: string): Promise<Any[]> {
   return client.received.slice(from) as Any[];
 }
 
+/** The first SEQUENCED frame of a turn — the echo. The unsequenced
+ *  prompt_options catalog is emitted by the engine at activation, which is
+ *  asynchronous to the first prompt: it lands ahead of the echo when the
+ *  prompt follows creation at once, and under load otherwise. */
+const firstSequenced = (turn: Any[]): Any => turn.find((m) => typeof m.seq === "number")!;
+
 test("supportability: hello carries the version; errors and skew reach the log (R.4g)", async () => {
   const t = new TestClient(d.port);
   await t.opened();
   const hello = (await t.type("agents")) as Any;
   assert.match(hello.version, /^\d+\.\d+\.\d+/);
+  // No relay configured (the harness scrubs every relay/entitlement var): the
+  // hello says WHY, so the pair button can open the honest state instead of
+  // vanishing. Local viewports only — see relay-service.itest for the remote side.
+  assert.equal(hello.relay, undefined);
+  assert.equal(hello.relayOff, "unentitled");
 
   // A viewport-scoped error (bad cwd) reaches the terminal, timestamped —
   // the daemon log is what a stranger pastes into a bug report.
@@ -103,7 +114,7 @@ test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async (
   c.send({ type: "warp_drive", factor: 9 } as never);
   c.sendRaw(JSON.stringify({ type: "even_less_known" }));
   const turn = await runTurn(c, "still here after unknown frames");
-  assert.equal(turn[0].type, "user_prompt");
+  assert.equal(firstSequenced(turn).type, "user_prompt");
   assert.equal(turn[turn.length - 1].type, "turn_end");
   assert.ok(!turn.some((m) => m.type === "error"));
 });
@@ -111,8 +122,16 @@ test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async (
 test("a template turn follows the full wire grammar", async () => {
   const turn = await runTurn(c, "hello from the integration suite");
 
-  assert.equal(turn[0].type, "user_prompt");
-  assert.equal(turn[0].text, "hello from the integration suite");
+  const first = firstSequenced(turn);
+  assert.equal(first.type, "user_prompt");
+  assert.equal(first.text, "hello from the integration suite");
+  // Skipping the catalog above must not hide a regression that emits it per
+  // turn: across this client's life (one activation, one attach) it appears
+  // at most twice, never once per prompt.
+  assert.ok(
+    c.received.filter((m) => m.type === "prompt_options").length <= 2,
+    "prompt_options re-emitted per turn",
+  );
 
   // seq strictly increases across the whole broadcast stream. The one frame
   // the registry deliberately never sequences is the replaceable

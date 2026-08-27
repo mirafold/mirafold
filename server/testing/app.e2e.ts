@@ -2149,8 +2149,8 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
 // C.2 — the automated Phase-A regression guard; assertAxeClean (scope, tags,
 // and the accepted-exception policy) lives in e2e-harness.ts.
 test("C.2: axe-core finds no serious/critical WCAG violations across the app", async () => {
-  // Own daemon + relay stub so every surface (including connect-device, which
-  // renders only with a relay) is reachable and the state is controlled.
+  // Own daemon + relay stub so every surface (including the connect-device
+  // QR card, which needs a relay) is reachable and the state is controlled.
   const relay = await startRelayStub({});
   const token = "e2e-axe-9c2f";
   const dax = await startDaemon({
@@ -2271,7 +2271,9 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
       if (typeof body.licenseKey === "string") seenKeys.push(body.licenseKey);
       const url = req.url ?? "";
       if (!url.startsWith("/api/subscription")) {
-        res.writeHead(404).end(); // the boot-time entitlement exchange — not under test
+        // The boot-time entitlement exchange: a valid, active subscriber.
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ token: "e2e.signed.token", exp: Math.floor(Date.now() / 1000) + 48 * 3600 }));
         return;
       }
       if (body.licenseKey !== KEY) {
@@ -2309,6 +2311,8 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
     // The resting UI shows only the pair button; nothing cancel-shaped.
     await p.locator(".sb-pair").click();
     await p.waitForSelector(".pair-card");
+    // A valid key carries the relay: the QR is real (PB.2).
+    await p.waitForSelector(".pair-qr");
     const manage = p.locator(".pair-manage", { hasText: "manage subscription" });
     assert.equal(await manage.count(), 1, "licensed daemon must offer the neutral manage link");
 
@@ -2336,6 +2340,107 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
     assert.ok(seenKeys.every((k) => k === KEY));
     // …and the key itself never reached the page (secrets stay server-side).
     assert.ok(!(await p.content()).includes(KEY), "license key leaked into the DOM");
+  } finally {
+    await p.close();
+    await d2.stop();
+    await relay.stop();
+    await new Promise((resolve) => billing.close(resolve));
+  }
+});
+
+test("no relay: the pair button is still there and opens the Mirafold Pro offer", async () => {
+  // The shared daemon runs with every relay/entitlement variable scrubbed —
+  // exactly a fresh install. The button is a fixture of the status bar; the
+  // card tells the truth (no relay, here's how to get one) and its one action
+  // is an ordinary link to the pay page: new tab, no opener, nothing scripted.
+  await page.goto(base);
+  // An empty registry opens the agent picker over the fleet's button; a
+  // populated one shows the fleet. Either way, enter a session and use the
+  // status bar's button (both hosts render the same card).
+  await page.locator(".agent-picker-card, .fleet-new").first().waitFor();
+  if (!(await page.locator(".agent-picker-card").count())) await page.locator(".fleet-new").click();
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.waitForSelector(".prompt-box textarea");
+  await page.locator(".status-bar .sb-pair").click();
+  await page.waitForSelector(".pair-card");
+  assert.equal(await page.locator(".pair-qr").count(), 0, "no QR without a relay");
+  assert.equal(await page.locator(".pair-manage").count(), 0, "nothing to manage without a key");
+  const cta = page.locator(".pair-card a.pair-cta");
+  assert.equal(await cta.count(), 1);
+  assert.equal(await cta.getAttribute("href"), "https://mirafold.com/pay");
+  assert.equal(await cta.getAttribute("target"), "_blank");
+  assert.equal(await cta.getAttribute("rel"), "noopener noreferrer");
+  assert.match(await page.locator(".pair-card").innerText(), /Mirafold Pro/);
+  await assertAxeClean(page, "pair card, no relay");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".pair-card", { state: "detached" });
+
+  // The user's own opt-out is not a sales opportunity: the card names the
+  // setting and offers no link.
+  const token = "e2e-off-4b1d";
+  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token, MIRAFOLD_RELAY_URL: "off" });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+    await p.waitForSelector(".prompt-box textarea");
+    await p.locator(".status-bar .sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    assert.equal(await p.locator(".pair-cta").count(), 0, "an opted-out daemon is not upsold");
+    assert.match(await p.locator(".pair-card").innerText(), /MIRAFOLD_RELAY_URL=off/);
+  } finally {
+    await p.close();
+    await d2.stop();
+  }
+});
+
+test("PB.2: a refused license key — no QR, the reason, the pay link; a phone is never upsold", async () => {
+  // The billing backend refuses the exchange (unknown key / lapsed). The
+  // relay is configured, so the daemon dials — and the card must not draw a
+  // QR the relay would refuse: it quotes the refusal, offers the pay page,
+  // and keeps the manage link (which shows the backend's own status).
+  const relay = await startRelayStub({});
+  const billing = createServer((req, res) => {
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(JSON.stringify({ reason: "unknown license key" }));
+    });
+  });
+  const billingPort = await new Promise<number>((resolve) =>
+    billing.listen(0, "127.0.0.1", () => resolve((billing.address() as { port: number }).port)),
+  );
+  const token = "e2e-pb2-7d3a";
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    MIRAFOLD_RELAY_URL: relay.url,
+    MIRAFOLD_RELAY_CODE: "e2e-pb2-pairing-code-1a2b",
+    MIRAFOLD_LICENSE_KEY: "mf_e2e_bogus_key_00000000000",
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+  });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+    await p.waitForSelector(".prompt-box textarea");
+    await p.locator(".status-bar .sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    await p.waitForSelector(".pair-card q:has-text('unknown license key')");
+    assert.equal(
+      await p.locator(".pair-card q.pair-quote").evaluate((el) => getComputedStyle(el).unicodeBidi),
+      "isolate",
+      "the quoted backend line is bidi-isolated from our sentence",
+    );
+    assert.equal(await p.locator(".pair-qr").count(), 0, "a QR the relay would refuse");
+    const cta = p.locator(".pair-card a.pair-cta");
+    assert.equal(await cta.getAttribute("href"), "https://mirafold.com/pay");
+    assert.equal(await cta.getAttribute("rel"), "noopener noreferrer");
+    assert.equal(await p.locator(".pair-manage", { hasText: "manage subscription" }).count(), 1);
+    assert.ok(!(await p.content()).includes("mf_e2e_bogus"), "license key leaked into the DOM");
+    await assertAxeClean(p, "pair card, refused key");
   } finally {
     await p.close();
     await d2.stop();

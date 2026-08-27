@@ -286,6 +286,14 @@ export type ViewportMsgBody =
       // relay viewport, or Linux without Zenity/KDialog).
       folderPicker?: boolean;
       relay?: { url: string; code: string; ws?: string };
+      // Optional/additive: WHY remote access is off, when it is — the pair
+      // button's honest state when there is no `relay` to draw a QR for.
+      // `unentitled` = nothing configured (the button offers Mirafold Pro);
+      // `opt-out` = MIRAFOLD_RELAY_URL=off; `malformed-url` = the explicit
+      // relay URL was refused at boot. LOCAL viewports only — a remote
+      // viewport is proof the relay is on; it gets neither field. Old
+      // clients strip it and keep no button.
+      relayOff?: "unentitled" | "opt-out" | "malformed-url";
       version?: string;
       // Optional/additive: this daemon runs on a license key and can manage
       // the subscription behind it — the "manage subscription" affordance's
@@ -293,6 +301,12 @@ export type ViewportMsgBody =
       // holds the key); token-override, self-host, and unentitled daemons
       // send nothing. Old clients strip it.
       billing?: "license-key";
+      // Optional/additive: the daemon's current license-key read, riding
+      // the hello itself so a client never holds one from a PREVIOUS
+      // daemon (a relaunch on the same port re-hellos without one when it
+      // no longer presents on the exchange). Changes after the hello ride
+      // the `entitlement` message below. LOCAL viewports only.
+      entitlement?: EntitlementView;
     }
   // One local, per-viewport reply to `pick_folder`; never broadcast or
   // replayed. Cancel is explicit so an empty reply cannot strand the button.
@@ -310,6 +324,21 @@ export type ViewportMsgBody =
       periodEnd?: string;
       cancelAt?: string;
       error?: string;
+    }
+  // The daemon's read on its own license key — LICENSE-KEY MODE ONLY, local
+  // viewports only, sent right after every hello and again whenever it
+  // changes (the boot exchange landing, a 12-hourly refresh, a lapse). The
+  // pair card presents on it: `valid` = the QR; `invalid` = the key was
+  // refused (`reason` is the billing backend's line, capped) — no QR, the
+  // offer instead; `unreachable` = the backend couldn't be asked — `cached`
+  // says whether an unexpired token still carries the relay meanwhile;
+  // `checking` = the first exchange hasn't answered yet. Never a claim of
+  // validity the backend didn't make. Old clients strip it.
+  | {
+      type: "entitlement";
+      state: "checking" | "valid" | "invalid" | "unreachable";
+      reason?: string;
+      cached?: boolean;
     }
   // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
@@ -706,3 +735,9 @@ export type ClientMsg =
   // the server re-caps per connection and treats the text as untrusted:
   // logged only, never broadcast, never echoed back into any surface.
   | { type: "client_error"; message: string; clientVersion?: string };
+
+/** Why remote access is off (`agents.relayOff`) — declared once here. */
+export type RelayOffReason = NonNullable<Extract<WireMsg, { type: "agents" }>["relayOff"]>;
+
+/** The daemon's license-key read (`entitlement`), minus the tag — declared once here. */
+export type EntitlementView = Omit<Extract<WireMsg, { type: "entitlement" }>, "type">;

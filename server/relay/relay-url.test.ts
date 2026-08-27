@@ -115,3 +115,15 @@ test("a malformed explicit URL resolves to off/malformed-url, never a dial", () 
   const plan = resolveRelayPlan({ MIRAFOLD_RELAY_URL: "wss://relay.example/path" });
   assert.equal(plan.kind === "dial" && plan.origin, "wss://relay.example");
 });
+
+// Review 2026-08-26: the pair card presents on the entitlement exchange only
+// where that exchange IS the relay's gate.
+test("presentsOnEntitlement: the hosted default, or an operator's own backend — never a plain self-host", async () => {
+  const { presentsOnEntitlement, resolveRelayPlan } = await import("./relay-url");
+  const hosted = resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_x" });
+  assert.equal(presentsOnEntitlement(hosted, {}), true);
+  const selfHost = resolveRelayPlan({ MIRAFOLD_RELAY_URL: "ws://my-relay.lan:9100", MIRAFOLD_LICENSE_KEY: "mf_x" });
+  assert.equal(presentsOnEntitlement(selfHost, {}), false, "an ungated relay carries a refused key fine");
+  assert.equal(presentsOnEntitlement(selfHost, { MIRAFOLD_ENTITLEMENT_URL: "http://127.0.0.1:1/api/entitlement" }), true);
+  assert.equal(presentsOnEntitlement(resolveRelayPlan({}), {}), false);
+});

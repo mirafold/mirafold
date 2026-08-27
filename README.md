@@ -23,7 +23,11 @@ configuration, and permission model.
 - A real pseudo-terminal (PTY) for `!` commands, including interactive
   programs and password prompts, inside shell-owned UI.
 - Optional remote browser and phone access through an end-to-end-encrypted
-  relay; provider credentials remain on the machine running Mirafold.
+  relay; provider credentials remain on the machine running Mirafold. The
+  `⧉ pair` button in the status bar is where this lives: with an active
+  Mirafold Pro license key it shows the pairing QR; without one — or with a
+  key the billing backend refuses — it says so and links to
+  [mirafold.com/pay](https://mirafold.com/pay).
 
 Mirafold drives a real coding agent with access to your filesystem and shell.
 Review permission prompts, use it only in directories you are prepared to give

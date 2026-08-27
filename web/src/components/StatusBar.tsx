@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { ArmedButton } from "./ArmedButton";
-import { ConnectDevice, type RelayInfo, type SubscriptionRequest } from "./ConnectDevice";
+import {
+  ConnectDevice,
+  type EntitlementView,
+  type RelayInfo,
+  type RelayOff,
+  type SubscriptionRequest,
+} from "./ConnectDevice";
 import type { SubscriptionReply } from "../subscription-card";
 import { WorkspaceGlyph } from "./WorkspaceGlyph";
 import { GearGlyph } from "./GearGlyph";
@@ -46,6 +52,8 @@ export function StatusBar({
   onOpenSettings,
   onEndSession,
   relay,
+  relayOff,
+  entitlement,
   version,
   billing,
   subRequest,
@@ -76,8 +84,12 @@ export function StatusBar({
   // End this session (absent when there's no session yet). Two-click
   // confirm lives in this shell-owned control, never in agent output.
   onEndSession?: () => void;
-  // Pairing info for the "connect a device" QR (absent → no button).
+  // The "connect a device" button's inputs: pairing info for the QR, else
+  // why remote access is off; plus the license-key read. Both absent → a
+  // remote viewport → no button.
   relay?: RelayInfo;
+  relayOff?: RelayOff;
+  entitlement?: EntitlementView;
   // The daemon's version, off the agents hello — the first thing a
   // bug report needs.
   version?: string;
@@ -238,6 +250,8 @@ export function StatusBar({
       )}
       <ConnectDevice
         relay={relay}
+        relayOff={relayOff}
+        entitlement={entitlement}
         sessionId={sessionId}
         billing={billing}
         subRequest={subRequest}

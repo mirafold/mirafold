@@ -5,7 +5,7 @@ import { visibleControls } from "../visible-controls";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice } from "./ConnectDevice";
 import { createDaemonClient } from "../daemon-client";
-import { NO_DAEMON_INFO, daemonInfoFrom, type DaemonInfo } from "../daemon-hello";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
 import type { SubscriptionReply } from "../subscription-card";
 import { GearGlyph } from "./GearGlyph";
 import { SocketClient } from "../ws";
@@ -152,6 +152,8 @@ export function FleetView() {
         });
       } else if (m.type === "agents") {
         setDaemon(daemonInfoFrom(m));
+      } else if (m.type === "entitlement") {
+        setDaemon((d) => withEntitlement(d, m));
       } else if (m.type === "subscription") {
         setSubReply(m);
       } else if (m.type === "session_created") {
@@ -298,6 +300,8 @@ export function FleetView() {
           <span className="fleet-spacer" />
           <ConnectDevice
             relay={daemon.relay}
+            relayOff={daemon.relayOff}
+            entitlement={daemon.entitlement}
             billing={daemon.billing === "license-key"}
             subRequest={subRequest}
             subReply={subReply}

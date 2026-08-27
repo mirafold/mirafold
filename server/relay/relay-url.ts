@@ -97,3 +97,20 @@ export function resolveRelayPlan(env: {
     appUrl: appUrl ?? DEFAULT_APP_URL,
   };
 }
+
+/**
+ * Whether the pair card should present on the entitlement EXCHANGE (the
+ * `entitlement` read). The exchange is what the HOSTED relay gates on, so a
+ * refused key there truly means "no QR". An explicit self-hosted relay is
+ * dialed verbatim and may be ungated — then the exchange says nothing about
+ * whether the relay carries, and presenting on it would hide a working QR
+ * (review 2026-08-26). An explicit entitlement URL means the operator runs
+ * their own gate against their own backend: present again.
+ */
+export function presentsOnEntitlement(
+  plan: RelayPlan,
+  env: { MIRAFOLD_ENTITLEMENT_URL?: string },
+): boolean {
+  if (plan.kind !== "dial") return false;
+  return plan.source === "default" || !!env.MIRAFOLD_ENTITLEMENT_URL?.trim();
+}

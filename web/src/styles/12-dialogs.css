@@ -517,6 +517,47 @@
   background: var(--ok-bg);
 }
 
+/* No relay: the card's one action is the offer — same slot and weight as
+   copy-link above, drawn as the link it is. The sub-line under it is the
+   already-a-subscriber path, dimmer and smaller than the pitch. */
+.pair-cta {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 1.17em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pair-cta:hover {
+  background: var(--ok-bg);
+}
+
+.pair-hint-sub {
+  margin-top: 12px;
+  font-size: 1.05em;
+  color: var(--fg-dimmer);
+}
+
+/* The backend's refusal line, quoted INSIDE our sentence above a payment
+   link: isolated so strong-RTL text in it cannot re-order the words around
+   it (a div is isolated by default; an inline <q> is not). Pairs with
+   visibleControls(), which renders explicit direction controls as tokens. */
+.pair-quote {
+  unicode-bidi: isolate;
+}
+
+.pair-hint code {
+  font-family: var(--font-mono);
+  color: var(--fg-mid);
+}
+
 /* The URL is for verifying, not transcribing — shown, never a scroll slot. */
 .pair-url {
   display: block;

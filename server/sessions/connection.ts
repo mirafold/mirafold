@@ -18,6 +18,8 @@ import {
   type Backend,
 } from "../adapters";
 import { relayGateRefusal } from "../provider-policy";
+import type { EntitlementTokenSource } from "../relay/entitlement";
+import type { EntitlementView, RelayOffReason } from "../protocol";
 import {
   createSubscriptionThrottle,
   type SubscriptionActions,
@@ -86,6 +88,10 @@ export type ConnectionOptions = {
    *  it; the relay path never does — the code must not cross the relay.
    *  Same shape the hello carries (protocol.ts `agents.relay`). */
   relay?: { url: string; code: string; ws?: string };
+  /** Why remote access is off, when it is (protocol.ts `agents.relayOff`).
+   *  The local WS path passes it so the pair button can say so; a remote
+   *  viewport is proof the relay is on and never receives it. */
+  relayOff?: RelayOffReason;
   /** True for a viewport arriving over the paid relay. The relay gate
    *  refuses to attach such a viewport to a subscription-backed session;
    *  local viewports are never gated. */
@@ -95,6 +101,11 @@ export type ConnectionOptions = {
    *  actions never ride the relay (the key stays with the machine that holds
    *  it), so remote viewports get error replies and no hello flag. */
   subscription?: SubscriptionActions;
+  /** The daemon's license-key read source: the local WS path passes it so
+   *  the pair card can present on validity — the current read rides ON
+   *  every hello (`agents.entitlement`); a change between hellos rides the
+   *  standalone `entitlement` message. Never to a remote viewport. */
+  entitlement?: Pick<EntitlementTokenSource, "state" | "onChange">;
 };
 
 export function openConnection(
@@ -102,7 +113,7 @@ export function openConnection(
   viewport: (msg: WireMsg) => void,
   options: ConnectionOptions = {},
 ): Connection {
-  const { label = "ws", relay, remote = false, subscription } = options;
+  const { label = "ws", relay, relayOff, remote = false, subscription, entitlement } = options;
   const log = createLogger(label);
   // A connection is a viewport onto one registry session — or a fleet
   // watcher observing the registry itself.
@@ -280,7 +291,13 @@ export function openConnection(
   // sessions — plus home, so the client can show paths in ~-form.
   // Re-sent whole on refresh_agents — availableAgents() reads the live
   // probe cache, so a re-send after a re-probe carries newly started servers.
-  const sendAgents = () =>
+  // The license-key read rides ON every hello (so a client never keeps a
+  // previous daemon's) and, between hellos, as its own message on change.
+  const sendEntitlement = (v: EntitlementView | undefined) => {
+    if (v && !remote) viewport({ type: "entitlement", ...v });
+  };
+  const sendAgents = () => {
+    const read = remote ? undefined : entitlement?.state();
     viewport({
       type: "agents",
       agents: availableAgents(),
@@ -290,9 +307,13 @@ export function openConnection(
       folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
+      ...(relayOff && !remote ? { relayOff } : {}),
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
+      ...(read ? { entitlement: read } : {}),
     });
+  };
   sendAgents();
+  const unsubscribeEntitlement = remote ? undefined : entitlement?.onChange(sendEntitlement);
 
   // The `!` lifecycle — PTY spawn, output budgets, cwd handoff, burst
   // throttle — handled per-connection in bang-handlers.ts, the fs-handlers
@@ -680,6 +701,7 @@ export function openConnection(
 
   const close = () => {
     closed = true;
+    unsubscribeEntitlement?.();
     folderPicker.close();
     uploads.dispose();
     if (entry) {

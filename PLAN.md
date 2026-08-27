@@ -3533,6 +3533,69 @@ it"):**
 (fixed above); Tier-3's one flake in two runs was `follow-tail` (hardened
 twice before — on the proposed list).
 
+## Phase PB — The pair button is always there (Kyle-directed, opened + ✅ COMPLETE 2026-08-26)
+
+Before: a daemon with no relay configured rendered no pair button at all, so a
+new user never learned remote access existed. Now every LOCAL viewport draws
+`⧉ pair`; without a relay the card states why (additive hello field
+`relayOff`: `unentitled` | `opt-out` | `malformed-url`) — a plain link to
+`https://mirafold.com/pay` when nothing is configured (plus the
+`MIRAFOLD_LICENSE_KEY` line for an existing subscriber), the setting to change
+otherwise, never a sales pitch to someone who opted out. Remote viewports
+still receive neither field (a paired phone is not upsold). The link is an
+ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
+
+- [x] **PB.1** — `relayOff` on the hello (local only), `ConnectDevice`
+  always-present button + `RemoteAccessOff` card, CSS, README line. Tests:
+  `ConnectDevice.test.ts` (Tier 1), `session.itest`/`relay-service.itest`
+  hello assertions (Tier 2), "no relay: the pair button is still there…"
+  in `app.e2e.ts` incl. axe (Tier 3); two visual baselines re-taken for the
+  new status-bar button. Done 2026-08-26 on `feature/pair-upsell`.
+- [x] **PB.2 — present on the key's validity.** The daemon already validates
+  the key (the entitlement exchange: token = valid, 403 = refused); the read
+  now reaches LOCAL viewports as an additive `entitlement` message (after each
+  hello and on every change — boot, the 12-hourly refresh, a lapse): `valid`
+  → the QR as before; `invalid` → no QR, the backend's refusal quoted, the
+  `/pay` link, the manage link kept; `unreachable` → no claim either way: the
+  QR stays only while a cached unexpired token still carries the relay (with
+  a dim "couldn't re-check" line), otherwise "couldn't reach mirafold.com",
+  no sales link; `checking` → the first second after launch. Remote
+  viewports never receive it (`entitlement.itest`). Tests: `entitlement.test`
+  (read + listeners + cap), `ConnectDevice.test` (gate + card), `entitlement.itest`
+  (local gets it, phone doesn't, key never on the wire), `app.e2e` "PB.2: a
+  refused license key…" incl. axe; the CS e2e stub now answers the exchange
+  as a valid subscriber and asserts the QR. Done 2026-08-26.
+- [x] **PB.R — cold review of the branch (`/code-review next high`, 2026-08-26).**
+  Nine confirmed findings, all fixed with a test per class: a stale read
+  surviving a hello from a relaunched daemon without a key (kept only while
+  `billing: "license-key"`, and the daemon now re-sends the read after EVERY
+  hello); a non-string 403 `reason` throwing a refusal into `unreachable`;
+  the no-relay arm dropping a subscriber's only manage link (the link now
+  rides every resting arm — `PairCardBody`, pure); the at-rest tooltip
+  pitching Pro to an opted-out user (`pairTitle`); `unreachable.cached`
+  never flipping at token expiry (an expiry timer); presenting on the
+  exchange against an ungated self-hosted relay hid a working QR (reads sent
+  only where the exchange IS the gate: hosted default or an explicit
+  entitlement URL — `presentsOnEntitlement`); the backend's refusal quoted
+  mid-sentence above a payment link without bidi isolation
+  (`visibleControls` + `unicode-bidi: isolate`, the manage card's line too);
+  listener dispatch inside the exchange's try/catch; the R.4h turn still
+  pinning `turn[0]` while the grammar turn didn't (one helper, plus a
+  per-turn re-emit guard). Cleanups folded in: one `MAX_REASON_CHARS`, one
+  `EntitlementView`/`RelayOffReason` in protocol.ts, escaped regexes, stale
+  comments. Left as noted, not fixed: the fake billing server is hand-rolled
+  in four tests (a helper is a test-harness change, out of this pass); the
+  residual gap that the card presents on the exchange, not the relay dial —
+  a paired/refused relay state is a step of its own (PB.3, Kyle's call).
+  **Second cold review of the fixes** found five more, all fixed: the
+  stale-read keep-rule was keyed to `billing`, which the self-host rule had
+  just decoupled from the read → the read now rides ON the hello (additive
+  `agents.entitlement`) and nothing carries over between hellos; a 403 with
+  a non-object body (`null`) still threw into `unreachable`; the expiry timer
+  overflowed past ~24.8 days (chained hops, clock re-checked); the bidi rule
+  sat on `<div>`s (already isolated) instead of the inline `<q>` — now
+  `.pair-quote`, asserted by computed style in the e2e.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.

@@ -720,6 +720,7 @@ export function createTranscriptProjection(): TranscriptProjection {
       case "agents":
       case "folder_picked":
       case "subscription":
+      case "entitlement":
       case "refused":
       case "usage":
       case "fs_tree":

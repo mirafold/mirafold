@@ -15,7 +15,7 @@ import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { createSubscriptionActions } from "./relay/subscription";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { carriesCredentialInClear, resolveRelayPlan, type RelayPlan } from "./relay/relay-url";
+import { carriesCredentialInClear, presentsOnEntitlement, resolveRelayPlan, type RelayPlan } from "./relay/relay-url";
 import {
   COOKIE_NAME,
   cookieToken,
@@ -56,6 +56,15 @@ const app = express();
 // with its own reason — a bad value must narrow the policy, never widen it.
 const relayPlan = resolveRelayPlan(process.env);
 const relay = relayPlan.kind === "dial" ? resolveRelayDial(relayPlan) : undefined;
+// Why remote access is off, for the pair button (protocol.ts `agents.relayOff`):
+// the button is always drawn for a local viewport; without a relay it opens
+// the honest state — a Mirafold Pro offer when nothing is configured.
+const relayOff =
+  relayPlan.kind !== "off"
+    ? undefined
+    : relayPlan.reason === "unentitled-default"
+      ? ("unentitled" as const)
+      : relayPlan.reason;
 
 /** Everything the dial-out needs once a plan says "dial": the pairing code
  *  (minted per launch, or the pinned one when it is strong enough) and the
@@ -242,6 +251,13 @@ void probeLocalServers();
 // stay on the machine that holds the key, so the relay path never sees it.
 const subscriptionActions = createSubscriptionActions(process.env);
 
+// The entitlement token source — a hand-issued token, a license key
+// exchanged at the billing backend, or nothing (a gated relay will refuse
+// the dial with an actionable line; local sessions never depend on this).
+// Created here, before the first viewport, because the pair card presents on
+// its read (protocol.ts `entitlement`); the relay block below dials with it.
+const entitlement = relay ? createEntitlementTokenSource(process.env) : undefined;
+
 // Per-socket liveness, read by the heartbeat below to reap half-open
 // leftovers whose `close` never arrived (see ws-liveness.ts).
 const liveViewports = new WeakMap<WebSocket, boolean>();
@@ -264,7 +280,12 @@ wss.on("connection", (ws) => {
   const conn = openConnection(registry, viewport, {
     label: "ws",
     relay: relay?.info,
+    relayOff,
     subscription: subscriptionActions,
+    // The read reaches the pair card only where the exchange IS the relay's
+    // gate (relay-url.ts presentsOnEntitlement) — an ungated self-hosted
+    // relay carries a refused key just fine, and the card must not hide it.
+    entitlement: presentsOnEntitlement(relayPlan, process.env) ? entitlement : undefined,
   });
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);
@@ -323,11 +344,7 @@ listen(basePort);
 // never opens a listening port for remote access. The pairing code is the
 // root of trust for that path: printed here and shown as the QR, nowhere else
 // — the E2E keys derive from it, and only its hash reaches the relay.
-if (relay) {
-  // The entitlement token source — a hand-issued token, a license key
-  // exchanged at the billing backend, or nothing (a gated relay will refuse
-  // the dial with an actionable line; local sessions never depend on this).
-  const entitlement = createEntitlementTokenSource(process.env);
+if (relay && entitlement) {
   // The entitlement token rides the dial as a plaintext header (relay-client.ts);
   // over a non-TLS non-loopback relay it can be read and replayed by anyone on
   // the path. Warn loudly, still dial (self-host is a real path).
