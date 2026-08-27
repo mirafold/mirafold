@@ -86,6 +86,10 @@ export type ConnectionOptions = {
    *  it; the relay path never does — the code must not cross the relay.
    *  Same shape the hello carries (protocol.ts `agents.relay`). */
   relay?: { url: string; code: string; ws?: string };
+  /** Why remote access is off, when it is (protocol.ts `agents.relayOff`).
+   *  The local WS path passes it so the pair button can say so; a remote
+   *  viewport is proof the relay is on and never receives it. */
+  relayOff?: "unentitled" | "opt-out" | "malformed-url";
   /** True for a viewport arriving over the paid relay. The relay gate
    *  refuses to attach such a viewport to a subscription-backed session;
    *  local viewports are never gated. */
@@ -102,7 +106,7 @@ export function openConnection(
   viewport: (msg: WireMsg) => void,
   options: ConnectionOptions = {},
 ): Connection {
-  const { label = "ws", relay, remote = false, subscription } = options;
+  const { label = "ws", relay, relayOff, remote = false, subscription } = options;
   const log = createLogger(label);
   // A connection is a viewport onto one registry session — or a fleet
   // watcher observing the registry itself.
@@ -290,6 +294,7 @@ export function openConnection(
       folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
+      ...(relayOff && !remote ? { relayOff } : {}),
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
     });
   sendAgents();

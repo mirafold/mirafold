@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArmedButton } from "./ArmedButton";
-import { ConnectDevice, type RelayInfo, type SubscriptionRequest } from "./ConnectDevice";
+import { ConnectDevice, type RelayInfo, type RelayOff, type SubscriptionRequest } from "./ConnectDevice";
 import type { SubscriptionReply } from "../subscription-card";
 import { WorkspaceGlyph } from "./WorkspaceGlyph";
 import { GearGlyph } from "./GearGlyph";
@@ -46,6 +46,7 @@ export function StatusBar({
   onOpenSettings,
   onEndSession,
   relay,
+  relayOff,
   version,
   billing,
   subRequest,
@@ -78,6 +79,7 @@ export function StatusBar({
   onEndSession?: () => void;
   // Pairing info for the "connect a device" QR (absent → no button).
   relay?: RelayInfo;
+  relayOff?: RelayOff;
   // The daemon's version, off the agents hello — the first thing a
   // bug report needs.
   version?: string;
@@ -238,6 +240,7 @@ export function StatusBar({
       )}
       <ConnectDevice
         relay={relay}
+        relayOff={relayOff}
         sessionId={sessionId}
         billing={billing}
         subRequest={subRequest}

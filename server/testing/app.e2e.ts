@@ -2149,8 +2149,8 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
 // C.2 — the automated Phase-A regression guard; assertAxeClean (scope, tags,
 // and the accepted-exception policy) lives in e2e-harness.ts.
 test("C.2: axe-core finds no serious/critical WCAG violations across the app", async () => {
-  // Own daemon + relay stub so every surface (including connect-device, which
-  // renders only with a relay) is reachable and the state is controlled.
+  // Own daemon + relay stub so every surface (including the connect-device
+  // QR card, which needs a relay) is reachable and the state is controlled.
   const relay = await startRelayStub({});
   const token = "e2e-axe-9c2f";
   const dax = await startDaemon({
@@ -2341,6 +2341,52 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
     await d2.stop();
     await relay.stop();
     await new Promise((resolve) => billing.close(resolve));
+  }
+});
+
+test("no relay: the pair button is still there and opens the Mirafold Pro offer", async () => {
+  // The shared daemon runs with every relay/entitlement variable scrubbed —
+  // exactly a fresh install. The button is a fixture of the status bar; the
+  // card tells the truth (no relay, here's how to get one) and its one action
+  // is an ordinary link to the pay page: new tab, no opener, nothing scripted.
+  await page.goto(base);
+  // An empty registry opens the agent picker over the fleet's button; a
+  // populated one shows the fleet. Either way, enter a session and use the
+  // status bar's button (both hosts render the same card).
+  await page.locator(".agent-picker-card, .fleet-new").first().waitFor();
+  if (!(await page.locator(".agent-picker-card").count())) await page.locator(".fleet-new").click();
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.locator(".status-bar .sb-pair").click();
+  await page.waitForSelector(".pair-card");
+  assert.equal(await page.locator(".pair-qr").count(), 0, "no QR without a relay");
+  assert.equal(await page.locator(".pair-manage").count(), 0, "nothing to manage without a key");
+  const cta = page.locator(".pair-card a.pair-cta");
+  assert.equal(await cta.count(), 1);
+  assert.equal(await cta.getAttribute("href"), "https://mirafold.com/pay");
+  assert.equal(await cta.getAttribute("target"), "_blank");
+  assert.equal(await cta.getAttribute("rel"), "noopener noreferrer");
+  assert.match(await page.locator(".pair-card").innerText(), /Mirafold Pro/);
+  await assertAxeClean(page, "pair card, no relay");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".pair-card", { state: "detached" });
+
+  // The user's own opt-out is not a sales opportunity: the card names the
+  // setting and offers no link.
+  const token = "e2e-off-4b1d";
+  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token, MIRAFOLD_RELAY_URL: "off" });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+    await p.locator(".status-bar .sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    assert.equal(await p.locator(".pair-cta").count(), 0, "an opted-out daemon is not upsold");
+    assert.match(await p.locator(".pair-card").innerText(), /MIRAFOLD_RELAY_URL=off/);
+  } finally {
+    await p.close();
+    await d2.stop();
   }
 });
 

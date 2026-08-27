@@ -576,6 +576,7 @@ export function Shell() {
               onOpenSettings={() => setSettingsOpen(true)}
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
+              relayOff={daemonInfo.relayOff}
               version={daemonInfo.version}
               billing={daemonInfo.billing === "license-key"}
               subRequest={bus.requestSubscription}

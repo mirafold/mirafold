@@ -56,6 +56,15 @@ const app = express();
 // with its own reason — a bad value must narrow the policy, never widen it.
 const relayPlan = resolveRelayPlan(process.env);
 const relay = relayPlan.kind === "dial" ? resolveRelayDial(relayPlan) : undefined;
+// Why remote access is off, for the pair button (protocol.ts `agents.relayOff`):
+// the button is always drawn for a local viewport; without a relay it opens
+// the honest state — a Mirafold Pro offer when nothing is configured.
+const relayOff =
+  relayPlan.kind !== "off"
+    ? undefined
+    : relayPlan.reason === "unentitled-default"
+      ? ("unentitled" as const)
+      : relayPlan.reason;
 
 /** Everything the dial-out needs once a plan says "dial": the pairing code
  *  (minted per launch, or the pinned one when it is strong enough) and the
@@ -264,6 +273,7 @@ wss.on("connection", (ws) => {
   const conn = openConnection(registry, viewport, {
     label: "ws",
     relay: relay?.info,
+    relayOff,
     subscription: subscriptionActions,
   });
   ws.on("message", (data) => conn.handleMessage(String(data)));

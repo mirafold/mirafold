@@ -298,6 +298,7 @@ export function FleetView() {
           <span className="fleet-spacer" />
           <ConnectDevice
             relay={daemon.relay}
+            relayOff={daemon.relayOff}
             billing={daemon.billing === "license-key"}
             subRequest={subRequest}
             subReply={subReply}

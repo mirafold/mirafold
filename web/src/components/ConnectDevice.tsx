@@ -22,7 +22,15 @@ import {
 // ws(s) origin, present when `url` is a separate static app origin — it rides
 // the QR fragment so the loaded page knows where to dial.
 export type { RelayInfo } from "../daemon-hello";
-import type { RelayInfo } from "../daemon-hello";
+import type { AgentsHello, RelayInfo } from "../daemon-hello";
+
+/** Why remote access is off (hello `relayOff`) — the card's state when there
+ *  is no relay to draw a QR for. */
+export type RelayOff = NonNullable<AgentsHello["relayOff"]>;
+
+/** Where "get Mirafold Pro" goes. A plain link (new tab, no opener): the
+ *  destination is visible on hover and nothing about it is scripted. */
+export const PAY_URL = "https://mirafold.com/pay";
 
 // Names the dialog for a screen reader. A constant is safe: the card is
 // mounted only while open, and one status bar means one of these.
@@ -137,6 +145,42 @@ function ManageSubscription({
   );
 }
 
+// The card's body when there is no relay: the honest reason, and — when the
+// reason is that nothing is configured — the one way to get one. Shell-owned
+// copy; the pay link is an ordinary anchor so the browser shows where it goes.
+export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
+  if (reason === "unentitled") {
+    return (
+      <>
+        <div className="pair-hint">
+          Pair your phone and open this daemon's sessions from anywhere — end-to-end
+          encrypted, through the Mirafold relay. Remote access is part of Mirafold Pro.
+        </div>
+        <a className="pair-cta" href={PAY_URL} target="_blank" rel="noopener noreferrer">
+          get Mirafold Pro ↗
+        </a>
+        <div className="pair-hint pair-hint-sub">
+          Already have a license key? Set <code>MIRAFOLD_LICENSE_KEY</code> and relaunch.
+        </div>
+      </>
+    );
+  }
+  if (reason === "opt-out") {
+    return (
+      <div className="pair-hint">
+        Remote access is turned off for this daemon (<code>MIRAFOLD_RELAY_URL=off</code>).
+        Remove that setting and relaunch to pair a phone.
+      </div>
+    );
+  }
+  return (
+    <div className="pair-hint">
+      <code>MIRAFOLD_RELAY_URL</code> is not a valid <code>ws://</code> or <code>wss://</code>{" "}
+      address, so remote access is off for this launch. Fix it and relaunch to pair a phone.
+    </div>
+  );
+}
+
 // `sessionId`: pairing from inside a session encodes that session into the
 // fragment (`&s=<id>`) so the scanned phone lands IN it, not on the fleet
 // list. Mission control's pair button passes nothing and keeps landing on the
@@ -146,14 +190,20 @@ function ManageSubscription({
 // subscription" link. Nothing cancel-shaped is ever passively visible: the
 // resting UI shows only the pair button; cancel lives two deliberate steps
 // deep, behind the link and its own confirm.
+// `relayOff`: no relay, and this is why. The button is drawn all the same —
+// every local viewport has one — and the card says what's true: the offer
+// when nothing is configured, the setting to change otherwise. Neither field
+// (a remote viewport) → nothing: the phone is already paired.
 export function ConnectDevice({
   relay,
+  relayOff,
   sessionId,
   billing,
   subRequest,
   subReply,
 }: {
   relay?: RelayInfo;
+  relayOff?: RelayOff;
   sessionId?: string;
   billing?: boolean;
   subRequest?: SubscriptionRequest;
@@ -163,17 +213,23 @@ export function ConnectDevice({
   const [copied, setCopied] = useState(false);
   const [manage, setManage] = useState(false);
 
-  if (!relay) return null;
-  const href = `${relay.url}/#code=${relay.code}${
-    relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
-  }${sessionId ? `&s=${sessionId}` : ""}`;
+  if (!relay && !relayOff) return null;
+  const href = relay
+    ? `${relay.url}/#code=${relay.code}${
+        relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
+      }${sessionId ? `&s=${sessionId}` : ""}`
+    : undefined;
 
   return (
     <>
       <button
         className="sb-pair"
         onClick={() => setOpen(true)}
-        title="Connect a device — scan a QR to open this daemon's sessions on your phone"
+        title={
+          href
+            ? "Connect a device — scan a QR to open this daemon's sessions on your phone"
+            : "Connect a device — open this daemon's sessions on your phone with Mirafold Pro"
+        }
       >
         ⧉ pair
       </button>
@@ -206,7 +262,9 @@ export function ConnectDevice({
               ✕
             </button>
           </div>
-          {manage && subRequest ? (
+          {!href ? (
+            <RemoteAccessOff reason={relayOff as RelayOff} />
+          ) : manage && subRequest ? (
             <>
               <ManageSubscription request={subRequest} reply={subReply ?? null} titleId={TITLE_ID} />
               <button className="pair-manage" onClick={() => setManage(false)}>

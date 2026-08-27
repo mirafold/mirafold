@@ -35,6 +35,11 @@ test("supportability: hello carries the version; errors and skew reach the log (
   await t.opened();
   const hello = (await t.type("agents")) as Any;
   assert.match(hello.version, /^\d+\.\d+\.\d+/);
+  // No relay configured (the harness scrubs every relay/entitlement var): the
+  // hello says WHY, so the pair button can open the honest state instead of
+  // vanishing. Local viewports only — see relay-service.itest for the remote side.
+  assert.equal(hello.relay, undefined);
+  assert.equal(hello.relayOff, "unentitled");
 
   // A viewport-scoped error (bad cwd) reaches the terminal, timestamped —
   // the daemon log is what a stranger pastes into a bug report.

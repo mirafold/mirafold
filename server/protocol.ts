@@ -286,6 +286,14 @@ export type ViewportMsgBody =
       // relay viewport, or Linux without Zenity/KDialog).
       folderPicker?: boolean;
       relay?: { url: string; code: string; ws?: string };
+      // Optional/additive: WHY remote access is off, when it is — the pair
+      // button's honest state when there is no `relay` to draw a QR for.
+      // `unentitled` = nothing configured (the button offers Mirafold Pro);
+      // `opt-out` = MIRAFOLD_RELAY_URL=off; `malformed-url` = the explicit
+      // relay URL was refused at boot. LOCAL viewports only — a remote
+      // viewport is proof the relay is on; it gets neither field. Old
+      // clients strip it and keep no button.
+      relayOff?: "unentitled" | "opt-out" | "malformed-url";
       version?: string;
       // Optional/additive: this daemon runs on a license key and can manage
       // the subscription behind it — the "manage subscription" affordance's
