@@ -129,8 +129,13 @@ export class ReplayRing {
 
   /** Can a viewport that last saw `afterSeq` resume with a tail replay? Only
    *  if nothing after it has fallen off the ring, and it isn't from some
-   *  other life (a seq we never issued). */
+   *  other life (a seq we never issued). The window is flushed FIRST: the
+   *  replay that follows a yes flushes too, and at a cap that flush evicts
+   *  the oldest message — judged against the pre-flush edge, a cursor there
+   *  would resume past a hole the viewport never learns about (review
+   *  2026-08-29). */
   canResume(afterSeq: number): boolean {
+    this.flush();
     if (!this.tailResumeSafe) return false;
     if (!Number.isInteger(afterSeq) || afterSeq < 0 || afterSeq >= this.nextSeq) return false;
     const firstBuffered = this.buffer[0]?.seq ?? this.nextSeq;

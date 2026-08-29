@@ -67,3 +67,20 @@ test("offer merges same-lane deltas inside the window; anything else flushes fir
   assert.equal(last?.type === "text_delta" ? last.text : undefined, "late");
   assert.deepEqual(delivered.map((m) => m.seq), [1, 2, 3, 4, 5]);
 });
+
+test("review 2026-08-29: a cursor canResume accepts is one the replay can actually honor at a cap", () => {
+  // A delta still coalescing at the count cap: the flush inside replayAfter()
+  // pushes it and evicts the oldest retained message. The verdict must be
+  // judged against THAT ring, or the viewport keeps its transcript while
+  // silently missing the evicted message.
+  const { r } = ring({ countCap: 3, coalesceMs: 50 });
+  for (let i = 0; i < 4; i++) r.push({ type: "status", state: "thinking" });
+  assert.deepEqual(r.buffer.map((m) => m.seq), [2, 3, 4]);
+  r.offer({ type: "text_delta", text: "still coalescing" });
+  assert.equal(r.canResume(1), false, "seq 2 is about to fall off");
+  for (const after of [2, 3, 4]) {
+    if (!r.canResume(after)) continue;
+    const tail = r.replayAfter(after);
+    assert.equal(tail[0]?.seq, after + 1, `resume after ${after} must replay from ${after + 1}, no hole`);
+  }
+});
