@@ -6,6 +6,7 @@ import { MockSession } from "../adapters/mock";
 export const MOCK_PROMPTS = MockSession.prompts as Readonly<
   Record<
     | "markdown-review"
+    | "workspace-file-link"
     | "short-document"
     | "live-document"
     | "responsive-document"

@@ -522,6 +522,7 @@ export class MockSession implements AgentSession {
    */
   private static readonly SCENARIOS: readonly MockScenario[] = [
     { id: "markdown-review", prompt: "revise the selected workspace change", match: /revise the selected workspace change/i, play: (m) => m.playMarkdownReview() },
+    { id: "workspace-file-link", prompt: "link the workspace readme", match: /link the workspace readme/i, play: (m) => m.playWorkspaceFileLink() },
     { id: "short-document", prompt: "one sentence document", match: /one sentence document/i, play: (m) => m.playShortDocument() },
     { id: "live-document", prompt: "live document demo", match: /live document demo/i, play: (m) => m.playLiveDocument() },
     { id: "responsive-document", prompt: "responsive document stress", match: /responsive document stress/i, play: (m) => m.playResponsiveDocumentStress() },
@@ -1134,6 +1135,14 @@ export class MockSession implements AgentSession {
   private playMarkdownReview() {
     this.beginTurn();
     const d = this.streamText(codeReviewTemplate(), 200);
+    this.endTurn(d);
+  }
+
+  /** Deterministic transcript link for the browser proof that a workspace
+   *  path opens in Mirafold's Files presenter instead of a localhost tab. */
+  private playWorkspaceFileLink() {
+    this.beginTurn();
+    const d = this.streamText("Here is [README.md](README.md).", 120, 4);
     this.endTurn(d);
   }
 

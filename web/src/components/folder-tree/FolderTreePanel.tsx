@@ -28,6 +28,9 @@ type FolderTreePanelProps = {
   rootLabel?: string;
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
+  /** One transcript file-link activation. Its monotonic id makes repeated
+   *  clicks on the same path distinct without replaying it on panel reopen. */
+  fileOpenRequest?: { id: number; path: string } | null;
 };
 
 type FileViewController = ReturnType<typeof useFileView>;
@@ -158,6 +161,7 @@ export function FolderTreePanel({
   onSwitch,
   rootLabel,
   sessionKey,
+  fileOpenRequest,
 }: FolderTreePanelProps) {
   const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFolderTree({
     open,
@@ -223,6 +227,21 @@ export function FolderTreePanel({
   useEffect(() => {
     if (open && sessionKey) resetFile();
   }, [open, sessionKey]);
+
+  const handledFileOpenRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      !open ||
+      !sessionKey ||
+      !fileOpenRequest ||
+      handledFileOpenRequest.current === fileOpenRequest.id
+    ) {
+      return;
+    }
+    handledFileOpenRequest.current = fileOpenRequest.id;
+    setMaximized(false);
+    openFile(fileOpenRequest.path, undefined, "content");
+  }, [open, sessionKey, fileOpenRequest, openFile]);
 
   if (!open) return null;
 

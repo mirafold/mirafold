@@ -13,7 +13,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
 import type { ZoneMsg } from "../session-bus";
 import { RenderBlock, RenderBoundary } from "../registry/RenderBlock";
-import { mdOverrides, mdUrlTransform } from "../registry/Md";
+import { workspaceMarkdown } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { InputNavigationStop } from "./InputNavigation";
 import { ToolBlock } from "./ToolBlock";
@@ -62,14 +62,22 @@ const toolBlockProps = (call: {
 
 // Memoized on the entry's text: a settled block's markdown tree is reused
 // as-is while later entries stream.
-const AssistantTurn = memo(function AssistantTurn({ text }: { text: string }) {
+type AssistantMarkdown = ReturnType<typeof workspaceMarkdown>;
+
+const AssistantTurn = memo(function AssistantTurn({
+  text,
+  markdown,
+}: {
+  text: string;
+  markdown: AssistantMarkdown;
+}) {
   return (
     <div className="turn turn-assistant markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        urlTransform={mdUrlTransform}
-        components={mdOverrides}
+        urlTransform={markdown.urlTransform}
+        components={markdown.components}
       >
         {text}
       </ReactMarkdown>
@@ -288,6 +296,8 @@ type OutputZoneProps = {
   // so no scroll position can hide it.
   busy: boolean;
   focusPrompt: () => void;
+  workspaceRoot?: string;
+  onOpenWorkspaceFile?: (path: string) => void;
   onInputNavigationChange?: (state: InputNavigationState) => void;
 };
 
@@ -301,6 +311,8 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   sendAction,
   busy,
   focusPrompt,
+  workspaceRoot,
+  onOpenWorkspaceFile,
   onInputNavigationChange,
 }, navigationRef) {
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
@@ -324,6 +336,10 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   // true/false = the user's choice; absent = the row's own default.
   const [toolToggles, setToolToggles] = useState<ReadonlyMap<number, boolean>>(
     () => new Map(),
+  );
+  const assistantMarkdown = useMemo(
+    () => workspaceMarkdown(workspaceRoot, onOpenWorkspaceFile),
+    [workspaceRoot, onOpenWorkspaceFile],
   );
 
   useEffect(() => {
@@ -446,6 +462,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
         pinned={pinned}
         togglePin={togglePin}
         inputNavigation={inputNavigationFor(entry.id)}
+        assistantMarkdown={assistantMarkdown}
       />
     </RenderBoundary>
   );
@@ -603,6 +620,7 @@ function ZoneEntry({
   pinned,
   togglePin,
   inputNavigation,
+  assistantMarkdown,
 }: {
   entry: OutputZoneRow;
   toggleThinking: (id: number) => void;
@@ -613,6 +631,7 @@ function ZoneEntry({
   pinned: string[];
   togglePin: (renderId: string) => void;
   inputNavigation?: InputNavigationTarget;
+  assistantMarkdown: AssistantMarkdown;
 }) {
   if (entry.kind === "thinking") {
     return (
@@ -786,6 +805,6 @@ function ZoneEntry({
       <span className="turn-user-text">{entry.text}</span>
     </InputNavigationStop>
   ) : (
-    <AssistantTurn text={entry.text} />
+    <AssistantTurn text={entry.text} markdown={assistantMarkdown} />
   );
 }

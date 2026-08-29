@@ -116,9 +116,9 @@ const applyCwdHandoff = (
   }
   const rel = path.relative(root, landed);
   if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
-    e.bangCwd = landed;
+    registry.setBangCwd(e, landed);
   } else {
-    e.bangCwd = e.cwd;
+    registry.setBangCwd(e, e.cwd);
     registry.broadcast(e, { type: "notice", text: `Shell cwd was reset to ${e.cwd}` });
   }
 };
@@ -180,7 +180,7 @@ const startBang = (
   };
   // The bang cwd can vanish between commands (we cd'd somewhere the agent
   // then deleted) — fall back to the workspace root, not a failed spawn.
-  if (!existsSync(e.bangCwd)) e.bangCwd = e.cwd;
+  if (!existsSync(e.bangCwd)) registry.setBangCwd(e, e.cwd);
   const runCwd = e.bangCwd;
   registry.broadcast(e, { type: "bang_start", command, id, ...(silent ? { silent: true } : {}) });
   try {

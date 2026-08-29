@@ -1,6 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./registry";
@@ -106,6 +106,34 @@ test("prompt options are a replaceable unsequenced session snapshot, not transcr
       options: [{ trigger: "/", value: "/review", label: "review", kind: "command" }],
     },
   ]);
+  reg.end(entry.id);
+});
+
+test("a bang cwd commit is durable current metadata, not transcript history", () => {
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-cwd-store-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-cwd-root-"));
+  const child = path.join(root, "child");
+  mkdirSync(child);
+  const store = new SessionCheckpointStore(storeDir);
+  const reg = new SessionRegistry({
+    backend: MOCK_BACKEND,
+    deltaCoalesceMs: 0,
+    store,
+  });
+  const entry = reg.create({ cwd: root });
+  openSessions.push({ reg, id: entry.id });
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (msg) => seen.push(msg));
+
+  reg.setBangCwd(entry, child);
+
+  assert.equal(entry.bangCwd, child);
+  assert.deepEqual(seen.filter((msg) => msg.type === "shell_cwd"), [
+    { type: "shell_cwd", cwd: child },
+  ]);
+  assert.equal(entry.ring.buffer.length, 0);
+  assert.equal(entry.ring.nextSeq, 1);
+  assert.equal(store.loadAll().sessions.get(entry.id)?.bangCwd, child);
   reg.end(entry.id);
 });
 

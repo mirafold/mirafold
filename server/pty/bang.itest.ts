@@ -163,7 +163,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   await client.opened();
   await client.type("agents");
   client.send({ type: "create", agent: "claude-code", cwd: root } as never);
-  await client.type("session_created");
+  const created = (await client.type("session_created")) as Any;
+  assert.equal(created.shellCwd, root);
 
   const bang = async (id: string, command: string) => {
     client.send({ type: "bang", id, command } as never);
@@ -179,6 +180,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   // ever typed in this test, a turn follows each bang — the transcript
   // reached the agent immediately (the mock answers every pushPrompt).
   await bang("cwd1", "cd child");
+  const inside = (await client.type("shell_cwd")) as Any;
+  assert.equal(inside.cwd, path.join(root, "child"));
   await client.type("turn_end", 30_000);
   await bang("cwd2", "pwd");
   assert.ok(outputOf("cwd2").includes(path.join(root, "child")), "cd did not persist");
@@ -186,6 +189,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
 
   // Escaping above the workspace is undone and announced, like the terminal.
   await bang("cwd3", "cd ../..");
+  const reset = (await client.type("shell_cwd")) as Any;
+  assert.equal(reset.cwd, root);
   const notice = (await client.type("notice", 20_000)) as Any;
   assert.equal(notice.text, `Shell cwd was reset to ${root}`);
   await client.type("turn_end", 30_000);
@@ -221,6 +226,8 @@ test("a silent `!!` bang runs, shows, replays and persists its cd — and the ag
   const start = (await client.type("bang_start")) as Any;
   assert.equal(start.silent, true);
   await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "s1", "bang_end s1", 20_000);
+  const moved = (await client.type("shell_cwd")) as Any;
+  assert.equal(moved.cwd, path.join(root, "child"));
   assert.match(outputOf("s1"), /shell-only/);
   // …and the mock — which answers EVERY pushPrompt with a turn — stays
   // silent, because no prompt was ever pushed.
@@ -237,7 +244,11 @@ test("a silent `!!` bang runs, shows, replays and persists its cd — and the ag
   await client.type("turn_end", 30_000);
 
   // A late viewport replays the silent row with its flag intact.
-  const { client: late } = await attachSession(bd.port, (client.received as Any[]).find((m) => m.type === "session_created")!.sessionId);
+  const { client: late, created: lateCreated } = await attachSession(
+    bd.port,
+    (client.received as Any[]).find((m) => m.type === "session_created")!.sessionId,
+  );
+  assert.equal(lateCreated.shellCwd, path.join(root, "child"));
   const replayed = (await late.waitFor(
     (m) => m.type === "bang_start" && (m as Any).id === "s1",
     "replayed silent bang_start",

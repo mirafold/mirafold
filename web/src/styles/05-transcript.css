@@ -309,12 +309,23 @@
   margin-top: 0;
 }
 
-.markdown a {
+.markdown :is(a, .markdown-file-link) {
   color: var(--info);
 }
 
-.response-document .markdown a {
+.response-document .markdown :is(a, .markdown-file-link) {
   text-underline-offset: 0.16em;
+}
+
+.markdown-file-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .markdown code {

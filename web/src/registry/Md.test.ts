@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
-import { Md, fenceLanguage, mdOverrides, nodeText } from "./Md";
+import { Md, fenceLanguage, mdOverrides, nodeText, workspaceMarkdown } from "./Md";
 
 const render = (text: string) => renderToStaticMarkup(createElement(Md, { text }));
 
@@ -20,6 +20,39 @@ test("a bare URL autolinks the same way", () => {
     render("Open http://192.168.1.50:8081 on your phone."),
     /<a href="http:\/\/192\.168\.1\.50:8081"/,
   );
+});
+
+test("a workspace file link becomes a Files action while ordinary web links stay anchors", () => {
+  const markdown = workspaceMarkdown("/home/kyle/a project", () => {});
+  const html = renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      { urlTransform: markdown.urlTransform, components: markdown.components },
+      "[file](</home/kyle/a project/src/app.ts:12>) [web](https://example.test/docs)",
+    ),
+  );
+  assert.match(
+    html,
+    /<button type="button" class="markdown-file-link" title="Open src\/app\.ts in Files">file<\/button>/,
+  );
+  assert.match(
+    html,
+    /<a href="https:\/\/example\.test\/docs" target="_blank" rel="noopener noreferrer">web<\/a>/,
+  );
+});
+
+test("a Windows workspace file survives the URL gate and becomes a Files action", () => {
+  const markdown = workspaceMarkdown("C:\\Users\\Kyle\\project", () => {});
+  const html = renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      { urlTransform: markdown.urlTransform, components: markdown.components },
+      "[file](C:/Users/Kyle/project/src/app.ts:7)",
+    ),
+  );
+  assert.match(html, /class="markdown-file-link"/);
+  assert.match(html, /title="Open src\/app\.ts in Files"/);
+  assert.ok(!html.includes("href="), `workspace file remained a browser href: ${html}`);
 });
 
 // Expo Go's deep-link schemes carry a mobile app built in a session to the

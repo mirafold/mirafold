@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { CodeHead } from "./Code";
+import { workspacePathFromHref } from "../workspace-file-link";
 
 // remark-gfm's task-list checkbox (`- [x] thing`) renders as a bare
 // `<input disabled>` with no accessible name — a screen reader announces
@@ -94,15 +95,20 @@ function ScrollableMarkdownTable({
 // The markdown renderer overrides shared with OutputZone's turn text: anchors
 // get the safety rule (links open in a new tab, and react-markdown never emits
 // raw HTML from its source), and task-list items get an accessible checkbox label.
+type MarkdownAnchorProps = ComponentProps<"a"> & { node?: unknown };
+
+function MarkdownAnchor({ node: _node, href, children, ...props }: MarkdownAnchorProps) {
+  return href ? (
+    <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
 export const mdOverrides = {
-  a: ({ node: _node, href, children, ...props }: ComponentProps<"a"> & { node?: unknown }) =>
-    href ? (
-      <a {...props} href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    ),
+  a: (props: MarkdownAnchorProps) => <MarkdownAnchor {...props} />,
   code: ({ node: _node, className, children, ...props }: ComponentProps<"code"> & { node?: unknown }) => (
     <code
       {...props}
@@ -134,6 +140,51 @@ export const mdOverrides = {
     return <li {...props}>{children}</li>;
   },
 };
+
+/**
+ * Transcript Markdown gets one shell-owned addition to the shared renderer:
+ * links naming a file in this session open Mirafold's Files presenter. The
+ * same href remains subject to mdUrlTransform unless it is a proven workspace
+ * path; that exception is what lets a Windows drive path reach the component
+ * instead of being mistaken for an unknown URL scheme.
+ */
+export function workspaceMarkdown(
+  workspaceRoot: string | undefined,
+  onOpenWorkspaceFile: ((path: string) => void) | undefined,
+) {
+  if (!workspaceRoot || !onOpenWorkspaceFile) {
+    return { components: mdOverrides, urlTransform: mdUrlTransform };
+  }
+  return {
+    urlTransform: (url: string) =>
+      workspacePathFromHref(url, workspaceRoot) ? url : mdUrlTransform(url),
+    components: {
+      ...mdOverrides,
+      a: ({ node: _node, href, children, className, title, ...props }: MarkdownAnchorProps) => {
+        const path = workspacePathFromHref(href, workspaceRoot);
+        return path ? (
+          <button
+            type="button"
+            className={["markdown-file-link", className].filter(Boolean).join(" ")}
+            title={title ?? `Open ${path} in Files`}
+            onClick={() => onOpenWorkspaceFile(path)}
+          >
+            {children}
+          </button>
+        ) : (
+          <MarkdownAnchor
+            {...props}
+            className={className}
+            title={title}
+            href={href}
+          >
+            {children}
+          </MarkdownAnchor>
+        );
+      },
+    },
+  };
+}
 
 const unwrapParagraph = {
   p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,

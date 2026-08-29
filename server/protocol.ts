@@ -232,6 +232,9 @@ export type ViewportMsgBody =
   | {
       type: "session_created";
       sessionId: string;
+      // The mutable working directory used by the next `!`/`!!` command.
+      // Optional for older daemons; absent means the immutable session cwd.
+      shellCwd?: string;
       cwd: string;
       agent?: AgentName;
       // The engine's model label as known at attach time — the status bar
@@ -244,6 +247,11 @@ export type ViewportMsgBody =
       demo?: boolean;
       fallback?: boolean;
     }
+  // Current bang-shell state for already-attached viewports. This is a
+  // replaceable snapshot, not transcript history: it is never sequenced,
+  // replayed, or persisted as a message. A fresh attach gets the same value
+  // from session_created.shellCwd above.
+  | { type: "shell_cwd"; cwd: string }
   // On connect, the server advertises which agents this daemon can run and
   // which have credentials (`live`) — the agent picker's source. No
   // agent is assumed; `default` is only a hint for pre-selection.
