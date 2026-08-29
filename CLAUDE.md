@@ -42,8 +42,10 @@ not reuse them.
   without it). A local `prepare-commit-msg` hook appends it automatically —
   if a commit somehow lacks it, `git rebase --signoff` repairs the branch.
 - A feature pull request stays open even after its checks pass. Complete the
-  requested review and refactor work there, then ask Kyle explicitly whether
-  to merge when it appears ready. Opening the pull request or getting green
+  requested review and refactor work there, read the automated review
+  comments the bots post on every PR and fix the legitimate ones (the
+  procedure is in `docs/RELEASING.md`, "Three mechanics to know"), then ask
+  Kyle explicitly whether to merge when it appears ready. Opening the pull request or getting green
   checks is not merge approval; merge only after Kyle says yes.
 - `docs/RELEASING.md` is the canonical branch and release runbook.
 - **No handoff files in the tree.** Session state belongs in memory and in
