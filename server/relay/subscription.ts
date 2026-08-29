@@ -17,7 +17,7 @@
 
 import { createLogger } from "../log";
 import { inflightSlot, minInterval } from "../throttle";
-import { DEFAULT_ENTITLEMENT_URL, MAX_REASON_CHARS, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
+import { MAX_REASON_CHARS, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
 
 const log = createLogger("billing");
 

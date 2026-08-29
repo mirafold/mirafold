@@ -5,10 +5,9 @@
 import { test, before, after } from "node:test";
 import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
-import path from "node:path";
 import { THEMES } from "../../web/src/themes/manifest";
 import { type Browser, type Locator, type Page } from "playwright-core";
-import { launchChrome, withFreshMockSession, typePrompt, assertAxeClean, noSideScroll, settled } from "./e2e-harness";
+import { launchChrome, withFreshMockSession, typePrompt, assertAxeClean, noSideScroll } from "./e2e-harness";
 
 let browser: Browser;
 before(async () => {
@@ -315,7 +314,7 @@ test("LD.2: document measure, hierarchy, rich lane, local overflow, and short-an
 test("LD.3: response documents reflow across folder tree, file view, pin dock, and narrow desktop", async () => {
   await withFreshMockSession(browser, "live-document-responsive-18c4", async (p) => {
     await p.setViewportSize({ width: 1440, height: 1000 });
-    const prompt = await settleLiveDocument(p);
+    await settleLiveDocument(p);
 
     const measure = () => readResponsiveDocumentLayout(p);
 
