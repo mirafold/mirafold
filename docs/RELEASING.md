@@ -37,10 +37,12 @@ Three mechanics to know:
   plus `/issues/<n>/comments` and `/pulls/<n>/reviews`), verify each claim
   against the code — a reviewer's failure scenario is a hypothesis, not a
   finding, until it is reproduced — and fix the legitimate ones with a test
-  per class. On a release PR the fixes go to a `fix/*` branch off `next`,
-  merge into `next`, and `next` merges into the release branch; never
-  commit them on `release/*` directly, or staging only receives them via
-  the post-release sync. Adopted 2026-08-29 (v0.6.0: ten findings, all
+  per class. On a release PR the fixes go to a `fix/*` branch off `next`
+  and merge into `next` (so staging has them regardless of the release);
+  then merge **that fix branch** — never all of `next` — into the release
+  branch, so work that landed on `next` after the cut cannot ride into
+  production unselected. Never commit fixes on `release/*` directly, or
+  staging only receives them via the post-release sync. Adopted 2026-08-29 (v0.6.0: ten findings, all
   legitimate, first seen after the release PR was already green).
 - **A `v*` tag publishes only `main`'s current tip.** The release workflow's
   first step fails any tag pointing elsewhere (a feature branch, an old `main`
@@ -66,9 +68,9 @@ Three mechanics to know:
    version, so a missing bump kills the publish at the last step.
 4. **PR `release/x.y.z` → `main`.** When the checks are green, read the
    automated review comments on it; a legitimate finding goes through
-   `next` first (mechanic above), and the release branch takes the refreshed
-   `next` with `git merge origin/next` — the PR updates itself and the checks
-   re-run. Merge when green with the findings addressed.
+   `next` first (mechanic above), and the release branch takes the fix
+   branch with `git merge origin/fix/<name>` — the PR updates itself and the
+   checks re-run. Merge when green with the findings addressed.
 5. **Tag and push — this is the publish, and it's a human act** (the signing
    key lives only on the release manager's machine):
 
