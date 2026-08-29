@@ -20,13 +20,30 @@ rebuilds on every push to `main`). Flow b keeps them in lockstep by making a
 | `feature/*`, `fix/*`, `refactor/*` | working branches, cut from `next` | none — name them anything, force-push freely |
 | `release/x.y.z` | short-lived release prep, cut from `next` (or from `main` for a hotfix) | none — it exists for hours |
 
-Two mechanics to know:
+Three mechanics to know:
 
 - **Every commit headed for a PR needs a DCO sign-off** — commit with
   `git commit -s`. The DCO check is required on both protected branches.
 - **An open or green feature PR is not approval to merge it.** Keep the PR
   open through the requested review and refactor passes. When it appears
   ready, ask Kyle explicitly whether to merge; merge only after he approves.
+- **Every PR gets automated review comments — read them before any merge.**
+  Two bots review each PR on open: CodeQL's code-quality scan (inline
+  "unused import" style notes) and the Codex reviewer (inline P1/P2 findings
+  with a claimed failure). They post minutes after the PR opens, so a
+  PR that "went green" can still be carrying findings. Before asking for
+  merge approval on a feature PR, and before merging a release PR, pull
+  every comment (`gh api repos/mirafold/mirafold/pulls/<n>/comments`,
+  plus `/issues/<n>/comments` and `/pulls/<n>/reviews`), verify each claim
+  against the code — a reviewer's failure scenario is a hypothesis, not a
+  finding, until it is reproduced — and fix the legitimate ones with a test
+  per class. On a release PR the fixes go to a `fix/*` branch off `next`
+  and merge into `next` (so staging has them regardless of the release);
+  then merge **that fix branch** — never all of `next` — into the release
+  branch, so work that landed on `next` after the cut cannot ride into
+  production unselected. Never commit fixes on `release/*` directly, or
+  staging only receives them via the post-release sync. Adopted 2026-08-29 (v0.6.0: ten findings, all
+  legitimate, first seen after the release PR was already green).
 - **A `v*` tag publishes only `main`'s current tip.** The release workflow's
   first step fails any tag pointing elsewhere (a feature branch, an old `main`
   commit). The tag trigger itself is branch-blind by platform design; the
@@ -37,8 +54,10 @@ Two mechanics to know:
 
 1. **Feature work**: branch off `next`, commit with `-s`, and open a PR into
    `next`. Keep implementation follow-ups and refactors on that open PR.
-   Once the work and required checks appear ready, ask Kyle explicitly for
-   merge approval; leave the PR open until he gives it. Repeat until `next`
+   Once the work and required checks appear ready, read the automated
+   review comments (mechanic above) and address the legitimate ones on the
+   same PR; then ask Kyle explicitly for merge approval and leave the PR
+   open until he gives it. Repeat until `next`
    holds the release you want.
 2. **Cut the release branch**: `git switch -c release/x.y.z origin/next`.
    On it, regenerate the bundled-license notices and commit any change —
@@ -47,7 +66,11 @@ Two mechanics to know:
 3. **Bump the version** in `package.json` to `x.y.z` on that branch — commit
    `release: vx.y.z` (signed off). npm refuses to republish an existing
    version, so a missing bump kills the publish at the last step.
-4. **PR `release/x.y.z` → `main`**, merge on green.
+4. **PR `release/x.y.z` → `main`.** When the checks are green, read the
+   automated review comments on it; a legitimate finding goes through
+   `next` first (mechanic above), and the release branch takes the fix
+   branch with `git merge origin/fix/<name>` — the PR updates itself and the
+   checks re-run. Merge when green with the findings addressed.
 5. **Tag and push — this is the publish, and it's a human act** (the signing
    key lives only on the release manager's machine):
 

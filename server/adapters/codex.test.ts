@@ -317,6 +317,39 @@ test("happy stream: full notification→WireMsg mapping, exactly one turn_end", 
   s.close();
 });
 
+test("review 2026-08-29: a resumed thread's first turn reports only its own tokens", async () => {
+  // After a daemon restart the mapper is new but `total` is the thread's
+  // cumulative count (the rollout persists it) — the whole pre-restart
+  // history, which the registry has already restored from its checkpoint.
+  // The event's per-response `last` is the turn's own figure; it sums across
+  // the turn's responses.
+  const resumed = (total: [number, number, number], last: [number, number, number]): Notification => [
+    "thread/tokenUsage/updated",
+    {
+      tokenUsage: {
+        total: { inputTokens: total[0], outputTokens: total[1], reasoningOutputTokens: total[2] },
+        last: { inputTokens: last[0], outputTokens: last[1], reasoningOutputTokens: last[2] },
+      },
+    },
+  ];
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [resumed([900_100, 40_010, 5_005], [100, 10, 5]), resumed([900_300, 40_040, 5_015], [200, 30, 10]), DONE],
+    [resumed([900_350, 40_045, 5_016], [50, 5, 1]), DONE],
+  );
+  s.pushPrompt("one");
+  await awaitTurnEnd(1);
+  s.pushPrompt("two");
+  await awaitTurnEnd(2);
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "usage").map((m) => [m.inputTokens, m.outputTokens]),
+    [
+      [300, 55],
+      [50, 6],
+    ],
+  );
+  s.close();
+});
+
 test("usage is per turn: the second turn reports only its own tokens", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([usage(100, 10), DONE], [usage(160, 25, 5), DONE]);
   s.pushPrompt("one");

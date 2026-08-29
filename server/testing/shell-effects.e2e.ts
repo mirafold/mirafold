@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
-import { launchChrome, withFreshMockSession, assertAxeClean, settled } from "./e2e-harness";
+import { launchChrome, withFreshMockSession, assertAxeClean } from "./e2e-harness";
 
 let browser: Browser;
 before(async () => {
