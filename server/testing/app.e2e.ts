@@ -1437,6 +1437,35 @@ test("!! echo — the silent bang shows its `!!` strip and output, and the agent
   assert.equal(await page.locator(".stop-btn").count(), 0, "no turn is running");
 }));
 
+test("!! cd updates only the prompt cwd and survives a viewport reload", () => withFreshMockSession(browser, TOKEN, async (page) => {
+  const crumb = page.locator(".prompt-cwd");
+  await crumb.waitFor();
+  const rootTitle = await crumb.getAttribute("title");
+  const statusRoot = await page.locator(".sb-cwd").getAttribute("title");
+  assert.ok(rootTitle);
+  assert.ok(statusRoot);
+  const shellRoot = rootTitle.split(" — click to hide")[0];
+  const expectedTitle = `${shellRoot}/web — click to hide (the caret brings it back)`;
+
+  await page.locator("textarea").fill("!!cd web");
+  await page.keyboard.press("Enter");
+  await page.locator(".bang-block").last().locator(".bang-state", { hasText: "running" }).waitFor({ state: "detached" });
+  await page.waitForFunction(
+    (title) => document.querySelector(".prompt-cwd")?.getAttribute("title") === title,
+    expectedTitle,
+  );
+  assert.equal(await crumb.getAttribute("title"), expectedTitle);
+  assert.equal(
+    await page.locator(".sb-cwd").getAttribute("title"),
+    statusRoot,
+    "the immutable session root must not follow the bang shell",
+  );
+
+  await page.reload();
+  await page.locator(".prompt-cwd").waitFor();
+  assert.equal(await page.locator(".prompt-cwd").getAttribute("title"), expectedTitle);
+}));
+
 test("entering a session puts the caret in the prompt box — no click first", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");
@@ -1636,6 +1665,34 @@ const onFolderTreeFixture = async (body: () => Promise<void>) => {
     await page.waitForSelector("textarea", { timeout: 30_000 });
   }
 };
+
+test("E.2f: a transcript file link opens the file in Mirafold, never a localhost tab", () => withFreshMockSession(browser, "e2e-file-link-9c2f", async (p) => {
+  await installFsRecorder(p);
+  await typePrompt(p, MOCK_PROMPTS["workspace-file-link"]);
+  const link = p.locator(".markdown-file-link", { hasText: "README.md" }).last();
+  await link.waitFor({ timeout: 15_000 });
+  await p.waitForSelector(".activity-line", { state: "detached", timeout: 15_000 });
+
+  const sessionUrl = p.url();
+  const pageCount = p.context().pages().length;
+  assert.equal(await link.evaluate((element) => element.tagName), "BUTTON");
+  assert.equal(await link.getAttribute("href"), null, "the local file still has a browser href");
+
+  await link.click();
+  await p.waitForSelector(".folder-tree-view .fv-content", { timeout: 15_000 });
+  assert.equal(await p.locator(".folder-tree-file-name").innerText(), "README.md");
+  assert.match(await p.locator(".folder-tree-view .fv-content").innerText(), /Mirafold/);
+  assert.equal(p.url(), sessionUrl, "the session navigated when the file link was clicked");
+  assert.equal(
+    p.context().pages().length,
+    pageCount,
+    "the file link opened a second browser page",
+  );
+  assert.ok(
+    (await fsSent(p)).some((message) => message.type === "fs_read" && message.path === "README.md"),
+    "the click never requested README.md through the Files reader",
+  );
+}));
 
 test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", () => onFolderTreeFixture(async () => {
   await page.locator(".ab-folder-tree").click();

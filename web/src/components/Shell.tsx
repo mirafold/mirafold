@@ -99,6 +99,7 @@ export function Shell() {
   const [meta, setMeta] = useState<{
     sessionId?: string;
     cwd?: string;
+    shellCwd?: string;
     agent?: AgentName;
     model?: string;
     demo?: boolean;
@@ -156,6 +157,8 @@ export function Shell() {
   const folderTreeOpen = auxiliary === "folder-tree";
   const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
+  const fileOpenRequestId = useRef(0);
+  const [fileOpenRequest, setFileOpenRequest] = useState<{ id: number; path: string } | null>(null);
   const [promptDraft, setPromptDraft] = useState<PromptDraft>();
   const promptDraftId = useRef(0);
   const createReviewDraft = useCallback((text: string) => {
@@ -181,6 +184,12 @@ export function Shell() {
   const switchAuxiliary = (surface: WorkspaceSurface) => {
     if (auxiliary !== surface) toggleAuxiliary(surface);
   };
+  const openTranscriptFile = useCallback((path: string) => {
+    fileOpenRequestId.current += 1;
+    setFileOpenRequest({ id: fileOpenRequestId.current, path });
+    setReviewPromptVisible(false);
+    setAuxiliary("folder-tree");
+  }, []);
 
   // ── The theme and the settings card ─────────────────────────────────────
   // Shell-owned UI state (use-theme-slots.ts); the pill itself is two
@@ -267,12 +276,22 @@ export function Shell() {
         } else if (m.type === "prompt_options") {
           setPromptOptions(m.options);
         } else if (m.type === "session_created") {
-          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
+          setFileOpenRequest(null);
+          setMeta({
+            sessionId: m.sessionId,
+            cwd: m.cwd,
+            shellCwd: m.shellCwd ?? m.cwd,
+            agent: m.agent,
+            model: m.model,
+            demo: m.demo,
+          });
           setNotices((n) => ({
             ...n,
             agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
+        } else if (m.type === "shell_cwd") {
+          setMeta((current) => ({ ...current, shellCwd: m.cwd }));
         } else if (m.type === "refused") {
           // No session — the relay refused this subscription-backed
           // attach. Show the reason (also surfaced in the agent picker if we're there).
@@ -483,6 +502,7 @@ export function Shell() {
                 onSwitch={switchAuxiliary}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
+                fileOpenRequest={fileOpenRequest}
               />
               <DiffPanel
                 open={diffPanelOpen && Boolean(meta.sessionId)}
@@ -504,6 +524,8 @@ export function Shell() {
                 sendAction={bus.sendAction}
                 busy={busy}
                 focusPrompt={focusPrompt}
+                workspaceRoot={meta.cwd}
+                onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
               />
             </div>
@@ -542,7 +564,7 @@ export function Shell() {
               onSend={send}
               busy={busy}
               onInterrupt={interrupt}
-              cwd={tildify(meta.cwd, daemonInfo.home)}
+              cwd={tildify(meta.shellCwd ?? meta.cwd, daemonInfo.home)}
               options={promptOptions}
               textareaRef={promptRef}
               containerRef={promptContainerRef}

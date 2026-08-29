@@ -204,6 +204,7 @@ export function openConnection(
       type: "session_created",
       sessionId: e.id,
       cwd: e.cwd,
+      shellCwd: e.bangCwd,
       agent: e.agent,
       model: e.session.modelName,
       ...(resumed ? { resumed: true } : {}),

@@ -37,7 +37,7 @@ type PromptBoxProps = {
   onSend: (text: string) => void;
   busy: boolean;
   onInterrupt: () => void;
-  // The session's working dir, shown at the prompt like a terminal's
+  // The bang shell's current working dir, shown at the prompt like a terminal's
   // `~/Projects/foo ❯`. Shell-owned — rendered here, never by agent output,
   // so it can't be spoofed.
   cwd?: string;

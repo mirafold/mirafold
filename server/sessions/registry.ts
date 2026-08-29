@@ -498,6 +498,16 @@ export class SessionRegistry {
     entry.ring.offer(msg);
   }
 
+  /** Commit a bang cwd already confined by bang-handlers.ts, checkpoint the
+   * current shell state, and tell attached viewports without putting mutable
+   * terminal metadata into transcript history. */
+  setBangCwd(entry: SessionEntry, cwd: string) {
+    if (this.entries.get(entry.id) !== entry || entry.bangCwd === cwd) return;
+    entry.bangCwd = cwd;
+    this.checkpoint(entry);
+    this.fanout(entry, { type: "shell_cwd", cwd });
+  }
+
   private deliver(entry: SessionEntry, msg: SessionMsg) {
     const log = createLogger(`session ${entry.id}`);
     // The likeliest live failures (bad key, engine died, CLI missing)

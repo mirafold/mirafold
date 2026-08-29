@@ -103,11 +103,13 @@ const WIRE: WireByType = {
     type: "session_created",
     sessionId: "s1",
     cwd: "/home/u/proj",
+    shellCwd: "/home/u/proj/src",
     agent: "claude-code",
     resumed: false,
     demo: false,
     fallback: false,
   },
+  shell_cwd: { type: "shell_cwd", cwd: "/home/u/proj/src" },
   agents: {
     type: "agents",
     agents: [

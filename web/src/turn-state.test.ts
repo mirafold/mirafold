@@ -132,6 +132,7 @@ test("a no-op frame returns the previous state object; a real change returns a n
   const ignored: ZoneMsg[] = [
     { type: "render", component: "card", props: {}, id: "r1" },
     { type: "bang_output", data: "…", id: "b1" },
+    { type: "shell_cwd", cwd: "/work/child" },
     { type: "thinking_delta", text: "still thinking" },
     { type: "status", state: "thinking" },
     { type: "usage", inputTokens: 1, outputTokens: 1 },
