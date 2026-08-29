@@ -137,9 +137,10 @@ test("review 2026-08-29: the hosted relay spelled out by hand keeps the hosted s
   assert.deepEqual(byHand, resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_x" }));
   assert.equal(byHand.kind === "dial" && byHand.appUrl, DEFAULT_APP_URL);
   assert.equal(presentsOnEntitlement(byHand, {}), true);
-  // Same origin, any spelling: a path or trailing slash still means hosted.
-  const withPath = resolveRelayPlan({ MIRAFOLD_RELAY_URL: `${DEFAULT_RELAY_URL}/`, MIRAFOLD_LICENSE_KEY: "mf_x" });
-  assert.equal(withPath.kind === "dial" && withPath.source, "default");
+  // Same origin, any spelling: a trailing slash still means hosted — and the
+  // dial uses the canonical URL, because the client appends /daemon verbatim.
+  const withSlash = resolveRelayPlan({ MIRAFOLD_RELAY_URL: `${DEFAULT_RELAY_URL}/`, MIRAFOLD_LICENSE_KEY: "mf_x" });
+  assert.deepEqual(withSlash, byHand);
   // And without an entitlement it stands down like the bake does — dialing
   // the gated relay unentitled is a guaranteed refusal either way.
   assert.deepEqual(resolveRelayPlan({ MIRAFOLD_RELAY_URL: DEFAULT_RELAY_URL }), { kind: "off", reason: "unentitled-default" });

@@ -96,7 +96,10 @@ export function resolveRelayPlan(env: {
   if (!entitled) return { kind: "off", reason: "unentitled-default" };
   return {
     kind: "dial",
-    url: raw || DEFAULT_RELAY_URL,
+    // The canonical spelling, not the user's: the dial appends DAEMON_PATH
+    // verbatim and the relay routes only the exact path — a trailing slash
+    // would dial //daemon and never connect.
+    url: DEFAULT_RELAY_URL,
     origin: hostedOrigin,
     source: "default",
     appUrl: appUrl ?? DEFAULT_APP_URL,
