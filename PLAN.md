@@ -2678,6 +2678,19 @@ is one complete single-pass `$next` chunk.
   phone touch/hardware-keyboard ownership, live-turn endpoint focus, and live
   provider-picker key arbitration, plus phone modal/workspace focus layering.
   The regressions pin those sibling paths.
+- [ ] **IH.F — a load-sensitive Tier-3 flake (test-audit 2026-08-30, open).**
+  `input-navigation.e2e.ts` "phone discloses temporary navigation directly
+  above the submit arrow" failed once in a full `yarn test:e2e` run at the
+  assertion "endpoint premise did not leave phone focus on the body"
+  (`document.activeElement === document.body` after the older-arrow reached
+  its endpoint), then passed 3/3 in isolation (13 s each) with no code
+  change between runs. Nothing in the run touched that surface (the run was
+  the cockpit-panel feature + audit). Unfixed here because it is not the
+  feature's test and the failure was not reproduced; the next owner should
+  characterize it under load (`--test-concurrency=1` is already set, so the
+  pressure is the machine, not parallel tests) before changing either the
+  test or `use-input-navigation.ts`. A flake that stays teaches the team to
+  ignore red — fix or root-cause it, don't retry it.
   The review also aligned the live-tail documentation and made the replay test
   remove its own temporary session directory.
   Verified before the final phone focus-layer correction: focused model/tail
