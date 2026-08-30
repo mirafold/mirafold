@@ -61,6 +61,12 @@ const daemon = spawn(process.execPath, [path.join(PKG, "dist-server", "index.js"
     GOOGLE_API_KEY: "",
     CLAUDE_CONFIG_DIR: path.join(ws, ".no-claude"),
     CODEX_HOME: path.join(ws, ".no-codex"),
+    // The daemon's OWN state, not only the engines': with the release
+    // manager's real session store visible, the packaged daemon shows the
+    // session list instead of the agent picker and the first check times
+    // out (v0.6.0, 2026-08-30). Same isolation the itest harness applies.
+    MIRAFOLD_SESSION_DIR: path.join(ws, ".mirafold-sessions"),
+    MIRAFOLD_LOG_FILE: "",
     // Off, or agent picker gains a second step (the N backend picker) on any
     // machine that happens to be running Ollama — which is not what this pass
     // is measuring, and would make it pass or fail by accident.

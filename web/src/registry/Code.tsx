@@ -103,7 +103,17 @@ export function Code({ code, lang, filename, highlight }: ComponentProps<"code">
         const lines = splitNodeLines(children);
         const hl = highlightedLines(highlight, lines.length);
         return (
-          <code className={className}>
+          <code
+            className={className}
+            // The body scrolls (max-height, long lines); a scroll region with
+            // no tab stop is unreachable by keyboard — axe
+            // scrollable-region-focusable, serious. Same rule as the prose
+            // fence in Md.tsx, so both code surfaces read as one object —
+            // but unconditional here: every <code> in a painting IS the
+            // body (Md's hljs check only tells fences from inline code, and
+            // a painting with no lang gets no hljs class at all).
+            tabIndex={0}
+          >
             {lines.map((segment, i) => (
               <span
                 key={i}
