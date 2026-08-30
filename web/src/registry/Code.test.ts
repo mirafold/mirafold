@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement, isValidElement, type ReactElement } from "react";
-import { codeFence, highlightedLines, splitNodeLines } from "./Code";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Code, codeFence, highlightedLines, splitNodeLines } from "./Code";
 
 test("codeFence: the fence always outruns any backtick run inside the code", () => {
   assert.equal(codeFence("const a = 1;", "ts"), "```ts\nconst a = 1;\n```");
@@ -57,4 +58,17 @@ test("splitNodeLines: a token element spanning a newline is cut into per-line cl
   assert.equal(secondHalf.props.className, "hljs-comment");
   assert.equal(secondHalf.props.children, "b */");
   assert.equal(y, "y");
+});
+
+test("the code painting's scrolling body is keyboard-reachable (axe scrollable-region-focusable)", () => {
+  // The body is a scroll container (max-height + long lines). Like the prose
+  // fence in Md.tsx, the highlighted <code> carries the tab stop so a keyboard
+  // user can reach and scroll it; the follow-tail e2e failed axe on exactly
+  // this element whenever the mock dealt a tall code painting (2026-08-29).
+  const html = renderToStaticMarkup(createElement(Code, { code: "const a = 1;\n".repeat(40), lang: "ts" }));
+  assert.match(html, /<pre class="rc-code-body"><code class="hljs language-ts" tabindex="0">/);
+  // No lang → bare fence → no hljs class; the body still scrolls and still
+  // needs the tab stop (Codex review on PR #74).
+  const plain = renderToStaticMarkup(createElement(Code, { code: "x\n".repeat(40) }));
+  assert.match(plain, /<pre class="rc-code-body"><code tabindex="0">/);
 });

@@ -19,17 +19,21 @@ after(async () => {
 const bottomGap = (page: Page) =>
   page.locator(".output-zone").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
 
-/** Enough transcript to overflow the viewport (template turns paint a
- *  component each, so three is plenty at either geometry). */
+/** Enough transcript to overflow the viewport. The mock deals replies from a
+ *  shuffled deck with randomized details, so a fixed three turns can come up
+ *  short (it did, 2026-08-29: overflow=0 on a compact draw); send until the
+ *  overflow is really there, bounded by one full deck. */
 const fillTranscript = async (page: Page, send: (text: string) => Promise<void>) => {
-  for (const n of [1, 2, 3]) {
+  const overflow = () =>
+    page.locator(".output-zone").evaluate((el) => el.scrollHeight - el.clientHeight);
+  let n = 0;
+  while (n < 6 && (n < 3 || (await overflow()) <= 300)) {
+    n += 1;
     await send(`tell me about the fold, take ${n}`);
     await waitTurnIdle(page);
   }
-  const overflow = await page
-    .locator(".output-zone")
-    .evaluate((el) => el.scrollHeight - el.clientHeight);
-  assert.ok(overflow > 300, `the transcript must overflow for this proof (overflow=${overflow})`);
+  const got = await overflow();
+  assert.ok(got > 300, `the transcript must overflow for this proof (overflow=${got} after ${n} turns)`);
 };
 
 const wheelUpOverTranscript = async (page: Page, dy: number) => {
