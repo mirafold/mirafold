@@ -15,6 +15,7 @@ import { paintTabStatus } from "../tab-status";
 import { agentLabel } from "../agents-meta";
 import { createDomNotifier, folderTitle } from "../notify";
 import { sessionPath } from "../session-url";
+import { cockpitOrder, wantsAnswer } from "../fleet-order";
 
 // Mission control, the fleet cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
@@ -66,28 +67,6 @@ function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
 }
 
 const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you" } as const;
-
-/** A session that wants an answer: the stream-derived permission hold, OR a
- *  still-pending ask surviving past it — with concurrent requests, answering
- *  the first lets the stream move (status "working") while the rest wait. */
-function wantsAnswer(s: SessionMeta): boolean {
-  return s.status === "permission" || (s.permissions?.length ?? 0) > 0;
-}
-
-/** Cockpit ordering: rows hold a stable creation
- *  order so eyes can park on a session; the one exception is sessions
- *  awaiting permission, which surface to a top group — longest-stalled
- *  first (their stream is blocked, so lastActivity is when they stalled).
- *  `createdAt` is optional on the wire (old daemon); absent → the wire
- *  order holds (the sort is stable). */
-function cockpitOrder(sessions: SessionMeta[]): SessionMeta[] {
-  const rank = (s: SessionMeta) => (wantsAnswer(s) ? 0 : 1);
-  return [...sessions].sort(
-    (a, b) =>
-      rank(a) - rank(b) ||
-      (rank(a) === 0 ? a.lastActivity - b.lastActivity : (a.createdAt ?? 0) - (b.createdAt ?? 0)),
-  );
-}
 
 export function FleetView() {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
@@ -471,10 +450,10 @@ function FleetRow({
             className="fleet-stop"
             verb="stop"
             armed={stopConfirm.armed === s.sessionId}
-            title="Interrupt this turn (the session stays warm)"
-            armedTitle="Click again to interrupt this turn"
-            ariaLabel={`Interrupt session ${s.name}`}
-            armedAriaLabel={`Click again to interrupt session ${s.name}`}
+            title="Stop active model and shell work (the session stays warm)"
+            armedTitle="Click again to stop active model and shell work"
+            ariaLabel={`Stop active model and shell work in session ${s.name}`}
+            armedAriaLabel={`Click again to stop active model and shell work in session ${s.name}`}
             onArm={() => stopConfirm.arm(s.sessionId)}
             onFire={() => {
               socket.send({ type: "interrupt_session", sessionId: s.sessionId });

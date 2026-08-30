@@ -65,13 +65,16 @@ export const BACKOFF_MAX_MS = 5_000;
 // Uncaught front-end errors ride the socket into the daemon's flight-recorder
 // log — otherwise a front-end crash dies in the devtools console and the log a
 // bug report attaches says nothing.
-// Installed once per page, forwarding through the most recent SocketClient
-// (whose pending queue survives disconnects). Capped so an error loop can't
-// flood the daemon, clipped so one giant message can't bloat a frame — the
-// server re-caps and re-clips, trusting nothing.
+// Installed once per page, forwarding through the newest still-live
+// SocketClient (whose pending queue survives disconnects). A session can now
+// carry a supplemental cockpit watcher; keeping the live clients as a stack
+// means closing that watcher restores the session socket instead of silently
+// disabling later reports. Capped so an error loop can't flood the daemon,
+// clipped so one giant message can't bloat a frame — the server re-caps and
+// re-clips, trusting nothing.
 const ERROR_REPORT_MAX = 20;
 const ERROR_REPORT_CLIP = 2_000;
-let errorSocket: SocketClient | null = null;
+const errorSockets: SocketClient[] = [];
 let errorReports = 0;
 let errorForwardingInstalled = false;
 
@@ -79,6 +82,7 @@ function installErrorForwarding() {
   if (errorForwardingInstalled) return;
   errorForwardingInstalled = true;
   const forward = (message: string) => {
+    const errorSocket = errorSockets[errorSockets.length - 1];
     if (!errorSocket || errorReports >= ERROR_REPORT_MAX) return;
     errorReports++;
     errorSocket.send({ type: "client_error", message: message.slice(0, ERROR_REPORT_CLIP) });
@@ -156,7 +160,7 @@ export class SocketClient {
   private transmit: (msg: ClientMsg) => void = (m) => this.pending.push(m);
 
   constructor(url?: string) {
-    errorSocket = this;
+    errorSockets.push(this);
     installErrorForwarding();
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);
@@ -454,9 +458,11 @@ export class SocketClient {
 
   close() {
     this.closedByUs = true;
-    // Stop being the error-forwarding socket: reports after close would only
-    // queue into `pending` on a client that never reconnects.
-    if (errorSocket === this) errorSocket = null;
+    // Stop being an error-forwarding candidate: reports after close would
+    // only queue on a client that never reconnects. Removing this entry also
+    // restores the preceding live socket when a supplemental watcher closes.
+    const errorIndex = errorSockets.lastIndexOf(this);
+    if (errorIndex !== -1) errorSockets.splice(errorIndex, 1);
     this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     window.removeEventListener("online", this.reconnectNow);

@@ -73,7 +73,7 @@ export class FakeWS {
   }
 }
 
-type Handler = () => void;
+type Handler = (...args: unknown[]) => void;
 
 /** window/document stand-ins: real listener registries so tests can fire
  * online/visibilitychange and assert removal on close(). */
@@ -101,6 +101,9 @@ export function shimDom() {
     },
     pagehide: () => {
       for (const fn of win.get("pagehide") ?? []) fn();
+    },
+    error: (event: unknown) => {
+      for (const fn of win.get("error") ?? []) fn(event);
     },
     listenerCount: () =>
       (win.get("online")?.size ?? 0) +

@@ -19,11 +19,11 @@ after(async () => {
   await d.stop();
 });
 
-async function watcher(): Promise<TestClient> {
+async function watcher(transcript = false): Promise<TestClient> {
   const w = new TestClient(d.port);
   await w.opened();
   await w.type("agents");
-  w.send({ type: "watch_sessions" });
+  w.send(transcript ? { type: "watch_sessions", transcript: true } : { type: "watch_sessions" });
   await w.type("sessions");
   return w;
 }
@@ -132,6 +132,32 @@ test("usage folds across turns: tokens sum, and no cost is invented", async () =
   client.close();
 });
 
+test("CP.1 an opted-in watcher receives live transcript tails; an ordinary watcher does not", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const preview = await watcher(true);
+  const metadata = await watcher();
+  client.send({ type: "prompt", text: "unique cockpit preview prompt" });
+
+  const snapshot = await preview.waitFor(
+    (message) => row(message, sessionId)?.transcriptTail?.text.includes("unique cockpit preview prompt") === true,
+    "a live snapshot carrying the prompt tail",
+  );
+  assert.match(row(snapshot, sessionId)!.transcriptTail!.text, /unique cockpit preview prompt/);
+
+  await client.type("turn_end", 20_000);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const ordinaryRows = metadata.received
+    .filter((message): message is Extract<WireMsg, { type: "sessions" }> => message.type === "sessions")
+    .flatMap((message) => message.sessions);
+  assert.ok(
+    ordinaryRows.filter((session) => session.sessionId === sessionId).every((session) => !session.transcriptTail),
+    "the existing FleetView request stays metadata-only across the turn",
+  );
+  preview.close();
+  metadata.close();
+  client.close();
+});
+
 // ---- M.2: acting from the grid — the sessionId-addressed acts over the real
 // socket. (The remote/relay gate is pinned in-process in fleet-acts.test.ts,
 // where the `remote` flag is directly in hand.)
@@ -198,6 +224,46 @@ test("grid interrupt halts the turn; the session stays warm for the next prompt"
   await client.type("turn_end", 20_000);
 
   client.send({ type: "prompt", text: "still alive?" });
+  await client.type("turn_end", 20_000);
+  w.close();
+  client.close();
+});
+
+test("BUGHUNT: grid interrupt kills a running bang without starting its model handoff", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const w = await watcher();
+  const bangId = "cockpit-bang-stop";
+  client.send({
+    type: "bang",
+    id: bangId,
+    command: `node -e "console.log('cockpit-bang-ready'); setInterval(() => {}, 1000)"`,
+  });
+  await client.waitFor(
+    (message) => message.type === "bang_output" && message.id === bangId && message.data.includes("cockpit-bang-ready"),
+    "the live bang output",
+    20_000,
+  );
+  await w.waitFor(
+    (message) => row(message, sessionId)?.status === "working",
+    "the bang-backed working row",
+  );
+
+  w.send({ type: "interrupt_session", sessionId });
+  const ended = await client.waitFor(
+    (message) => message.type === "bang_end" && message.id === bangId,
+    "the canceled bang end",
+    20_000,
+  );
+  assert.equal(ended.type === "bang_end" ? ended.exitCode : "wrong frame", null);
+
+  const afterEnd = client.mark();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.ok(
+    !client.received.slice(afterEnd).some((message) => message.type === "status"),
+    "canceling the PTY did not immediately start its normal follow-up model turn",
+  );
+
+  client.send({ type: "prompt", text: "still warm after stopping the bang" });
   await client.type("turn_end", 20_000);
   w.close();
   client.close();

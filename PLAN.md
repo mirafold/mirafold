@@ -3596,6 +3596,76 @@ ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
   sat on `<div>`s (already isolated) instead of the inline `<q>` — now
   `.pair-quote`, asserted by computed style in the e2e.
 
+## Phase CP — In-session cockpit panel (opened + ✅ COMPLETE 2026-08-30; Kyle-directed)
+
+**Goal.** Move between live sessions without detouring through `/`: a compact,
+scrollable cockpit panel in the session workbench's left activity rail. It is
+about 60% of Changes' 370px minimum width, stays open across session
+navigation/reload until the user closes or replaces it, and leaves FleetView's
+layout and metadata-only watcher traffic unchanged.
+
+**Verified starting state (2026-08-30).** `Shell` has one auxiliary slot with
+only Files and Changes; no cockpit panel component or activity-bar control
+exists. `FleetView` already owns sessionId-addressed stop/end/prompt acts and
+`watch_sessions` snapshots, but those snapshots carry metadata only — no
+transcript tail. The requested preview is new additive wire work, not a fix to
+an existing panel.
+
+- [x] **CP.1 — opt-in transcript tails.** Add an optional request flag and
+  optional bounded plain-text tail to the existing `watch_sessions` /
+  `sessions` path. Derive it from the registry replay ring, update preview
+  watchers as visible transcript text moves, omit empty tails, and never send
+  a relay watcher text from a session whose credential cannot ride the paid
+  relay. Existing FleetView watchers keep their current metadata-only traffic.
+- [x] **CP.2 — compact persistent panel.** Add a third desktop activity-bar
+  control and a roughly 222px panel containing only session name, id,
+  two-click stop/end controls, a down-chevron transcript disclosure, and a
+  right-chevron quick-prompt disclosure. The list scrolls; the current session
+  is identified; session links navigate directly; the open preference survives
+  the navigation and disappears only on an explicit close/replacement action.
+  Files/Changes remain mutually exclusive in the same auxiliary slot and their
+  phone drawer stays unchanged.
+- [x] **CP.3 — prove the seam and the workflow.** Protocol/unit coverage pins
+  the additive shapes, tail cap/derivation/copy behavior, watcher opt-in, live
+  updates, and the relay omission. Tier 2 observes the real socket path. Tier 3
+  opens the panel, expands a live tail, prompts/stops/ends through it, switches
+  sessions with the panel still open, verifies explicit close persistence and
+  compact geometry, and runs the accessibility/side-scroll gates.
+- [x] **CP.H — post-feature bughunt (2026-08-30).** Four confirmed findings,
+  all fixed with a regression and no deferrals: Stop now remains available
+  during permission holds and a whole-session interrupt cancels both model and
+  active PTY work (while the Bang bar's PTY-only stop keeps its existing
+  handoff); transcript tails now retain bang completion (`done`, `killed`, or
+  exit code) and tool-result source-elision counts; an absent optional tail is
+  described as an unavailable preview rather than falsely claiming an empty
+  transcript; and an independently refused supplemental Cockpit socket shows
+  its relay refusal reason without disturbing the primary session socket. The
+  browser regression's fake socket is an anonymous object/Proxy so
+  Playwright's serialized init callback does not depend on esbuild's
+  module-scoped `__name` helper.
+
+**Files.** `server/protocol.ts`; `server/sessions/{registry,connection,
+transcript-tail}.ts`; `web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;
+panel state, shared fleet ordering, structural CSS, and the supplemental-socket
+error-forwarding lifecycle in `web/src/ws.ts`; focused tests in all three tiers
+plus a committed visual baseline; README/architecture/backlog synced. No new
+dependency was added — the panel composes the existing React, socket, action,
+and two-click-confirm machinery.
+
+**Completion evidence (2026-08-30).** `yarn typecheck`; Tier 1 **1,046/1,046**;
+Tier 2 **161/161**; Tier 3 **127/127**; browser matrix + visual gate **11/11**.
+The focused Chrome workflow measured a 228px dock at 1280px, proved live tail,
+quick prompt, stop, end, direct navigation persistence, explicit-close
+persistence, scrolling, no side-scroll, and an axe-clean expanded state. The
+new `cockpit-panel` visual baseline was inspected at full resolution. During
+integration review, closing the panel's second socket was found to clear the
+page's browser-error reporter; the socket layer now restores the preceding
+live client, with its own regression test. Existing FleetView traffic remains
+metadata-only, its layout is unchanged, and the phone workspace
+drawer remains unchanged.
+
+---
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.

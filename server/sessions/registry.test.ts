@@ -687,6 +687,102 @@ test("M.1 summary(): cockpit fields are absent when empty, present as COPIES whe
   reg.end(entry.id);
 });
 
+test("CP.1 summary(): transcript tails are opt-in, bounded snapshots and copies", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "user_prompt", text: "inspect the parser" });
+  reg.broadcast(entry, { type: "text_delta", text: "The parser is sound." });
+
+  const ordinary = reg.summary().find((session) => session.sessionId === entry.id)!;
+  assert.equal(ordinary.transcriptTail, undefined, "FleetView's ordinary snapshot stays metadata-only");
+
+  const preview = reg
+    .summary({ transcript: true })
+    .find((session) => session.sessionId === entry.id)!;
+  assert.deepEqual(preview.transcriptTail, {
+    text: "❯ inspect the parser\nThe parser is sound.",
+  });
+  preview.transcriptTail!.text = "mutated";
+  assert.equal(
+    reg.summary({ transcript: true }).find((session) => session.sessionId === entry.id)!
+      .transcriptTail!.text,
+    "❯ inspect the parser\nThe parser is sound.",
+    "a watcher cannot mutate the next snapshot",
+  );
+  reg.end(entry.id);
+});
+
+test("CP.1 transcript movement wakes preview watchers only", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { reg, entry } = freshSession();
+  const metadata: WireMsg[] = [];
+  const preview: WireMsg[] = [];
+  const metadataWatcher = (message: WireMsg) => metadata.push(message);
+  const previewWatcher = (message: WireMsg) => preview.push(message);
+  // Hold fleet metadata steady: the following delta streams inside an
+  // already-working activity state, so only the transcript tail changes.
+  reg.broadcast(entry, { type: "status", state: "thinking" });
+  reg.watch(metadataWatcher);
+  reg.watch(previewWatcher, { transcript: true });
+  metadata.length = 0;
+  preview.length = 0;
+
+  reg.broadcast(entry, { type: "text_delta", text: "streamed answer" });
+  assert.equal(preview.length, 0, "the watcher notification is coalesced");
+  t.mock.timers.tick(100);
+  assert.equal(metadata.length, 0, "ordinary fleet traffic does not wake for text deltas");
+  assert.equal(preview.length, 1);
+  assert.equal(
+    preview[0].type === "sessions"
+      ? preview[0].sessions.find((session) => session.sessionId === entry.id)?.transcriptTail?.text
+      : undefined,
+    "streamed answer",
+  );
+
+  reg.unwatch(metadataWatcher);
+  reg.unwatch(previewWatcher);
+  reg.end(entry.id);
+});
+
+test("CP.1 a remote cockpit never receives a relay-ineligible transcript tail", () => {
+  const subscription = new SessionRegistry({
+    backend: { agent: "codex", kind: "subscription", live: false },
+    deltaCoalesceMs: 0,
+  });
+  const sub = subscription.create({ cwd: mkdtempSync(path.join(os.tmpdir(), "genui-cp-sub-")) });
+  openSessions.push({ reg: subscription, id: sub.id });
+  subscription.broadcast(sub, { type: "text_delta", text: "subscription output" });
+  assert.equal(
+    subscription.summary({ transcript: true, remote: true })[0].transcriptTail,
+    undefined,
+  );
+  assert.equal(
+    subscription.summary({ transcript: true, remote: false })[0].transcriptTail?.text,
+    "subscription output",
+    "the same user's local panel still receives it",
+  );
+
+  const eligible = new SessionRegistry({
+    backend: { agent: "codex", kind: "api-key", live: false },
+    deltaCoalesceMs: 0,
+  });
+  const api = eligible.create({ cwd: mkdtempSync(path.join(os.tmpdir(), "genui-cp-api-")) });
+  openSessions.push({ reg: eligible, id: api.id });
+  eligible.broadcast(api, { type: "text_delta", text: "api-key output" });
+  assert.equal(
+    eligible.summary({ transcript: true, remote: true })[0].transcriptTail?.text,
+    "api-key output",
+  );
+
+  api.kindPending = true;
+  assert.equal(
+    eligible.summary({ transcript: true, remote: true })[0].transcriptTail,
+    undefined,
+    "an optimistic credential kind fails closed until verification",
+  );
+  subscription.end(sub.id);
+  eligible.end(api.id);
+});
+
 // 2026-07-29 audit. The engine-supplied labels the shell renders as CHROME
 // (tool names via status/tool_use, the model label via usage) had no length
 // bound anywhere — and the realistic source isn't a hostile engine, it's any
