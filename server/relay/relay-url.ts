@@ -13,6 +13,11 @@
 // pairing through the hosted relay loads the viewport from the hosted static
 // origin; an explicit relay with no MIRAFOLD_APP_URL keeps the HTTP-twin
 // fallback (dev + stub, where one host plays both parts — see index.ts).
+//
+// The hosted relay's own origin spelled out by hand is still the hosted
+// relay: it keeps the hosted app origin (the relay host serves no app — a
+// twin-fallback QR there is a dead link) and the entitlement gate (review
+// 2026-08-29).
 import { envOff } from "../env";
 
 export const DEFAULT_RELAY_URL = "wss://relay.mirafold.sh";
@@ -81,18 +86,21 @@ export function resolveRelayPlan(env: {
   const raw = env.MIRAFOLD_RELAY_URL?.trim();
   const appUrl = env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "") || undefined;
   if (raw && envOff(raw)) return { kind: "off", reason: "opt-out" };
+  const hostedOrigin = relayOriginOf(DEFAULT_RELAY_URL) as string;
   if (raw) {
     const origin = relayOriginOf(raw);
-    return origin
-      ? { kind: "dial", url: raw, origin, source: "explicit", appUrl }
-      : { kind: "off", reason: "malformed-url", raw };
+    if (!origin) return { kind: "off", reason: "malformed-url", raw };
+    if (origin !== hostedOrigin) return { kind: "dial", url: raw, origin, source: "explicit", appUrl };
   }
   const entitled = !!(env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim() || env.MIRAFOLD_LICENSE_KEY?.trim());
   if (!entitled) return { kind: "off", reason: "unentitled-default" };
   return {
     kind: "dial",
+    // The canonical spelling, not the user's: the dial appends DAEMON_PATH
+    // verbatim and the relay routes only the exact path — a trailing slash
+    // would dial //daemon and never connect.
     url: DEFAULT_RELAY_URL,
-    origin: relayOriginOf(DEFAULT_RELAY_URL) as string,
+    origin: hostedOrigin,
     source: "default",
     appUrl: appUrl ?? DEFAULT_APP_URL,
   };

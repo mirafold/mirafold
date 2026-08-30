@@ -4,7 +4,6 @@
 import { test, before, after } from "node:test";
 import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
-import path from "node:path";
 import { type Browser } from "playwright-core";
 import { launchChrome, withFreshMockSession, assertAxeClean } from "./e2e-harness";
 

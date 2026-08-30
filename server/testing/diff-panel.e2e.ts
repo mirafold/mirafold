@@ -6,7 +6,7 @@ import path from "node:path";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { ClientMsg } from "../protocol";
 import { assertApartOnScreen, assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
-import { fixtureGit as git, startDaemon, TestClient, type Daemon, createSession as seedSession } from "./itest-harness";
+import { fixtureGit as git, startDaemon, type Daemon, createSession as seedSession } from "./itest-harness";
 
 // CR.2–CR.4 in a real browser against a real daemon and real Git: responsive
 // review, every honest state, line/hunk selection, editable prompt drafts,

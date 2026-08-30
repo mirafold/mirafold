@@ -127,3 +127,24 @@ test("presentsOnEntitlement: the hosted default, or an operator's own backend �
   assert.equal(presentsOnEntitlement(selfHost, { MIRAFOLD_ENTITLEMENT_URL: "http://127.0.0.1:1/api/entitlement" }), true);
   assert.equal(presentsOnEntitlement(resolveRelayPlan({}), {}), false);
 });
+
+test("review 2026-08-29: the hosted relay spelled out by hand keeps the hosted semantics", async () => {
+  const { presentsOnEntitlement } = await import("./relay-url");
+  // A user who copies the default into .env must get exactly what leaving it
+  // unset gets: the hosted app origin (the relay host serves no app) and the
+  // license gate — never an "explicit" self-host plan with a twin-fallback QR.
+  const byHand = resolveRelayPlan({ MIRAFOLD_RELAY_URL: DEFAULT_RELAY_URL, MIRAFOLD_LICENSE_KEY: "mf_x" });
+  assert.deepEqual(byHand, resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_x" }));
+  assert.equal(byHand.kind === "dial" && byHand.appUrl, DEFAULT_APP_URL);
+  assert.equal(presentsOnEntitlement(byHand, {}), true);
+  // Same origin, any spelling: a trailing slash still means hosted — and the
+  // dial uses the canonical URL, because the client appends /daemon verbatim.
+  const withSlash = resolveRelayPlan({ MIRAFOLD_RELAY_URL: `${DEFAULT_RELAY_URL}/`, MIRAFOLD_LICENSE_KEY: "mf_x" });
+  assert.deepEqual(withSlash, byHand);
+  // And without an entitlement it stands down like the bake does — dialing
+  // the gated relay unentitled is a guaranteed refusal either way.
+  assert.deepEqual(resolveRelayPlan({ MIRAFOLD_RELAY_URL: DEFAULT_RELAY_URL }), { kind: "off", reason: "unentitled-default" });
+  // An explicit app origin still rides it.
+  const appToo = resolveRelayPlan({ MIRAFOLD_RELAY_URL: DEFAULT_RELAY_URL, MIRAFOLD_LICENSE_KEY: "mf_x", MIRAFOLD_APP_URL: "https://app.example" });
+  assert.equal(appToo.kind === "dial" && appToo.appUrl, "https://app.example");
+});

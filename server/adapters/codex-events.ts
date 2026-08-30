@@ -82,6 +82,13 @@ export class CodexEventMapper {
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
   private turnBaseline?: TokenTotals;
+  // Σ of the event's per-response `last` over this turn — the preferred
+  // figure. `total` is the THREAD's cumulative count and survives a
+  // `thread/resume` (the rollout persists it), so a mapper born after a
+  // daemon restart has no baseline for it: total − 0 on the first turn
+  // would re-report every pre-restart token, on top of the checkpointed
+  // usage the registry already restored (review 2026-08-29).
+  private turnLast?: TokenTotals;
 
   constructor(
     private readonly options: {
@@ -97,17 +104,16 @@ export class CodexEventMapper {
   /** A turn is starting: usage is measured from here, paintings re-anchor. */
   beginTurn() {
     this.turnBaseline = this.totals;
+    this.turnLast = undefined;
     this.thinkingAnnounced = false;
   }
 
   /** The turn ended (any status): emit its usage once, then reset. */
   endTurn() {
-    if (this.totals) {
-      const base = this.turnBaseline ?? { inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
-      const inputTokens = this.totals.inputTokens - base.inputTokens;
-      const outputTokens =
-        this.totals.outputTokens - base.outputTokens +
-        (this.totals.reasoningOutputTokens - base.reasoningOutputTokens);
+    const turn = this.turnLast ?? this.turnDelta();
+    if (turn) {
+      const inputTokens = turn.inputTokens;
+      const outputTokens = turn.outputTokens + turn.reasoningOutputTokens;
       if (inputTokens > 0 || outputTokens > 0) {
         this.options.emit({
           type: "usage",
@@ -118,10 +124,23 @@ export class CodexEventMapper {
       }
     }
     this.turnBaseline = this.totals;
+    this.turnLast = undefined;
     this.checklist.reset();
     this.prose.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
+  }
+
+  /** The fallback when the engine sends no per-response `last`: this turn's
+   *  movement of the thread total. */
+  private turnDelta(): TokenTotals | undefined {
+    if (!this.totals) return undefined;
+    const base = this.turnBaseline ?? { inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
+    return {
+      inputTokens: this.totals.inputTokens - base.inputTokens,
+      outputTokens: this.totals.outputTokens - base.outputTokens,
+      reasoningOutputTokens: this.totals.reasoningOutputTokens - base.reasoningOutputTokens,
+    };
   }
 
   /** One notification for the session's thread. `turn/completed` is the
@@ -155,8 +174,18 @@ export class CodexEventMapper {
         this.emitChecklist(Array.isArray(p["plan"]) ? (p["plan"] as unknown[]) : []);
         break;
       case "thread/tokenUsage/updated": {
-        const total = asTotals((p["tokenUsage"] as { total?: unknown } | undefined)?.total);
+        const usage = p["tokenUsage"] as { total?: unknown; last?: unknown } | undefined;
+        const total = asTotals(usage?.total);
         if (total) this.totals = total;
+        const last = asTotals(usage?.last);
+        if (last) {
+          const sum = this.turnLast ?? { inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
+          this.turnLast = {
+            inputTokens: sum.inputTokens + last.inputTokens,
+            outputTokens: sum.outputTokens + last.outputTokens,
+            reasoningOutputTokens: sum.reasoningOutputTokens + last.reasoningOutputTokens,
+          };
+        }
         break;
       }
       case "error": {
