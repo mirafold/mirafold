@@ -67,4 +67,8 @@ test("the code painting's scrolling body is keyboard-reachable (axe scrollable-r
   // this element whenever the mock dealt a tall code painting (2026-08-29).
   const html = renderToStaticMarkup(createElement(Code, { code: "const a = 1;\n".repeat(40), lang: "ts" }));
   assert.match(html, /<pre class="rc-code-body"><code class="hljs language-ts" tabindex="0">/);
+  // No lang → bare fence → no hljs class; the body still scrolls and still
+  // needs the tab stop (Codex review on PR #74).
+  const plain = renderToStaticMarkup(createElement(Code, { code: "x\n".repeat(40) }));
+  assert.match(plain, /<pre class="rc-code-body"><code tabindex="0">/);
 });
