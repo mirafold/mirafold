@@ -170,7 +170,7 @@ what we need without us parsing their credential store. Confirm live that
 the provider catalog actually exposes enough to classify without touching
 `auth.json`; if it doesn't, reading that file needs the same explicit
 consent framing as any user-owned state (trust rule), or we ask the user to
-pick the provider at onboarding and verify against the catalog.
+pick the provider in the agent picker and verify against the catalog.
 
 The relay gate is untouched: `allowedOverRelay` already refuses
 `subscription` regardless of which adapter produced it.
@@ -245,7 +245,7 @@ which spawns its own.
 
 - `AgentName` union + adapter registry (`index.ts` `createSession`),
   `agentHasCredentials("opencode")` = binary present ∧ ≥1 usable provider.
-- Onboarding card + agents-meta entry (connect hint carries the gray-area
+- AgentPicker card + agents-meta entry (connect hint carries the gray-area
   disclosure only when the chosen provider needs it).
 - Policy rows in `provider-policy.ts` per the section above.
 - Tests mock-first in all three tiers (fake SSE feed for Tier 1, real spawned

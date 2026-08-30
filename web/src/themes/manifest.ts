@@ -1,9 +1,9 @@
-// The theme manifest (S.2): the single source of truth for what themes exist
+// The theme manifest: the single source of truth for what themes exist
 // and what a theme IS. Nothing else in the app ever names a theme — ids stamp
-// `:root[data-theme]` and persist in settings; the picker (S.4) renders from
+// `:root[data-theme]` and persist in settings; the picker renders from
 // THEMES; the Tier-1 guards (themes.test.ts) hold every theme file to
 // THEME_TOKENS exactly. Adding a theme = one CSS file + one row here + the
-// eyeball QA walk (PLAN Phase S).
+// eyeball QA walk.
 
 export type ThemeAppearance = "light" | "dark";
 
@@ -14,18 +14,17 @@ export interface ThemeEntry {
   /** What the picker shows. */
   displayName: string;
   /** Which side of the light/dark toggle selects this theme — a label, not
-      a pairing: every theme is standalone (Phase S charter). */
+      a pairing: every theme is standalone. */
   appearance: ThemeAppearance;
 }
 
 export const THEMES: ThemeEntry[] = [
   // "Mirafold" is the house theme (the dark default; id stays `dark` — ids
   // are load-bearing fallbacks, display names are free). The light default
-  // took over the `light` id when the original designed Light was dropped
-  // (2026-07-18 — see light.css header). Both stock-terminal themes show as
-  // "Standard" — one concept, both sides of the pill; the picker's group
-  // headers disambiguate, and prose lists them as "Standard (dark and
-  // light)" (Kyle's phrasing, 2026-07-18).
+  // owns the `light` id (see light.css header). Both stock-terminal themes
+  // show as "Standard" — one concept, both sides of the pill; the picker's
+  // group headers disambiguate, and prose lists them as "Standard (dark and
+  // light)".
   { id: "dark", displayName: "Mirafold", appearance: "dark" },
   { id: "standard", displayName: "Standard", appearance: "dark" },
   { id: "light", displayName: "Standard", appearance: "light" },
@@ -35,8 +34,9 @@ export const THEMES: ThemeEntry[] = [
   { id: "dracula", displayName: "Dracula", appearance: "dark" },
 ];
 
-// Two-slot storage (S.3): the mode key predates slots and keeps its exact
-// meaning — "light" | anything-else→dark, which side of the pill is active.
+// Two-slot storage: the mode key's meaning is fixed — "light" |
+// anything-else→dark, which side of the pill is active — stored values
+// already rely on it.
 // Each side resolves to a theme id through its slot key. index.html's
 // pre-paint script mirrors these key names by value (it can't import).
 export const MODE_STORAGE_KEY = "mirafold-theme";
@@ -122,10 +122,9 @@ export const THEME_TOKENS = [
   "--shadow-card",
 ] as const;
 
-// Pinned tokens: defined ONCE in base.css, dark in every theme (the
-// #8-adjacent decision) — a theme file redefining one is a stray and fails
-// the contract guard. The per-theme override door in the design stays
-// unexercised (Phase S charter).
+// Pinned tokens: defined ONCE in base.css, dark in every theme — a theme
+// file redefining one is a stray and fails the contract guard. The per-theme
+// override door in the design stays unexercised.
 export const PINNED_TOKENS = [
   "--code-bg",
   "--code-fg",
@@ -136,9 +135,9 @@ export const PINNED_TOKENS = [
   "--diff-del-fg",
 ] as const;
 
-/* ---- The Base16 porting recipe (S.2) ---------------------------------------
+/* ---- The Base16 porting recipe ---------------------------------------------
 
-Base16 is the porting RECIPE, not the vocabulary (Phase S charter): a borrowed
+Base16 is the porting RECIPE, not the vocabulary: a borrowed
 theme is transcribed from its canonical published Base16 scheme
 (https://github.com/chriskempson/base16 — 16 slots, base00–base0F) into the
 semantic tokens above, then hand-tuned in the QA walk. Palettes aren't
@@ -204,8 +203,8 @@ Syntax-highlight slots (base08–base0F beyond the four above) are unused: code
 surfaces are pinned (base.css) and hljs github-dark owns code coloring.
 
 After transcription: the guards catch mechanical drift (missing/stray tokens,
-unreadable --fg/--bg); the QA walk (PLAN S.5) catches taste — terminal output,
-tool blocks, diffs-on-pinned-dark, permission bar, onboarding, generative-UI
+unreadable --fg/--bg); the QA walk catches taste — terminal output,
+tool blocks, diffs-on-pinned-dark, permission bar, agent picker, generative-UI
 components — and hand-tunes the derived tiers where the recipe's output
 misses. Record notable deviations in the theme file's header comment.
 ---------------------------------------------------------------------------- */

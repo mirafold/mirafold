@@ -1,6 +1,6 @@
-// Local model server discovery (Phase N.2). HTTP probing ONLY — never
+// Local model server discovery. HTTP probing ONLY — never
 // filesystem scanning: per-tool model storage layouts are unstable, and an
-// unserved model is unusable anyway (the Phase N charter decision). Probes go
+// unserved model is unusable anyway. Probes go
 // to localhost's well-known runtime ports plus MIRAFOLD_LOCAL_ENDPOINTS —
 // nothing else is ever probed.
 //
@@ -10,7 +10,7 @@
 // GET /v1/models (the de facto standard catalog endpoint) is OpenAI-shaped
 // only. Listing needs no model loaded in memory — the catalog is bookkeeping.
 
-import { envInt } from "./env";
+import { envInt, envOff } from "./env";
 
 export type LocalDialect = "anthropic" | "openai";
 
@@ -29,12 +29,12 @@ export type LocalServer = {
 const PROBE_TIMEOUT_MS = 500;
 
 // Bloat insurance where engine-external data first enters our process (the
-// R.6 model-label-cap philosophy): a corrupt catalog must not balloon the
-// hello frame N.3 puts it on.
+// model-label-cap philosophy): a corrupt catalog must not balloon the
+// hello frame it rides.
 const MAX_MODELS = 128;
 const MAX_NAME_LENGTH = 120;
 
-// The probe budget bounds TIME; this bounds SIZE (2026-07-17 audit). Over
+// The probe budget bounds TIME; this bounds SIZE. Over
 // loopback a hostile local listener can push hundreds of MB inside 500ms,
 // and parsing that would spike the daemon's memory — a real catalog is a few
 // KB, so anything past this is refused, not read.
@@ -56,7 +56,7 @@ const WELL_KNOWN: { origin: string; runtime: string }[] = [
  *  The itest harness forces it off so a dev machine's real Ollama can never
  *  leak into a Tier-2 assertion. */
 export function probeTargets(): { origin: string; runtime: string }[] {
-  const wellKnown = process.env.MIRAFOLD_LOCAL_DISCOVERY === "off" ? [] : WELL_KNOWN;
+  const wellKnown = envOff(process.env.MIRAFOLD_LOCAL_DISCOVERY) ? [] : WELL_KNOWN;
   const extras = (process.env.MIRAFOLD_LOCAL_ENDPOINTS ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -163,7 +163,7 @@ let cache: LocalServer[] = [];
 let cacheAt = 0;
 let inflight: Promise<LocalServer[]> | undefined;
 
-// One sweep answers every caller inside this window: each open onboarding
+// One sweep answers every caller inside this window: each open agent picker
 // card polls refresh_agents on its own clock, and a sweep is a real HTTP
 // probe per target. The TTL stays short enough that a freshly started
 // server still appears within one poll or two — a longer window would turn
@@ -185,7 +185,7 @@ async function refreshCache(targets: { origin: string; runtime: string }[]): Pro
 /**
  * Sweep the targets (defaults to probeTargets()) in parallel and refresh the
  * cache. Bounded by PROBE_TIMEOUT_MS regardless of hung sockets; never
- * throws. Callers fire-and-forget at startup and re-run on N.3's
+ * throws. Callers fire-and-forget at startup and re-run on
  * `refresh_agents` — a probe must never delay startup or error a session.
  * The default sweep is TTL-cached and coalesces concurrent callers onto one
  * in-flight sweep; explicit `targets` (tests) always probe.

@@ -78,6 +78,20 @@ export function splitNodeLines(nodes: ReactNode): ReactNode[][] {
   return lines;
 }
 
+/** The strip above a code body — name on the left, language beside it when
+ *  both are known, copy on the right. Shared by the `code` painting and by
+ *  every fenced block the agent types in prose (Md.tsx), so the two ways of
+ *  showing code read as one object. */
+export function CodeHead({ name, lang, code }: { name: string; lang?: string; code: string }) {
+  return (
+    <div className="rc-code-head">
+      <span className="rc-code-name">{name}</span>
+      {lang && <span className="rc-code-lang">{lang}</span>}
+      <CopyButton text={code} />
+    </div>
+  );
+}
+
 export function Code({ code, lang, filename, highlight }: ComponentProps<"code">) {
   const fenced = useMemo(() => codeFence(code, lang), [code, lang]);
   const components = useMemo(
@@ -107,11 +121,7 @@ export function Code({ code, lang, filename, highlight }: ComponentProps<"code">
   );
   return (
     <div className="rc rc-code">
-      <div className="rc-code-head">
-        <span className="rc-code-name">{filename ?? lang ?? "code"}</span>
-        {filename && lang && <span className="rc-code-lang">{lang}</span>}
-        <CopyButton text={code} />
-      </div>
+      <CodeHead name={filename ?? lang ?? "code"} lang={filename ? lang : undefined} code={code} />
       <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={components}>
         {fenced}
       </ReactMarkdown>

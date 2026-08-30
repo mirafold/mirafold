@@ -37,6 +37,10 @@ test("parseStatusZ: a rename record is TWO fields — later records stay aligned
   assert.equal(files.get("new-name.txt"), "A");
   assert.equal(files.get("old-name.txt"), "D");
   assert.equal(files.get("after-the-rename.txt"), "M", "alignment survives the rename record");
+  // Exactly three records: an unconsumed second field would surface as a
+  // junk "-name.txt" entry that every named lookup above still tolerates
+  // (test-audit 2026-08-26).
+  assert.equal(files.size, 3, `junk record from the rename framing: ${[...files.keys()].join(",")}`);
 });
 
 test("parseStatusZ: a copy's source is NOT marked deleted", () => {
@@ -101,6 +105,7 @@ test("parseStatusIgnoredZ: files, dir collapses, ignored, and the rename trap la
   assert.equal(st.files.get("new-name.txt"), "A");
   assert.equal(st.files.get("old-name.txt"), "D");
   assert.equal(st.files.get("after-the-rename.txt"), "M", "alignment survives the rename record");
+  assert.equal(st.files.size, 6, `junk record from the rename framing: ${[...st.files.keys()].join(",")}`);
 });
 
 test("decorateGitDir: ignored entries drop, statuses attach, deleted children merge in", () => {

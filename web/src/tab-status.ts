@@ -1,6 +1,6 @@
 // The browser tab is a status light layered on the brand mark: the M favicon
 // always shows, with a corner badge when the session is busy or waiting on
-// permission, so a row of tabs reads as a fleet view (Step 4.2).
+// permission, so a row of tabs reads as a fleet view.
 
 export type TabState = "idle" | "busy" | "permission";
 
@@ -17,7 +17,7 @@ export function paintTabStatus(state: TabState) {
   canvas.width = canvas.height = 64;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  // Literal geometry + colors (S.1 exception): a canvas favicon can't load
+  // Literal geometry + colors (exception to the tokens-only rule): a canvas favicon can't load
   // the SVG file or consume CSS vars — the rounded surface, polyline, and
   // #40d17f mirror web/public/favicon.svg by value, the badge colors the
   // dark palette's --info/--warn-fg.

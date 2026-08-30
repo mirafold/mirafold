@@ -5,6 +5,7 @@ import type { ZoneMsg } from "./session-bus";
 import {
   createTranscriptProjection,
   type OutputZoneRow,
+  type ToolFoldItem,
   type TranscriptProjection,
   type TranscriptSnapshot,
 } from "./transcript-projection";
@@ -201,6 +202,15 @@ test("only the newest picker is active until the next user prompt", () => {
   assert.deepEqual(rowsOf(retired, "picker").map((row) => row.active), [false, false]);
 });
 
+const foldItemLabels = (fold: { items: readonly ToolFoldItem[] }) =>
+  fold.items.map((item) =>
+    item.kind === "tool"
+      ? `tool:${item.tool.toolId}`
+      : item.kind === "thinking"
+        ? `thinking:${item.thinking.text}`
+        : `text:${item.text.text}`,
+  );
+
 test("settled successful tools become a render-ready fold without reordering", () => {
   const projection = createTranscriptProjection();
   const snapshot = apply(
@@ -217,12 +227,69 @@ test("settled successful tools become a render-ready fold without reordering", (
   const fold = rowsOf(snapshot, "tool-fold")[0]!;
   assert.equal(fold.actionCount, 2);
   assert.equal(fold.summary, "Read · Grep");
-  assert.deepEqual(
-    fold.items.map((item) =>
-      item.kind === "tool" ? `tool:${item.tool.toolId}` : `thinking:${item.thinking.text}`,
-    ),
-    ["tool:read", "thinking:next", "tool:grep"],
+  assert.equal(fold.live, false);
+  assert.deepEqual(foldItemLabels(fold), ["tool:read", "thinking:next", "tool:grep"]);
+});
+
+test("the fold forms live: finished calls fold mid-turn, the in-flight call stays its own row, and turn_end only relabels", () => {
+  const projection = createTranscriptProjection();
+  const midTurn = apply(
+    projection,
+    { type: "user_prompt", text: "work" },
+    { type: "tool_use", id: "read", name: "Read" },
+    { type: "tool_result", id: "read", output: "a" },
+    { type: "tool_use", id: "grep", name: "Grep" },
+    { type: "tool_result", id: "grep", output: "b" },
+    { type: "tool_use", id: "test", name: "Bash", detail: "yarn test" },
   );
+  assert.deepEqual(rowKinds(midTurn), ["text", "tool-fold", "tool"]);
+  const liveFold = rowsOf(midTurn, "tool-fold")[0]!;
+  assert.equal(liveFold.live, true, "a fold in a running turn is live");
+  assert.equal(liveFold.actionCount, 2);
+  assert.equal(rowsOf(midTurn, "tool")[0]?.output, undefined, "the running call is the visible row");
+
+  const grown = apply(projection, { type: "tool_result", id: "test", output: "ok" });
+  assert.deepEqual(rowKinds(grown), ["text", "tool-fold"], "the finished call joins the fold");
+  assert.equal(rowsOf(grown, "tool-fold")[0]?.actionCount, 3);
+  assert.equal(rowsOf(grown, "tool-fold")[0]?.id, liveFold.id, "the fold keeps its anchor identity");
+
+  const settled = apply(projection, { type: "turn_end" });
+  const fold = rowsOf(settled, "tool-fold")[0]!;
+  assert.equal(fold.live, false);
+  assert.equal(fold.id, liveFold.id);
+});
+
+test("short assistant remarks between calls ride inside the fold; a paragraph is a boundary", () => {
+  const projection = createTranscriptProjection();
+  const paragraph =
+    "Here is a fuller account of what I found while reading the file. The protocol " +
+    "module defines every message type and the two sides of the wire are additive-only, " +
+    "so the next step is a careful read of the handlers.";
+  const snapshot = apply(
+    projection,
+    { type: "user_prompt", text: "work" },
+    { type: "tool_use", id: "read", name: "Read" },
+    { type: "tool_result", id: "read", output: "a" },
+    { type: "text_delta", text: "Typecheck is clean — running lint next." },
+    { type: "tool_use", id: "lint", name: "Bash" },
+    { type: "tool_result", id: "lint", output: "b" },
+    { type: "text_delta", text: paragraph },
+    { type: "tool_use", id: "test", name: "Bash" },
+    { type: "tool_result", id: "test", output: "c" },
+    { type: "tool_use", id: "test2", name: "Bash" },
+    { type: "tool_result", id: "test2", output: "d" },
+    { type: "turn_end" },
+  );
+  assert.deepEqual(rowKinds(snapshot), ["text", "tool-fold", "text", "tool-fold"]);
+  const [first, second] = rowsOf(snapshot, "tool-fold");
+  assert.deepEqual(foldItemLabels(first!), [
+    "tool:read",
+    "text:Typecheck is clean — running lint next.",
+    "tool:lint",
+  ]);
+  assert.equal(first!.actionCount, 2, "an absorbed remark is not an action");
+  assert.equal(rowsOf(snapshot, "text")[1]?.text, paragraph, "the paragraph stays its own row");
+  assert.deepEqual(foldItemLabels(second!), ["tool:test", "tool:test2"]);
 });
 
 test("failed and interrupted tools stay visible and never enter a fold", () => {
@@ -355,6 +422,22 @@ test("bang start, output, and end update one stable row", () => {
   assert.deepEqual(
     { output: endRow.output, done: endRow.done, exitCode: endRow.exitCode },
     { output: "/tmp", done: true, exitCode: 0 },
+  );
+  assert.equal(endRow.silent, undefined, "a plain ! row carries no silent flag");
+});
+
+test("a silent (!!) bang row carries the flag from bang_start through its end", () => {
+  const projection = createTranscriptProjection();
+  const rows = apply(
+    projection,
+    { type: "bang_start", id: "s", command: "git status", silent: true },
+    { type: "bang_output", id: "s", data: "clean" },
+    { type: "bang_end", id: "s", exitCode: 0 },
+  );
+  const row = rowsOf(rows, "bang")[0]!;
+  assert.deepEqual(
+    { silent: row.silent, output: row.output, done: row.done },
+    { silent: true, output: "clean", done: true },
   );
 });
 

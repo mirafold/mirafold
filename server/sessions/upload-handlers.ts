@@ -1,4 +1,4 @@
-// File drag-and-drop input (Phase FD) — the file_upload_begin/chunk/abort
+// File drag-and-drop input — the file_upload_begin/chunk/abort
 // message handlers, on the fs-handlers template: per-connection state,
 // handlers never throw (the local WS path has no try/catch above this, so
 // an escaped throw would exit the daemon), and every well-formed request
@@ -8,9 +8,10 @@
 // filesystem path; the daemon stages them OUTSIDE the working tree (no
 // working-tree writes — that surface belongs to the user and the agent) and
 // answers with the staged absolute path for the prompt. Cleanup rides the
-// OS's tmp reaping — a recorded v1 decision, not an accident.
+// OS's tmp reaping — a deliberate decision, not an accident.
 
 import fs from "node:fs";
+import type { ConnectionContext } from "./handler-context";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
@@ -39,7 +40,7 @@ export const FILE_UPLOAD_MAX_CHUNK_BYTES = envInt("FILE_UPLOAD_MAX_CHUNK_BYTES",
 export const FILE_UPLOAD_STALL_MS = envInt("FILE_UPLOAD_STALL_MS", 30_000);
 
 // An upload is model input staging, so it follows the prompt/cockpit relay
-// gate exactly — one verdict, one wording (provider-policy.ts, OC.4c).
+// gate exactly — one verdict, one wording (provider-policy.ts).
 
 /** Path-free, control-free, bounded display name; never empty. */
 export function safeUploadName(raw: unknown): string {
@@ -50,20 +51,42 @@ export function safeUploadName(raw: unknown): string {
   return cleaned.slice(0, 120);
 }
 
-/** name.ext → name-2.ext, name-3.ext … until the name is free in dir. */
-export function collisionFreePath(dir: string, name: string): string {
-  const ext = path.extname(name);
-  const stem = name.slice(0, name.length - ext.length);
-  let candidate = path.join(dir, name);
-  for (let n = 2; fs.existsSync(candidate); n++) {
-    candidate = path.join(dir, `${stem}-${n}${ext}`);
-  }
-  return candidate;
+// One random, daemon-owned 0700 root per daemon (mkdtemp's mode) — never a
+// fixed name under shared /tmp, where another local user could pre-create
+// the parent and own every session dir beneath it (rename it away, plant a
+// symlink under the next upload's name, swap a staged file's bytes before
+// the agent reads it; audit 2026-08-26). The same rule the `!` cwd handoff
+// follows (bang-handlers.ts). Lazy: a daemon that never stages creates none.
+let uploadsRoot: string | undefined;
+/** The per-session staging dir under the daemon's private root. */
+export function stagingDir(sessionId: string): string {
+  uploadsRoot ??= fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-uploads-"));
+  return path.join(uploadsRoot, sessionId);
 }
 
-/** The per-session staging dir, created private on first use. */
-export function stagingDir(sessionId: string): string {
-  return path.join(os.tmpdir(), "mirafold-uploads", sessionId);
+/** Create the destination exclusively and without following a link, then
+ *  write: the name is the client's (sanitized), the directory is ours, and
+ *  nothing pre-placed under that name can redirect or receive the bytes. */
+function writeStagedFile(dir: string, name: string, bytes: Buffer): string {
+  const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+  const ext = path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? path.join(dir, name) : path.join(dir, `${stem}-${n}${ext}`);
+    let fd: number;
+    try {
+      fd = fs.openSync(candidate, O_WRONLY | O_CREAT | O_EXCL | (O_NOFOLLOW ?? 0), 0o600);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw err;
+    }
+    try {
+      fs.writeFileSync(fd, bytes);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return candidate;
+  }
 }
 
 type ActiveUpload = {
@@ -74,11 +97,7 @@ type ActiveUpload = {
   stall: NodeJS.Timeout;
 };
 
-type UploadDeps = {
-  viewport: (msg: WireMsg) => void;
-  getEntry: () => SessionEntry | null;
-  remote: boolean;
-};
+type UploadDeps = Pick<ConnectionContext, "viewport" | "getEntry" | "remote" | "isClosed">;
 
 export type UploadHandlers = {
   begin(msg: ClientMsg & { type: "file_upload_begin" }): void;
@@ -88,7 +107,11 @@ export type UploadHandlers = {
   dispose(): void;
 };
 
-export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps): UploadHandlers {
+export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: UploadDeps): UploadHandlers {
+  // Staging completes asynchronously; a reply must never chase a closed socket.
+  const reply = (msg: WireMsg) => {
+    if (!isClosed()) viewport(msg);
+  };
   const active = new Map<string, ActiveUpload>();
 
   const fail = (id: string, message: string) => {
@@ -97,7 +120,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       clearTimeout(up.stall);
       active.delete(id);
     }
-    viewport({ type: "file_upload_error", id, message });
+    reply({ type: "file_upload_error", id, message });
   };
 
   const armStall = (id: string, up: ActiveUpload) => {
@@ -105,7 +128,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     // unref: a pending stall reaper must never hold the process open — the
     // daemon's server handle keeps its loop alive, and a test child that
     // leaves an upload mid-flight would otherwise idle ~30s before exiting
-    // (measured: one leaked pair cost every Tier-1 run 30s — bughunt).
+    // (one leaked pair costs every Tier-1 run 30s).
     up.stall = setTimeout(() => fail(id, "upload stalled — dropped"), FILE_UPLOAD_STALL_MS);
     up.stall.unref?.();
   };
@@ -117,18 +140,17 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     active.delete(id);
     const entry = getEntry();
     if (!entry) {
-      viewport({ type: "file_upload_error", id, message: "no session attached" });
+      reply({ type: "file_upload_error", id, message: "no session attached" });
       return;
     }
     try {
       const dir = stagingDir(entry.id);
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const dest = collisionFreePath(dir, up.name);
-      fs.writeFileSync(dest, Buffer.concat(up.chunks), { mode: 0o600 });
+      const dest = writeStagedFile(dir, up.name, Buffer.concat(up.chunks));
       log.info(`staged upload ${up.name} (${up.size} bytes) → session ${entry.id}`);
-      viewport({ type: "file_upload_done", id, path: dest, name: up.name });
+      reply({ type: "file_upload_done", id, path: dest, name: up.name });
     } catch (err) {
-      viewport({
+      reply({
         type: "file_upload_error",
         id,
         message: `could not stage the file: ${err instanceof Error ? err.message : String(err)}`,
@@ -151,9 +173,9 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       }
       if (active.has(msg.id)) {
         // Refuse the NEW begin only — `fail` would tear down the healthy
-        // in-flight upload that legitimately owns this id (bughunt: a client
-        // id-collision destroyed the original transfer mid-flight).
-        viewport({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
+        // in-flight upload that legitimately owns this id (a client
+        // id-collision would destroy the original transfer mid-flight).
+        reply({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
         return;
       }
       if (active.size >= FILE_UPLOAD_MAX_CONCURRENT) {
@@ -190,13 +212,13 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       if (!up) {
         // Answer, don't hang the client's correlation: a chunk with no
         // begin (or after a failure) tells the sender its upload is dead.
-        viewport({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
+        reply({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
         return;
       }
       // Buffer.from(str, "base64") never throws — it silently DROPS invalid
       // characters, which under-counts `received` and turns a corrupt chunk
-      // into a 30s stall-death instead of this typed error (refactor finding,
-      // BUG-2). Validate the grammar explicitly: the client's encoder emits
+      // into a 30s stall-death instead of this typed error.
+      // Validate the grammar explicitly: the client's encoder emits
       // exactly canonical unpadded-or-padded base64, so anything else is
       // corruption.
       if (

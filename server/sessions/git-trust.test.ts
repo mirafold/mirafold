@@ -12,14 +12,14 @@ const cfg = (o: Record<string, string>) => new Map(Object.entries(o));
 test("an ordinary repo's config is silent — nothing risky, nothing disabled", () => {
   const r = assessConfig(cfg({ "core.bare": "false", "remote.origin.url": "git@x:y.git" }));
   assert.deepEqual(r.risky, []);
-  assert.deepEqual(r.disableArgs, []);
+  assert.deepEqual(r.disableEnv, {});
   assert.equal(r.unscannable, false);
 });
 
 test("core.fsmonitor naming a program is risky; the builtin/off forms are not", () => {
   const risky = assessConfig(cfg({ "core.fsmonitor": "/tmp/hook.sh" }));
   assert.deepEqual(risky.risky, [{ key: "core.fsmonitor", value: "/tmp/hook.sh" }]);
-  assert.deepEqual(risky.disableArgs, ["-c", "core.fsmonitor=false"]);
+  assert.deepEqual(risky.disableEnv, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.fsmonitor", GIT_CONFIG_VALUE_0: "false" });
   for (const inert of ["true", "TRUE", " true ", "false", "", "1", "0"]) {
     assert.deepEqual(
       assessConfig(cfg({ "core.fsmonitor": inert })).risky,
@@ -42,12 +42,19 @@ test("filter drivers are risky by clean/process only, under any driver name", ()
     r.risky.map((x) => x.key).sort(),
     ["filter.anything.clean", "filter.other.process"],
   );
-  assert.deepEqual(r.disableArgs, [
-    "-c",
-    "filter.anything.clean=",
-    "-c",
-    "filter.other.process=",
-  ]);
+  assert.deepEqual(r.disableEnv, {
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "filter.anything.clean",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "filter.other.process",
+    GIT_CONFIG_VALUE_1: "",
+  });
+  // A `=` inside the driver's name: the override is still one key and one
+  // value (the `-c key=value` form was split at the first `=` and left the
+  // real driver armed — audit 2026-08-26).
+  const weird = assessConfig(cfg({ "filter.ev=il.clean": "./run-me" }));
+  assert.equal(weird.disableEnv.GIT_CONFIG_KEY_0, "filter.ev=il.clean");
+  assert.equal(weird.disableEnv.GIT_CONFIG_VALUE_0, "");
 });
 
 test("more filter drivers than we will neutralize marks the repo unscannable", () => {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 // through thin→fat glyph frames beside a ticking elapsed count. Real frame
 // changes, not an opacity pulse — and prompt-area chrome, not a transcript
 // entry, so no scroll position can hide it. From Enter to turn_end the user
-// can always see work is in flight (2026-07-29, Kyle).
+// can always see work is in flight.
 const FRAMES = ["·", "✢", "✳", "✻", "✽", "✻", "✳", "✢"];
 const FRAME_MS = 140;
 
@@ -44,7 +44,7 @@ export function ActivityLine({ busy, label }: { busy: boolean; label: string }) 
 
   if (!busy) return null;
   return (
-    // aria-hidden: Announcer speaks turn state once per transition (A.1);
+    // aria-hidden: Announcer speaks turn state once per transition;
     // a line whose text changes every second would drown a screen reader.
     <div className="activity-line" aria-hidden="true">
       <span className="activity-glyph">{FRAMES[frame]}</span>

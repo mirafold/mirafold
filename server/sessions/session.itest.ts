@@ -30,11 +30,22 @@ async function runTurn(client: TestClient, text: string): Promise<Any[]> {
   return client.received.slice(from) as Any[];
 }
 
+/** The first SEQUENCED frame of a turn — the echo. The unsequenced
+ *  prompt_options catalog is emitted by the engine at activation, which is
+ *  asynchronous to the first prompt: it lands ahead of the echo when the
+ *  prompt follows creation at once, and under load otherwise. */
+const firstSequenced = (turn: Any[]): Any => turn.find((m) => typeof m.seq === "number")!;
+
 test("supportability: hello carries the version; errors and skew reach the log (R.4g)", async () => {
   const t = new TestClient(d.port);
   await t.opened();
   const hello = (await t.type("agents")) as Any;
   assert.match(hello.version, /^\d+\.\d+\.\d+/);
+  // No relay configured (the harness scrubs every relay/entitlement var): the
+  // hello says WHY, so the pair button can open the honest state instead of
+  // vanishing. Local viewports only — see relay-service.itest for the remote side.
+  assert.equal(hello.relay, undefined);
+  assert.equal(hello.relayOff, "unentitled");
 
   // A viewport-scoped error (bad cwd) reaches the terminal, timestamped —
   // the daemon log is what a stranger pastes into a bug report.
@@ -103,7 +114,7 @@ test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async (
   c.send({ type: "warp_drive", factor: 9 } as never);
   c.sendRaw(JSON.stringify({ type: "even_less_known" }));
   const turn = await runTurn(c, "still here after unknown frames");
-  assert.equal(turn[0].type, "user_prompt");
+  assert.equal(firstSequenced(turn).type, "user_prompt");
   assert.equal(turn[turn.length - 1].type, "turn_end");
   assert.ok(!turn.some((m) => m.type === "error"));
 });
@@ -111,12 +122,25 @@ test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async (
 test("a template turn follows the full wire grammar", async () => {
   const turn = await runTurn(c, "hello from the integration suite");
 
-  assert.equal(turn[0].type, "user_prompt");
-  assert.equal(turn[0].text, "hello from the integration suite");
+  const first = firstSequenced(turn);
+  assert.equal(first.type, "user_prompt");
+  assert.equal(first.text, "hello from the integration suite");
+  // Skipping the catalog above must not hide a regression that emits it per
+  // turn: across this client's life (one activation, one attach) it appears
+  // at most twice, never once per prompt.
+  assert.ok(
+    c.received.filter((m) => m.type === "prompt_options").length <= 2,
+    "prompt_options re-emitted per turn",
+  );
 
-  // seq strictly increases across the whole broadcast stream.
-  const seqs = turn.map((m) => m.seq as number);
-  for (let i = 1; i < seqs.length; i++) assert.ok(seqs[i] > seqs[i - 1]);
+  // seq strictly increases across the whole broadcast stream. The one frame
+  // the registry deliberately never sequences is the replaceable
+  // prompt_options catalog (it may land mid-turn under load — test-audit
+  // 2026-08-26: comparing its `undefined` seq failed 2 of 3 loaded runs).
+  const unsequenced = turn.filter((m) => typeof m.seq !== "number");
+  assert.deepEqual([...new Set(unsequenced.map((m) => m.type))], unsequenced.length ? ["prompt_options"] : [], "only prompt_options may ride unsequenced");
+  const seqs = turn.filter((m) => typeof m.seq === "number").map((m) => m.seq as number);
+  for (let i = 1; i < seqs.length; i++) assert.ok(seqs[i] > seqs[i - 1], `seq ${seqs[i]} after ${seqs[i - 1]}`);
 
   const types = turn.map((m) => m.type);
   assert.ok(types.includes("thinking_delta"));
@@ -186,7 +210,10 @@ test("huge-output hook: the cap reports truncatedBytes, never a silent cut", asy
 test("artifact hook: sandboxed html rides the artifact message", async () => {
   const turn = await runTurn(c, "show me an artifact");
   const art = turn.find((m) => m.type === "artifact")!;
-  assert.ok(art.html.length > 0);
+  // The mock's artifact is fully knowable — pin it, not "non-empty"
+  // (test-audit 2026-08-26).
+  assert.equal(art.title, "bridge demo");
+  assert.match(art.html, /id="b"/, "the bridge demo's counter button rides the html");
   assert.ok(typeof art.id === "string" && art.id.length > 0);
 });
 
@@ -255,7 +282,14 @@ test("interrupt mid-turn: the stream stops dead and the turn still ends", async 
   await c.type("turn_end", 20_000);
   const count = c.received.length;
   await new Promise((r) => setTimeout(r, 600));
-  assert.equal(c.received.length, count); // the aborted turn never speaks again
+  // The aborted turn never speaks again: the ONLY frame allowed after its
+  // turn_end is the shell's replaceable prompt_options catalog, which may
+  // land under load and is not the turn speaking (test-audit 2026-08-26: an
+  // exact frame count failed 1 of 3 loaded runs; a denylist of turn types
+  // let a stray `usage` through — cold review). Everything else is a
+  // regression, whatever its type.
+  const stragglers = (c.received.slice(count) as Any[]).filter((m) => m.type !== "prompt_options");
+  assert.deepEqual(stragglers.map((m) => m.type), [], `the aborted turn spoke again: ${stragglers.map((m) => m.type).join(",")}`);
   // The session takes the next turn cleanly.
   const next = await runTurn(c, "still alive?");
   assert.equal(next[next.length - 1].type, "turn_end");

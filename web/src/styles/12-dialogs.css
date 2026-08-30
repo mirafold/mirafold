@@ -1,42 +1,40 @@
 /* ---- Dialogs & overlays --------------------------------------------------
-   The modal layer: onboarding's agent picker, the pairing QR card, and the
+   The modal layer: the agent picker, the pairing QR card, and the
    settings card. */
 
 /* Transparent wrapper so `inert` can hide everything behind an open dialog
    from the accessibility tree without touching flex/grid layout — aria-modal
-   alone doesn't stop Orca's Browse-mode cursor from reading into it (2026-07-20). */
+   alone doesn't stop Orca's Browse-mode cursor from reading into it. */
 .behind-dialog {
   display: contents;
 }
 
-/* ---- Onboarding: shell-owned agent picker (P.4) ------------------------- */
+/* ---- AgentPicker: shell-owned agent picker ------------------------- */
 /* The card's vertical chrome flexes with the window so its internal
-   scrollbar is a genuine last resort, not a routine sight. --onb-squeeze
-   runs 16px (full chrome, tall windows — the sizes read exactly as before)
-   down to 0px (a floor a notch tighter than the old max-height:700px compact
-   tier, which this replaces); every vertical metric interpolates on it, with
+   scrollbar is a genuine last resort, not a routine sight. --agent-picker-squeeze
+   runs 16px (full chrome, tall windows) down to 0px; every vertical metric
+   interpolates on it, with
    its full→floor range in a trailing comment. The card lives inside .fleet's
    zoom (1.15), which inflates used vh values by that factor — the constants
    below divide it back out (9.1vh ≈ 10.5 real vh). Re-derive them if the
    fleet zoom ever moves. */
-.onb-overlay {
+.agent-picker-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-agent-picker);
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--overlay);
   backdrop-filter: blur(3px);
-  padding: calc(12px + var(--onb-squeeze) * 0.75) 24px; /* 12→24px */
-  /* Intercept moved 66→70 when the FOURTH agent row landed (OC.4b): the
-     floor now arrives ~44px of window earlier, buying the compression the
-     extra row needs through the 730–760px band. Tall-window chrome (the
-     16px cap) is untouched. */
-  --onb-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
+  padding: calc(12px + var(--agent-picker-squeeze) * 0.75) 24px; /* 12→24px */
+  /* Intercept 70, not 66: the floor arrives ~44px of window earlier,
+     buying the compression the fourth agent row needs through the
+     730–760px band. Tall-window chrome (the 16px cap) is untouched. */
+  --agent-picker-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
 }
 
-.onb-card {
+.agent-picker-card {
   width: 100%;
   max-width: 560px;
   /* Never taller than the overlay's padded box: below the squeeze floor
@@ -48,75 +46,75 @@
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: calc(18px + var(--onb-squeeze) * 1.125) 34px; /* 18→36px */
+  padding: calc(18px + var(--agent-picker-squeeze) * 1.125) 34px; /* 18→36px */
   box-shadow: var(--shadow-card);
   text-align: center;
 }
 
 
-.onb-glyph {
-  width: calc(40px + var(--onb-squeeze) * 2.5); /* 40→80px */
-  height: calc(40px + var(--onb-squeeze) * 2.5);
+.agent-picker-glyph {
+  width: calc(40px + var(--agent-picker-squeeze) * 2.5); /* 40→80px */
+  height: calc(40px + var(--agent-picker-squeeze) * 2.5);
 }
 
-.onb-title {
-  margin: calc(7px + var(--onb-squeeze) * 0.4375) 0 calc(3px + var(--onb-squeeze) * 0.1875); /* 7→14px / 3→6px */
-  font-size: calc(19px + var(--onb-squeeze) * 0.375); /* 19→25px */
+.agent-picker-title {
+  margin: calc(7px + var(--agent-picker-squeeze) * 0.4375) 0 calc(3px + var(--agent-picker-squeeze) * 0.1875); /* 7→14px / 3→6px */
+  font-size: calc(19px + var(--agent-picker-squeeze) * 0.375); /* 19→25px */
   font-weight: 650;
   color: var(--fg-strong);
 }
 
-.onb-sub {
-  margin: 0 auto calc(10px + var(--onb-squeeze) * 0.75); /* 10→22px */
+.agent-picker-sub {
+  margin: 0 auto calc(10px + var(--agent-picker-squeeze) * 0.75); /* 10→22px */
   max-width: 46ch;
-  font-size: calc(14px + var(--onb-squeeze) * 0.0625); /* 14→15px */
+  font-size: calc(14px + var(--agent-picker-squeeze) * 0.0625); /* 14→15px */
   line-height: 1.5;
   color: var(--fg-dim);
 }
 
-/* The working-directory field (Step 4.8) — prefilled with the daemon's
+/* The working-directory field — prefilled with the daemon's
    launch dir, editable to point the session anywhere that exists. */
-.onb-cwd-label {
+.agent-picker-cwd-label {
   display: block;
   margin-bottom: 6px;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
 }
 
-.onb-cwd-row {
+.agent-picker-cwd-row {
   display: flex;
   align-items: stretch;
   gap: 8px;
-  margin-bottom: calc(10px + var(--onb-squeeze) * 0.25); /* 10→14px */
+  margin-bottom: calc(10px + var(--agent-picker-squeeze) * 0.25); /* 10→14px */
 }
 
-.onb-cwd {
+.agent-picker-cwd {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
-  padding: calc(8px + var(--onb-squeeze) * 0.1875) 13px; /* 8→11px */
+  padding: calc(8px + var(--agent-picker-squeeze) * 0.1875) 13px; /* 8→11px */
   background: var(--bg-inset);
   border: 1px solid var(--border-mid);
   border-radius: 8px;
   color: var(--fg-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   outline: none;
 }
 
-.onb-cwd:focus {
+.agent-picker-cwd:focus {
   border-color: var(--border-hover);
 }
 
-.onb-cwd::placeholder {
+.agent-picker-cwd::placeholder {
   color: var(--fg-faint);
 }
 
-.onb-cwd-browse {
+.agent-picker-cwd-browse {
   flex: none;
   padding: 0 13px;
   border: 1px solid var(--border-mid);
@@ -124,139 +122,139 @@
   background: var(--surface-2);
   color: var(--fg-strong);
   cursor: pointer;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
-.onb-cwd-browse:hover:not(:disabled) {
+.agent-picker-cwd-browse:hover:not(:disabled) {
   border-color: var(--border-hover);
   background: var(--surface-hover);
 }
 
-.onb-cwd-browse:disabled {
+.agent-picker-cwd-browse:disabled {
   cursor: wait;
   color: var(--fg-dim);
 }
 
 /* A rejected working dir (no such directory) — fix the path and retry. */
-.onb-error {
+.agent-picker-error {
   margin: -6px 0 12px;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--error);
 }
 
-.onb-list {
+.agent-picker-list {
   display: flex;
   flex-direction: column;
-  gap: calc(5px + var(--onb-squeeze) * 0.3125); /* 5→10px */
+  gap: calc(5px + var(--agent-picker-squeeze) * 0.3125); /* 5→10px */
 }
 
-.onb-connecting {
+.agent-picker-connecting {
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   padding: 14px;
 }
 
-.onb-agent {
+.agent-picker-agent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: calc(2px + var(--onb-squeeze) * 0.3125); /* 2→7px */
-  padding: calc(8px + var(--onb-squeeze) * 0.5625) calc(14px + var(--onb-squeeze) * 0.3125); /* 8→17px / 14→19px */
+  gap: calc(2px + var(--agent-picker-squeeze) * 0.3125); /* 2→7px */
+  padding: calc(8px + var(--agent-picker-squeeze) * 0.5625) calc(14px + var(--agent-picker-squeeze) * 0.3125); /* 8→17px / 14→19px */
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: 9px;
   cursor: pointer;
   color: var(--fg-strong);
-  font-size: calc(15px + var(--onb-squeeze) * 0.125); /* 15→17px */
+  font-size: calc(15px + var(--agent-picker-squeeze) * 0.125); /* 15→17px */
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
 
-.onb-agent:hover {
+.agent-picker-agent:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
 
-.onb-agent:active {
+.agent-picker-agent:active {
   transform: translateY(1px);
 }
 
-.onb-agent-row {
+.agent-picker-agent-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.onb-agent-name {
+.agent-picker-agent-name {
   font-weight: 600;
 }
 
-/* R.4b: the one-line fix for a credential-less agent, on the picker itself. */
-.onb-agent-hint {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+/* The one-line fix for a credential-less agent, on the picker itself. */
+.agent-picker-agent-hint {
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
   color: var(--fg-dim);
 }
 
-/* R.4k: the "what's behind this row" line for a live agent (local endpoint or
+/* The "what's behind this row" line for a live agent (local endpoint or
    configured model) — accent-tinted so it reads as confirmation, not a warning. */
-.onb-agent-detail {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-agent-detail {
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
   color: var(--accent);
 }
 
-/* R.4k: the local-model signpost under the picker — dim, one notch above the
+/* The local-model signpost under the picker — dim, one notch above the
    card background, so "run your own model" is discoverable without shouting. */
-.onb-local-note {
-  margin-top: calc(8px + var(--onb-squeeze) * 0.5); /* 8→16px */
+.agent-picker-local-note {
+  margin-top: calc(8px + var(--agent-picker-squeeze) * 0.5); /* 8→16px */
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-dim);
 }
-.onb-local-note code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-local-note code {
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
-.onb-agent-status {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-agent-status {
+  font-family: var(--font-mono);
   font-size: 13px;
   letter-spacing: 0.02em;
 }
 
-/* ---- N.4: the second step — how the picked agent is backed -------------- */
+/* ---- The second step — how the picked agent is backed -------------- */
 
-.onb-backends {
+.agent-picker-backends {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.onb-back {
+.agent-picker-back {
   align-self: flex-start;
   padding: 4px 2px;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
-.onb-back:hover {
+.agent-picker-back:hover {
   color: var(--fg-strong);
 }
 
 /* A backend row shares the agent row's look, one size down. */
-.onb-backend {
+.agent-picker-backend {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -271,22 +269,22 @@
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
-.onb-backend:hover:not(:disabled) {
+.agent-picker-backend:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
-.onb-backend:active:not(:disabled) {
+.agent-picker-backend:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.onb-backend-row {
+.agent-picker-backend-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.onb-backend-name {
+.agent-picker-backend-name {
   font-weight: 600;
 }
 
@@ -294,19 +292,19 @@
    server and a paid remote endpoint, which the host alone only tells you if
    you read 127.0.0.1 as loopback. A quiet tag, not a status: it states a fact
    about the row, it isn't asking to be clicked. */
-.onb-backend-tag {
+.agent-picker-backend-tag {
   flex: none;
   padding: 2px 7px;
   border: 1px solid var(--border-mid);
   border-radius: 999px;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
 }
 
-.onb-backend-detail {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-backend-detail {
+  font-family: var(--font-mono);
   font-size: 13px;
   color: var(--accent);
   opacity: 0.85;
@@ -315,95 +313,95 @@
 /* The model this row runs — every row carries one, so it's the line the eye
    compares down the column. Dimmer than the accent detail: it answers "which
    model", it isn't the row's identity. */
-.onb-backend-model {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-backend-model {
+  font-family: var(--font-mono);
   font-size: 13px;
   color: var(--fg-dim);
 }
 
 /* The disclosed-uncertainty caveat (codex subscription), and the why on a
    blocked row — dim monospace, same voice as the agent-row hints. */
-.onb-backend-caveat {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.agent-picker-backend-caveat {
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
   color: var(--fg-dim);
 }
 
-/* R.4l (c): unavailable stays VISIBLE but clearly unavailable — gray, no
+/* Unavailable stays VISIBLE but clearly unavailable — gray, no
    hover invitation, warn-toned name so the why draws the eye. */
-.onb-backend-blocked {
+.agent-picker-backend-blocked {
   cursor: default;
   opacity: 0.6;
 }
-.onb-backend-blocked .onb-backend-name {
+.agent-picker-backend-blocked .agent-picker-backend-name {
   color: var(--warn-fg);
 }
 
 /* The third step: which server's catalog you're in, above its models. */
-.onb-server-name {
+.agent-picker-server-name {
   align-self: flex-start;
   padding: 0 2px;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   color: var(--accent);
 }
 
-.onb-models {
+.agent-picker-models {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.onb-model {
+.agent-picker-model {
   padding: 7px 12px;
   background: var(--surface);
   border: 1px solid var(--border-mid);
   border-radius: 7px;
   cursor: pointer;
   color: var(--fg-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.onb-model:hover {
+.agent-picker-model:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
 
 /* The live "start it and it appears here" promise inside the second step. */
-.onb-live-hint {
+.agent-picker-live-hint {
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-dim);
 }
 
-.onb-live {
+.agent-picker-live {
   color: var(--accent);
 }
 
-.onb-demo {
+.agent-picker-demo {
   color: var(--fg-dim);
 }
 
-/* R.4i: a prohibited subscription is present — warn-toned, not the neutral
+/* A prohibited subscription is present — warn-toned, not the neutral
    demo grey, so it reads as "attention needed", not just "no key". */
-.onb-blocked {
+.agent-picker-blocked {
   color: var(--warn-fg);
 }
 
-/* ---- Connect a device (Step R.4) -------------------------------------------
+/* ---- Connect a device -------------------------------------------
    Shell-owned pairing affordance: a status-bar / fleet-header button opening
    a QR of the pairing URL. The QR stays black-on-white in both themes —
    scanners want contrast, not theming. */
 
 .pair-backdrop,
 .settings-backdrop,
-.perm-modal-backdrop {
+.permission-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -412,13 +410,13 @@
   padding: 24px;
 }
 
-/* The pairing, settings, and full-command cards share one modal idiom (S.4):
+/* The pairing, settings, and full-command cards share one modal idiom:
    same card shell, head, title, and close — only the width differs. */
 .pair-card,
 .settings-card,
-.perm-modal-card {
+.permission-modal-card {
   width: 100%;
-  /* Same hard floor as .onb-card: never taller than the backdrop's padded
+  /* Same hard floor as .agent-picker-card: never taller than the backdrop's padded
      box, so short viewports keep the 24px gutter and the card scrolls
      internally instead of sitting flush (settings measures 583px natural —
      taller than a ~600px un-maximized Mac window). */
@@ -440,7 +438,7 @@
   max-width: 420px;
 }
 
-.perm-modal-card {
+.permission-modal-card {
   max-width: 560px;
 }
 
@@ -450,12 +448,12 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* The pairing card reads at arm's length — you're holding a phone up to it,
-   not leaning into the screen — so its whole head row goes up 1.5× (2026-07-25,
-   Kyle). One override on the row scales the ❯ glyph, the title (0.95em of it)
+   not leaning into the screen — so its whole head row goes up 1.5×. One
+   override on the row scales the ❯ glyph, the title (0.95em of it)
    and the ✕ (font: inherit) together, and leaves the settings card, which
    shares the head/title/close rules around it, exactly where it was. */
 .pair-head {
@@ -494,7 +492,7 @@
 
 .pair-hint {
   margin: 14px 2px 10px;
-  /* 1.5× the old 0.82em, with the URL row below on the same ramp. */
+  /* 1.5× 0.82em, with the URL row below on the same ramp. */
   font-size: 1.23em;
   line-height: 1.5;
   color: var(--fg-dim);
@@ -506,7 +504,7 @@
   display: block;
   width: 100%;
   padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1.17em;
   color: var(--accent);
   background: transparent;
@@ -519,11 +517,52 @@
   background: var(--ok-bg);
 }
 
+/* No relay: the card's one action is the offer — same slot and weight as
+   copy-link above, drawn as the link it is. The sub-line under it is the
+   already-a-subscriber path, dimmer and smaller than the pitch. */
+.pair-cta {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 1.17em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pair-cta:hover {
+  background: var(--ok-bg);
+}
+
+.pair-hint-sub {
+  margin-top: 12px;
+  font-size: 1.05em;
+  color: var(--fg-dimmer);
+}
+
+/* The backend's refusal line, quoted INSIDE our sentence above a payment
+   link: isolated so strong-RTL text in it cannot re-order the words around
+   it (a div is isolated by default; an inline <q> is not). Pairs with
+   visibleControls(), which renders explicit direction controls as tokens. */
+.pair-quote {
+  unicode-bidi: isolate;
+}
+
+.pair-hint code {
+  font-family: var(--font-mono);
+  color: var(--fg-mid);
+}
+
 /* The URL is for verifying, not transcribing — shown, never a scroll slot. */
 .pair-url {
   display: block;
   margin-top: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1.08em;
   line-height: 1.45;
   color: var(--fg-mid);
@@ -535,7 +574,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Manage subscription (Phase CS) — inside the pairing card --------------
+/* ---- Manage subscription — inside the pairing card --------------
    The resting card shows only the deliberately neutral link below the URL;
    cancel lives in the manage view, behind its own confirm. Same modal, same
    type ramp as the pair content around it. */
@@ -546,7 +585,7 @@
   padding: 6px 0;
   background: transparent;
   border: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1.05em;
   color: var(--fg-dimmer);
   cursor: pointer;
@@ -579,7 +618,7 @@
   display: block;
   width: 100%;
   padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1.05em;
   color: var(--fg-mid);
   background: transparent;
@@ -605,10 +644,10 @@
   color: var(--error);
 }
 
-/* ---- Settings card (S.4) ----------------------------------------------------
-   Shell-owned, same modal idiom as the pairing card. One section today
-   (Theme); built to grow more sections. The gear (.sb-settings) sits beside
-   the pill in the status bar; the pill itself is locked unchanged. */
+/* ---- Settings card ----------------------------------------------------
+   Shell-owned, same modal idiom as the pairing card. The gear (.sb-settings)
+   sits beside the pill in the status bar; the pill itself is locked
+   unchanged. */
 
 .settings-section-title {
   font-size: 0.85em;
@@ -617,7 +656,7 @@
   margin-bottom: 10px;
 }
 
-/* Session facts (R.4l) — the card is the phone's one home for these. */
+/* Session facts — the card is the phone's one home for these. */
 .settings-kv {
   margin: 0 0 18px;
   display: flex;
@@ -641,7 +680,7 @@
 .settings-kv dd {
   margin: 0;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-body);
   overflow-wrap: anywhere;
@@ -708,7 +747,7 @@
   flex-shrink: 0;
 }
 
-/* ---- Needs-you notifications (Phase NF) — the card's third section. ------
+/* ---- Needs-you notifications — the card's third section. ------
    Same row idiom as .theme-row; the switch state reads in the trailing
    on/off word (aria-checked carries it for screen readers). */
 
@@ -749,7 +788,7 @@
 
 .notify-row-state {
   flex-shrink: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dimmer);
 }

@@ -7,16 +7,19 @@ inference server, your Mirafold session is fully local. There is no proxy,
 no shim, and nothing genui-specific to configure: you set the agent up exactly
 as you would for the terminal, and the browser skin follows.
 
-Two of the three supported agents have a real local path today:
+Three of the four supported agents have a real local path today:
 
 | Agent | Local path | How |
 |---|---|---|
 | **Claude Code** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API |
 | **Codex** | ✅ Ollama / LM Studio / vLLM | an OpenAI-compatible provider (auto-configured, or `~/.codex/config.toml`) |
+| **OpenCode** | ✅ any provider OpenCode itself supports | declare it in your own `opencode.json` (Ollama, LM Studio, OpenRouter, …); Mirafold adds nothing and the session classifies as `local` when the engine reports a local provider |
 | **Gemini CLI** | ❌ none | the CLI only talks to Google's endpoints — no supported local path |
 
-Both paths assume a local server that already has a model pulled. All examples
-below use [Ollama](https://ollama.com); LM Studio and vLLM notes follow.
+The two recipes below (Claude Code, Codex) assume a local server that already
+has a model pulled. All examples use [Ollama](https://ollama.com); LM Studio
+and vLLM notes follow. OpenCode needs no Mirafold-side recipe: configure it as
+you would for the terminal.
 
 ---
 
@@ -24,7 +27,7 @@ below use [Ollama](https://ollama.com); LM Studio and vLLM notes follow.
 
 **If your local server is running, there is nothing to configure.** The
 daemon probes the well-known localhost ports at startup and while the
-onboarding picker is open — Ollama (11434), LM Studio (1234), vLLM (8000),
+the agent picker is open — Ollama (11434), LM Studio (1234), vLLM (8000),
 llama.cpp (8080) — and any server that answers appears in the picker with
 its model list, under every agent that can drive it (Ollama under Claude
 Code *and* Codex; OpenAI-dialect-only servers under Codex). Pick a model
@@ -92,7 +95,7 @@ three lines in `.env` and run `yarn dev`.)
 
 That's it. Mirafold counts a set `ANTHROPIC_BASE_URL` as "this agent is
 configured" (exactly so that local setups don't fall back to the API-free mock),
-so onboarding shows Claude Code as live, and every token of inference stays on
+so the agent picker shows Claude Code as live, and every token of inference stays on
 your machine.
 
 **Honest limitations of this path** (Ollama's, not ours): no prompt caching —
@@ -132,7 +135,7 @@ Responses API for your model).
 
 2. That's the whole setup — launch Mirafold. It reads the default
    `model_provider` from `~/.codex/config.toml` (honoring `CODEX_HOME`, like
-   the CLI) and offers it at onboarding as its own endpoint row — **local
+   the CLI) and offers it in the agent picker as its own endpoint row — **local
    endpoint · localhost:11434** here. No key, no extra env. *(Older Mirafold
    versions couldn't see a config-file provider and needed a dummy
    `export OPENAI_API_KEY=local` to flip the "configured" signal; that wart
@@ -189,7 +192,7 @@ export DEFAULT_MODEL=kimi-k2.7-code
 mirafold
 ```
 
-The onboarding picker shows this as **custom endpoint** (an exact-loopback URL
+The agent picker shows this as **custom endpoint** (an exact-loopback URL
 shows as *local endpoint* instead). The browser receives that generic label
 plus an opaque daemon identifier—never the configured URL or hostname, since
 URLs can contain authentication, signed queries, and private tenant/network
@@ -226,7 +229,7 @@ mirafold
 ```
 
 No `OPENAI_API_KEY` is involved: Mirafold sees the config.toml provider and
-the onboarding picker offers it by its provider name, **OpenRouter**, without
+the agent picker offers it by its provider name, **OpenRouter**, without
 exposing the configured base URL. The
 key can also live in the `.env` where you launch Mirafold instead of an
 `export` — the daemon loads it, and Codex reads whichever variable your
@@ -285,8 +288,9 @@ model list; this table is guidance from what we've seen work.
   values; nothing is billed and no traffic leaves your machine (Path A's
   `cloud`-suffixed Ollama models are the exception — those run on Ollama's
   hosted service; avoid them if you want strictly local).
-- **Can different sessions mix local and cloud?** Not yet — provider selection
-  is per-daemon environment today. Per-session choice is PLAN Step L.3.
+- **Can different sessions mix local and cloud?** Yes — the backend is chosen
+  per session in the agent picker (a discovered local server, a configured provider,
+  or a cloud credential), and each session keeps its choice across restarts.
 - **Why not Gemini CLI?** Google's CLI has no endpoint override for
   self-hosted servers. If that changes, it becomes one adapter config note
   here, not a new feature.

@@ -19,7 +19,7 @@ import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 // (tracked + untracked, ignored excluded, statuses collapsed, staged deletes
 // kept visible), the before/after diff for modified/added/deleted/renamed
 // files, the SUBDIRECTORY-session path relativity trap, and the unborn-HEAD
-// degrade. The non-repo fallback is pinned by fs-explorer.itest.ts.
+// degrade. The non-repo fallback is pinned by fs-folder-tree.itest.ts.
 
 type Any = WireMsg & Record<string, any>;
 

@@ -1,9 +1,9 @@
-// The Explorer's per-viewport request layer (Phase E) — the fs_list /
-// fs_listdir / fs_read / fs_diff / fs_changes message handlers, lifted out of
-// connection.ts's switch so the Explorer's
-// request handling lives beside its data layer (fs-explorer.ts,
-// git.ts) instead of swelling the dispatcher. connection.ts builds one of
-// these per connection and delegates the five cases to it.
+// The folder tree's per-viewport request layer — the fs_list / fs_listdir /
+// fs_read / fs_diff / fs_changes message handlers, kept out of
+// connection.ts's switch so the folder tree's request handling lives beside
+// its data layer (fs-folder-tree.ts, git.ts) instead of swelling the
+// dispatcher. connection.ts builds one of these per connection and
+// delegates the five cases to it.
 //
 // Every reply is per-viewport: answered on THIS connection only (like
 // pong/sessions), never broadcast, never replay-buffered — disk state is a
@@ -14,6 +14,9 @@
 // throw would exit the daemon.
 
 import path from "node:path";
+import { createLogger } from "../log";
+import type { ConnectionContext } from "./handler-context";
+import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../throttle";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import {
@@ -26,7 +29,7 @@ import {
   reviewDiffRevision,
   sniffBinary,
   sortAndCapDir,
-} from "./fs-explorer";
+} from "./fs-folder-tree";
 import {
   cleanRelPath,
   decorateGitDir,
@@ -43,22 +46,24 @@ import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
 import { envInt } from "../env";
 
-// Minimum gap between Explorer requests per connection AND per type — fs_list
+// Minimum gap between folder tree requests per connection AND per type — fs_list
 // walks the tree, so a hostile client must not turn it into a CPU grinder; the
 // per-type split keeps a legitimate list-then-read pair from tripping it. A
 // throttled request still gets a reply (an error), never silence — the client's
 // request/reply correlation must always resolve.
 const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 
-// fs_listdir's throttle is a token BUCKET, not the min-interval family
-// (E2.1): opening the panel legitimately fires root + a first level of
+// fs_listdir's throttle is a token BUCKET, not the min-interval family:
+// opening the panel legitimately fires root + a first level of
 // fetches in the same instant, which a min-interval would refuse — and one
 // readdir is orders cheaper than the tree walk the interval was sized for.
 // Capacity = refill rate, one knob: a full burst of this many, sustained at
 // this many per second. A drained bucket still ANSWERS (error reply).
 const FS_LISTDIR_MAX_PER_SEC = envInt("FS_LISTDIR_MAX_PER_SEC", 32);
+const GIT_BUSY = "a git query is already running — retry shortly";
+const fsLog = createLogger("fs");
 
-// W.H1: how long a directory listing may wait on its repo's git status
+// How long a directory listing may wait on its repo's git status
 // before shipping plain. Status calls serialize in one GLOBAL queue, so one
 // pathological repo (network mount, cold cache) would otherwise hold every
 // viewport's listings hostage for up to the 5s git timeout. Well above the
@@ -74,9 +79,9 @@ export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
 export const badClientId = (id: unknown): boolean =>
   typeof id !== "string" || !CLIENT_ID_RE.test(id);
 
-// E2.4: HEAD's version comes from the repo that CONTAINS the file —
+// HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs
-// through that repo, closing E2.3's recorded gap. The wire path is
+// through that repo. The wire path is
 // already textually contained (cleanRelPath), and the directory
 // resolves through the realpath jail before any discovery. For a deleted
 // subtree, walk upward to the nearest surviving ancestor and carry the
@@ -112,14 +117,7 @@ type FsRead = Extract<ClientMsg, { type: "fs_read" }>;
 type FsDiff = Extract<ClientMsg, { type: "fs_diff" }>;
 type FsChanges = Extract<ClientMsg, { type: "fs_changes" }>;
 
-type FsDeps = {
-  /** Send one frame to this viewport (never the broadcast path). */
-  viewport: (m: WireMsg) => void;
-  /** The session this connection watches, read at call time (it can change). */
-  getEntry: () => SessionEntry | null;
-  /** Whether the socket is already gone — checked before any async reply. */
-  isClosed: () => boolean;
-};
+type FsDeps = Pick<ConnectionContext, "viewport" | "getEntry" | "isClosed">;
 
 export type FsHandlers = {
   list: (msg: FsList) => void;
@@ -130,25 +128,23 @@ export type FsHandlers = {
 };
 
 export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHandlers {
-  // Per-connection state: one throttle clock per request type, and at most one
-  // git child in flight (shared by list + diff + changes, like the bang
-  // already-running refusal).
-  let lastListAt = 0;
-  let lastReadAt = 0;
-  let lastDiffAt = 0;
-  let lastChangesAt = 0;
-  let gitInFlight = false;
-  // fs_listdir's token bucket (see FS_LISTDIR_MAX_PER_SEC above): fractional
-  // tokens accrue continuously, capped at one full burst.
-  let listdirTokens = FS_LISTDIR_MAX_PER_SEC;
-  let listdirRefilledAt = Date.now();
-  // Repos whose status outran the listing bound (W.H1) — this connection is
+  // Per-connection rate limits: one gate per request type, a bucket for the
+  // lazy tree (a panel opening fetches root + first level in one burst), and
+  // at most one git child in flight (shared by list + diff + changes, like
+  // the bang already-running refusal).
+  const listGate = minInterval(FS_MIN_INTERVAL_MS);
+  const readGate = minInterval(FS_MIN_INTERVAL_MS);
+  const diffGate = minInterval(FS_MIN_INTERVAL_MS);
+  const changesGate = minInterval(FS_MIN_INTERVAL_MS);
+  const listdirBucket = tokenBucket(FS_LISTDIR_MAX_PER_SEC);
+  const gitSlot = inflightSlot();
+  // Repos whose status outran the listing bound — this connection is
   // owed ONE follow-up bell per repo when that status lands, however many
   // listings timed out against it (a prefetch burst must not ring N times).
   const lateStatusBells = new Set<string>();
-  // Repos already reported as configuring programs Mirafold refused to run
-  // (the 2026-07-26 audit's default): the prefetch burst hits one repo many
-  // times, and the user needs to be told once, not per directory.
+  // Repos already reported as configuring programs Mirafold refused to run:
+  // the prefetch burst hits one repo many times, and the user needs to be
+  // told once, not per directory.
   const trustNoticed = new Set<string>();
 
   /**
@@ -162,31 +158,28 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (isClosed() || trustNoticed.has(repoRoot)) return;
     if (trust.allowed || (!trust.risky.length && !trust.unscannable)) return;
     trustNoticed.add(repoRoot);
+    // Named by CATEGORY, never by the repo's own text: a filter driver's
+    // name is any string git accepts, and echoing it put a "run this" lure
+    // into Mirafold's own voice (audit 2026-08-26).
+    const filters = trust.risky.filter((r) => r.key !== "core.fsmonitor").length;
     const what = trust.unscannable
-      ? "an unusual number of content filters"
-      : trust.risky.map((r) => r.key).join(", ");
+      ? "a config Mirafold could not scan, or an unusual number of content filters"
+      : [
+          trust.risky.some((r) => r.key === "core.fsmonitor") ? "core.fsmonitor" : "",
+          filters ? `${filters} content filter driver${filters === 1 ? "" : "s"}` : "",
+        ]
+          .filter(Boolean)
+          .join(" and ");
     viewport({
       type: "notice",
       text:
         `This project's git settings ask git to run a program (${what}), and Mirafold skipped it — ` +
-        `file statuses still work. If you set this up yourself, add ${repoRoot} to ` +
+        `file statuses still work. If you set this up yourself, add ${JSON.stringify(repoRoot)} to ` +
         `${trustFile() ?? "the trusted-repos file"} to allow it.`,
     });
   };
 
   const badId = badClientId;
-  const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
-  const takeListdirToken = (): boolean => {
-    const now = Date.now();
-    listdirTokens = Math.min(
-      FS_LISTDIR_MAX_PER_SEC,
-      listdirTokens + ((now - listdirRefilledAt) / 1_000) * FS_LISTDIR_MAX_PER_SEC,
-    );
-    listdirRefilledAt = now;
-    if (listdirTokens < 1) return false;
-    listdirTokens -= 1;
-    return true;
-  };
 
   const list = (msg: FsList): void => {
     if (badId(msg.id)) return;
@@ -194,16 +187,14 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       viewport({ type: "fs_tree", id: msg.id, root, entries: [], git: false, error });
     const entry = getEntry();
     if (!entry) return sendErr("", "no session attached");
-    if (tooSoon(lastListAt)) return sendErr(entry.cwd, "requests are arriving too fast — retry shortly");
-    lastListAt = Date.now();
-    if (gitInFlight) return sendErr(entry.cwd, "a git query is already running — retry shortly");
+    if (!listGate.take()) return sendErr(entry.cwd, TOO_FAST);
+    if (!gitSlot.take()) return sendErr(entry.cwd, GIT_BUSY);
 
     // root captured before the await — the viewport may switch sessions under
     // it. Git's view first; not-a-repo / no-git degrades to the plain walk.
     const root = entry.cwd;
     const sendTree = (entries: FsEntry[], git: boolean, truncated: boolean) =>
       viewport({ type: "fs_tree", id: msg.id, root, entries, git, ...(truncated ? { truncated: true } : {}) });
-    gitInFlight = true;
     void gitTree(root)
       .then((g) => {
         if (isClosed()) return;
@@ -221,7 +212,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(root, errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 
@@ -236,7 +227,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     }
     const entry = getEntry();
     if (!entry) return sendErr(msg.path, "no session attached");
-    if (!takeListdirToken()) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
+    if (!listdirBucket.take()) return sendErr(msg.path, TOO_FAST);
     try {
       const raw = readDirRaw(entry.cwd, msg.path);
       if ("error" in raw) return sendErr(msg.path, raw.error);
@@ -250,19 +241,19 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           ...(r.truncated ? { truncated: true } : {}),
         });
       };
-      // E2.3: a directory inside a repo lists through THAT repo's view —
+      // A directory inside a repo lists through THAT repo's view —
       // its own ignore rules honored, its own statuses attached (cached per
       // repo, one git child at a time — repoStatus serializes). Outside any
-      // repo: the plain listing, byte-identical to E2.1. Git trouble
+      // repo: the plain listing. Git trouble
       // degrades to the plain listing, never to an error — the entries are
-      // disk truth either way; statuses are the garnish. Note gitInFlight
+      // disk truth either way; statuses are the garnish. Note gitSlot
       // stays out of this path: the burst is legitimate here, so the
       // discipline is repoStatus's queue, not a refusal.
       //
-      // W.H1: the reply never waits on git past the bound. On timeout the
+      // The reply never waits on git past the bound. On timeout the
       // plain listing ships NOW; when the status finally settles usable,
       // one synthetic bell tells this viewport to refetch — by then the
-      // status is cached (TTL from settle, W.H2), so the refetch decorates
+      // status is cached (TTL from settle), so the refetch decorates
       // instantly instead of timing out again. A status that settles
       // degraded (not a repo, git error) rings nothing: plain was final.
       const repoRoot = findRepoRoot(raw.real);
@@ -304,6 +295,10 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
 
   const read = (msg: FsRead): void => {
     if (badId(msg.id)) return;
+    // Debug-only (console under MIRAFOLD_DEBUG, never the log file): a file
+    // view that stays "Loading…" needs to know whether the read arrived and
+    // what left — the daemon's half of that diagnosis (diff-panel.e2e, CR.2).
+    fsLog.debug(`fs_read ${msg.id} ${msg.path}`);
     const sendErr = (p: string, error: string) =>
       viewport({ type: "fs_file", id: msg.id, path: p, error });
     if (typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > 4_096) {
@@ -311,10 +306,10 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     }
     const entry = getEntry();
     if (!entry) return sendErr(msg.path, "no session attached");
-    if (tooSoon(lastReadAt)) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
-    lastReadAt = Date.now();
+    if (!readGate.take()) return sendErr(msg.path, TOO_FAST);
     try {
       const r = readWorkspaceFile(entry.cwd, msg.path);
+      fsLog.debug(`fs_file ${msg.id} ${"error" in r ? `error: ${r.error}` : "binary" in r ? "binary" : `${r.size} bytes`}`);
       if ("error" in r) {
         sendErr(msg.path, r.error);
       } else if ("binary" in r) {
@@ -347,13 +342,11 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     const entry = getEntry();
     if (!entry) return sendErr(rel, "no session attached");
     if (isSecretFile(rel)) return sendErr(rel, "environment files are never readable here");
-    if (tooSoon(lastDiffAt)) return sendErr(rel, "requests are arriving too fast — retry shortly");
-    lastDiffAt = Date.now();
-    if (gitInFlight) return sendErr(rel, "a git query is already running — retry shortly");
+    if (!diffGate.take()) return sendErr(rel, TOO_FAST);
+    if (!gitSlot.take()) return sendErr(rel, GIT_BUSY);
 
     const root = entry.cwd;
     const { repoRoot, repoRel } = resolveDiffRepo(root, rel);
-    gitInFlight = true;
     void gitShowHead(repoRoot ?? root, repoRel)
       .then((show) => {
         if (isClosed()) return;
@@ -405,7 +398,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(rel, errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 
@@ -415,17 +408,13 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       viewport({ type: "fs_change_set", id: msg.id, repos: [], error });
     const entry = getEntry();
     if (!entry) return sendErr("no session attached");
-    if (tooSoon(lastChangesAt)) {
-      return sendErr("requests are arriving too fast — retry shortly");
-    }
-    lastChangesAt = Date.now();
-    if (gitInFlight) return sendErr("a git query is already running — retry shortly");
+    if (!changesGate.take()) return sendErr(TOO_FAST);
+    if (!gitSlot.take()) return sendErr(GIT_BUSY);
 
     // Capture the immutable workspace root before awaiting. The query uses the
-    // same trusted, hook-disabled git runner as the Explorer's existing tree
+    // same trusted, hook-disabled git runner as the folder tree's existing tree
     // and diff paths, but returns all changed files grouped by repository.
     const root = entry.cwd;
-    gitInFlight = true;
     void workspaceChanges(root)
       .then((result) => {
         if (isClosed()) return;
@@ -449,7 +438,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 

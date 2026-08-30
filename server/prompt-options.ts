@@ -1,10 +1,12 @@
 import type { PromptOption } from "./protocol";
 
-const PROMPT_OPTION_CAP = 500;
-const PROMPT_VALUE_CAP = 200;
-const PROMPT_LABEL_CAP = 120;
-const PROMPT_DESCRIPTION_CAP = 500;
-const PROMPT_ALIAS_CAP = 20;
+// Exported because the checkpoint store must accept exactly what these caps
+// produce (each capped text is the cap plus one ellipsis character).
+export const PROMPT_OPTION_CAP = 500;
+export const PROMPT_VALUE_CAP = 200;
+export const PROMPT_LABEL_CAP = 120;
+export const PROMPT_DESCRIPTION_CAP = 500;
+export const PROMPT_ALIAS_CAP = 20;
 
 // Provider catalogs can include repository/plugin metadata. React already
 // renders it as inert text, but invisible direction/line controls can still

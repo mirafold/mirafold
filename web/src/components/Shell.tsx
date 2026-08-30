@@ -1,38 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo, AgentName, PromptOption } from "@protocol";
+import type { AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
-import { ChangesGlyph } from "./ChangesGlyph";
-import { FilesGlyph } from "./FilesGlyph";
-import { Onboarding } from "./Onboarding";
+import { DiffPanelGlyph } from "./DiffPanelGlyph";
+import { FolderTreeGlyph } from "./FolderTreeGlyph";
+import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
-import { RenderZone } from "./RenderZone";
-import { FilesPanel } from "./files/FilesPanel";
-import { ChangesPanel } from "./changes/ChangesPanel";
+import { OutputZone } from "./OutputZone";
+import { FolderTreePanel } from "./folder-tree/FolderTreePanel";
+import { DiffPanel } from "./diff-panel/DiffPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import type { SubscriptionReply } from "../subscription-card";
-import { nextOpenTurns } from "../turn-busy";
+import { IDLE_TURN, reduceTurn, type TurnInput } from "../turn-state";
 import { traceTurn } from "../turn-trace";
-import {
-  MODE_STORAGE_KEY,
-  THEMES,
-  resolveSlot,
-  slotStorageKey,
-  type ThemeAppearance,
-} from "../themes/manifest";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
 import { ThemePicker } from "./ThemePicker";
+import { useThemeSlots } from "../use-theme-slots";
+import { useNotifyPreference } from "../use-notify-preference";
+import { useFileDropZone } from "../use-file-drop-zone";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
-import { createDomNotifier, folderTitle, notifyPrefEnabled, setNotifyPref } from "../notify";
+import { createDomNotifier, folderTitle } from "../notify";
 import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
 import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
-import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
-import { PermBar, type PermAsk } from "./PermBar";
+import { Announcer, useAnnouncer } from "./Announcer";
+import { PermissionBar } from "./PermissionBar";
 import type { InputNavigationDirection } from "../input-navigation";
+import { sessionIdFromPath } from "../session-url";
 import type {
   InputNavigationHandle,
   InputNavigationState,
@@ -43,15 +41,15 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 /**
  * The trusted shell. Owns the socket and the prompt box; neither is ever
  * re-rendered or touched by agent output. The agent only paints into
- * RenderZone via the message bus below.
+ * OutputZone via the message bus below.
  *
  * A connection is a viewport onto a registry session. The URL is
- * the session identity (/s/<id>) — refresh-safe and shareable across tabs (4.2).
+ * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
  */
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptContainerRef = useRef<HTMLDivElement>(null);
-  // RenderZone owns transcript destinations; Shell bridges that controller to
+  // OutputZone owns transcript destinations; Shell bridges that controller to
   // the prompt keyboard entry and the phone-only disclosure state.
   const inputNavigationRef = useRef<InputNavigationHandle>(null);
   const [inputNavigationState, setInputNavigationState] = useState<InputNavigationState>({
@@ -84,42 +82,24 @@ export function Shell() {
     [],
   );
   // ── The turn ──────────────────────────────────────────────────────────
-  // Whether a turn is in flight — drives the stop affordance, Esc, and the
-  // activity indicator. Derived entirely from the wire: user_prompt sets it,
-  // turn_end clears it, and a replayed in-flight turn therefore restores it
-  // correctly.
-  const [busy, setBusy] = useState(false);
-  // Unanswered prompts in flight, counted off the wire (user_prompt up,
-  // turn_end down). A bare flag can't cover the queued follow-up: one
-  // prompt may be sent mid-turn (registry queues it), and flipping idle at
-  // the FIRST turn_end would blank the indicator exactly while the engine
-  // starts into the queued turn — an API round trip of real work with
-  // nothing on screen (2026-07-29, Kyle). Replay-safe: the ring replays
-  // prompt/end pairs in order and trims oldest-first, so an unmatched
-  // turn_end can only under-count — the clamp absorbs it.
-  const openTurns = useRef(0);
-  // What the indicator says the turn is doing right now — the engine's last
-  // status frame (or announced tool), cleared back to the generic "working…"
-  // the moment it could go stale (tool_result, streamed text, turn_end).
-  const [activity, setActivity] = useState<Activity>(null);
-  // Pending permission prompts, oldest first; the bar shows one at a time.
-  // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
-  const [asks, setAsks] = useState<PermAsk[]>([]);
-  // Mirror for the bus subscription (a stable closure): lets the
-  // permission_resolved handler know whether the ask was still showing HERE —
-  // i.e. it was answered elsewhere / timed out — without re-subscribing on
-  // every asks change.
-  const asksRef = useRef(asks);
-  asksRef.current = asks;
+  // Busy, the activity label, the pending asks, and the banked prose are
+  // one state derived entirely from the wire by the pure reducer in
+  // turn-state.ts. The ref is the synchronous source of truth for the bus
+  // subscription (several frames can land before React re-renders); the
+  // state mirror is what renders.
+  const turnRef = useRef(IDLE_TURN);
+  const [turn, setTurn] = useState(IDLE_TURN);
+  const { busy, activity, asks } = turn;
 
-  // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
+  // ── The session + daemon (status-bar state — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
-  // A relay refusal reason while disconnected (R.4: no daemon / at capacity /
+  // A relay refusal reason while disconnected (no daemon / at capacity /
   // origin), surfaced in the status indicator; undefined = an ordinary drop.
   const [connNote, setConnNote] = useState<string | undefined>(undefined);
   const [meta, setMeta] = useState<{
     sessionId?: string;
     cwd?: string;
+    shellCwd?: string;
     agent?: AgentName;
     model?: string;
     demo?: boolean;
@@ -129,20 +109,12 @@ export function Shell() {
   // Replaced whole whenever the adapter reports a changed catalog.
   const [promptOptions, setPromptOptions] = useState<PromptOption[]>([]);
   // Everything the daemon's `agents` hello carries, kept together: which
-  // agents it offers (P.4 onboarding; a URL that already names a session
-  // skips the picker), where it was launched (4.8 — the default session cwd)
+  // agents it offers (agent picker; a URL that already names a session
+  // skips the picker), where it was launched (the default session cwd)
   // + home for ~-abbreviation, the pairing info for the "connect a device"
-  // QR (R.4, local viewports only), and its build version.
-  const [daemonInfo, setDaemonInfo] = useState<{
-    agents: AgentInfo[] | null;
-    cwd?: string;
-    home?: string;
-    folderPicker?: boolean;
-    relay?: { url: string; code: string; ws?: string };
-    version?: string;
-    billing?: "license-key";
-  }>({ agents: null });
-  // Phase CS: the latest `subscription` reply — the pair card's manage view
+  // QR (local viewports only), and its build version.
+  const [daemonInfo, setDaemonInfo] = useState<DaemonInfo>(NO_DAEMON_INFO);
+  // The latest `subscription` reply — the pair card's manage view
   // correlates it by id, so holding just the newest one is enough.
   const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
 
@@ -156,14 +128,14 @@ export function Shell() {
     session: boolean;
     // The daemon refused this REMOTE viewport because the session runs
     // on a subscription login, which can't be driven over the paid relay.
-    // Shown until dismissed (R.4i).
+    // Shown until dismissed.
     refused: string | null;
-    // The last create error, so the onboarding card can show a rejected
-    // working dir (4.8).
-    onboarding: string | null;
-  }>({ session: false, refused: null, onboarding: null });
+    // The last create error, so the agent picker card can show a rejected
+    // working dir.
+    agentPicker: string | null;
+  }>({ session: false, refused: null, agentPicker: null });
 
-  // ── The `!` command (4.9) ───────────────────────────────────────────────
+  // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
     // The bang THIS viewport issued, if still running — only the issuer gets
     // the stdin affordance (a sudo prompt must never fan out to a second tab
@@ -174,7 +146,7 @@ export function Shell() {
     tail: string;
   }>({ my: null, tail: "" });
 
-  const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
+  const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
   // ── The auxiliary workspace ─────────────────────────────────────────────
   // Exactly one shell-owned side surface can be open: Files answers what
@@ -182,9 +154,11 @@ export function Shell() {
   // the invariant that keeps the transcript visible on desktop and prevents
   // stacked full-screen layers on phone.
   const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
-  const filesOpen = auxiliary === "files";
-  const changesOpen = auxiliary === "changes";
+  const folderTreeOpen = auxiliary === "folder-tree";
+  const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
+  const fileOpenRequestId = useRef(0);
+  const [fileOpenRequest, setFileOpenRequest] = useState<{ id: number; path: string } | null>(null);
   const [promptDraft, setPromptDraft] = useState<PromptDraft>();
   const promptDraftId = useRef(0);
   const createReviewDraft = useCallback((text: string) => {
@@ -193,108 +167,55 @@ export function Shell() {
     setReviewPromptVisible(true);
   }, []);
   const toggleAuxiliary = (surface: WorkspaceSurface) => {
-    if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
+    if (surface !== "diff-panel" || auxiliary !== "diff-panel") setReviewPromptVisible(false);
     setAuxiliary((current) => (current === surface ? null : surface));
   };
   const closeAuxiliary = () => {
     setAuxiliary(null);
     setReviewPromptVisible(false);
   };
-  // Phone (2026-08-18, Kyle): the status bar carries ONE workspace toggle,
+  // Phone: the status bar carries ONE workspace toggle,
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
   // switches between them. Desktop keeps the two-icon rail unchanged.
-  const lastSurface = useRef<WorkspaceSurface>("files");
+  const lastSurface = useRef<WorkspaceSurface>("folder-tree");
   if (auxiliary) lastSurface.current = auxiliary;
   const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
   const switchAuxiliary = (surface: WorkspaceSurface) => {
     if (auxiliary !== surface) toggleAuxiliary(surface);
   };
+  const openTranscriptFile = useCallback((path: string) => {
+    fileOpenRequestId.current += 1;
+    setFileOpenRequest({ id: fileOpenRequestId.current, path });
+    setReviewPromptVisible(false);
+    setAuxiliary("folder-tree");
+  }, []);
 
-  // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
-  // Theme is shell-owned UI state. Dark is the default and the identity;
-  // index.html applies the stored choice before first paint (no flash) and
-  // this keeps the attribute + storage in sync on toggle. The mode is which
-  // side of the pill is active; each side resolves to a theme id through
-  // its settings slot (defaults: the built-in pair, which makes this
-  // byte-identical to the pre-slot behavior). The pill itself is LOCKED
-  // unchanged (Phase S charter): two positions, mode in, mode out.
-  const [mode, setMode] = useState<ThemeAppearance>(() =>
-    localStorage.getItem(MODE_STORAGE_KEY) === "light" ? "light" : "dark",
-  );
-  const [slots, setSlots] = useState<Record<ThemeAppearance, string>>(() => ({
-    light: resolveSlot("light", localStorage.getItem(slotStorageKey("light"))),
-    dark: resolveSlot("dark", localStorage.getItem(slotStorageKey("dark"))),
-  }));
-  useEffect(() => {
-    document.documentElement.dataset.theme = slots[mode];
-    localStorage.setItem(MODE_STORAGE_KEY, mode);
-    localStorage.setItem(slotStorageKey("light"), slots.light);
-    localStorage.setItem(slotStorageKey("dark"), slots.dark);
-  }, [mode, slots]);
-  // Settings card (S.4). Picking a theme fills its appearance side's slot
-  // and switches to that side so the pick paints immediately — picking is
-  // seeing. Appearance fit is enforced here, the one place slots are written.
+  // ── The theme and the settings card ─────────────────────────────────────
+  // Shell-owned UI state (use-theme-slots.ts); the pill itself is two
+  // positions, mode in, mode out.
+  const { mode, slots, pickTheme, toggleMode } = useThemeSlots();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const pickTheme = (id: string) => {
-    const entry = THEMES.find((t) => t.id === id);
-    if (!entry) return;
-    setSlots((s) => ({ ...s, [entry.appearance]: id }));
-    setMode(entry.appearance);
-  };
+  // Needs-you notifications: preference + browser grant (use-notify-preference.ts).
+  const { notifyOn, notifyPerm, toggleNotify } = useNotifyPreference();
 
-  // ── Needs-you notifications (Phase NF) ──────────────────────────────────
-  // Preference + the browser's own grant, both shell-owned. Off by default;
-  // flipping it on is the ONLY thing that asks the browser for notification
-  // permission (never page load). "unsupported" (iOS Safari outside an
-  // installed PWA) hides the settings section entirely.
-  const [notifyOn, setNotifyOn] = useState(
-    () => typeof Notification !== "undefined" && notifyPrefEnabled(),
-  );
-  const [notifyPerm, setNotifyPerm] = useState<NotificationPermission | "unsupported">(() =>
-    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
-  );
-  const toggleNotify = () => {
-    if (notifyOn) {
-      setNotifyPref(false);
-      setNotifyOn(false);
-      return;
-    }
-    if (notifyPerm === "default") {
-      // Enable only once granted — an "on" toggle that can never fire is a lie.
-      void Notification.requestPermission().then((p) => {
-        setNotifyPerm(p);
-        if (p === "granted") {
-          setNotifyPref(true);
-          setNotifyOn(true);
-        }
-      });
-      return;
-    }
-    // "denied" still flips the preference on — the card's hint line says why
-    // it stays silent, and un-blocking in the browser then just works.
-    setNotifyPref(true);
-    setNotifyOn(true);
-  };
-
-  // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount.
+  // The socket + pub/sub live in session-bus.ts; one bus per mount.
   // useState's lazy initializer, NOT useMemo: Fast Refresh re-runs useMemo on
   // every hot edit (dependency lists are deliberately ignored), and each
   // re-run opened a fresh socket while the orphaned one stayed attached —
-  // inflating the fleet's viewport count during dev (2026-07-25, Kyle).
+  // inflating the fleet's viewport count during dev.
   // State survives a hot update, so the one bus lives as long as the page.
   const [bus] = useState(createSessionBus);
   // Same lazy-useState idiom: one notifier (and one visibilitychange
   // listener) for the page's life. Null where the API doesn't exist.
   const [notifier] = useState(createDomNotifier);
 
-  // ── File drag-and-drop (Phase FD) ───────────────────────────────────────
+  // ── File drag-and-drop ───────────────────────────────────────
   // Shell chrome end to end: the drop overlay, the upload strip, and the
   // staged-path insertion are shell-owned; agent output can't reach any of
   // them. The pure core lives in file-drop.ts; the ref indirection lets the
   // once-created instance call the latest announce/draft closures.
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
-  const [dragActive, setDragActive] = useState(false);
   const attachDroppedPath = useRef<(path: string, name: string) => void>(() => {});
   const [fileDrop] = useState(() =>
     createFileDrop({
@@ -306,10 +227,23 @@ export function Shell() {
     }),
   );
 
-  // Screen-reader announcements (A.1) — see Announcer.tsx for why the
+  // Screen-reader announcements — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
-  // Phase FD: a staged path lands in the prompt through the draft merge —
+  // Every turn transition goes through here: reduce, adopt, then speak the
+  // announcements the reducer decided on.
+  const applyTurn = useCallback(
+    (input: TurnInput) => {
+      const before = turnRef.current;
+      const { state, announcements } = reduceTurn(before, input);
+      turnRef.current = state;
+      setTurn(state);
+      for (const a of announcements) announce(a.text, a.assertive);
+      return { before, state };
+    },
+    [announce],
+  );
+  // A staged path lands in the prompt through the draft merge —
   // which never discards composed text — quoted the way a terminal drop
   // quotes, with a polite announcement naming what happened.
   attachDroppedPath.current = (path, name) => {
@@ -317,10 +251,6 @@ export function Shell() {
     setPromptDraft({ id: promptDraftId.current, text: quoteForPrompt(path) });
     announce(`Attached ${name} — its path was added to the prompt.`);
   };
-  // The turn's prose, accumulated from text_delta so turn_end can announce
-  // the response once, whole. A ref (not state): nothing renders from it, and
-  // it must not re-run the subscription on every token.
-  const turnText = useRef("");
   // Only announce connection TRANSITIONS — onConnection fires true on mount,
   // and "Reconnected" on page load is a lie.
   const wasConnected = useRef<boolean | null>(null);
@@ -331,136 +261,46 @@ export function Shell() {
         // Upload replies are per-viewport correlation traffic, not session
         // history — route them before the turn accounting ever sees them.
         if (fileDrop.handle(m as WireMsg)) return;
-        // Replayed history must repaint state but never re-fire live-only
-        // side effects: on every reload/reconnect the full-buffer replay
-        // re-spoke each historical turn to screen readers, ending with an
-        // old response presented as though it just arrived — the same lie
-        // the wasConnected guard below blocks for "Reconnected"
-        // (2026-07-29 bughunt).
         const live = !("replay" in m && m.replay);
-        const openBefore = openTurns.current;
-        openTurns.current = nextOpenTurns(openTurns.current, m.type, !live);
-        traceTurn(m.type, !live, openBefore, openTurns.current, m.type === "user_prompt" ? m.text : undefined);
+        const { before, state } = applyTurn({ kind: "message", msg: m });
+        traceTurn(m.type, !live, before.openTurns, state.openTurns, m.type === "user_prompt" ? m.text : undefined);
         if (m.type === "user_prompt") {
-          setBusy(true);
-          setActivity({ state: "thinking" });
-          turnText.current = "";
-          if (live) announce("Sent. Working…");
-          // They've moved on in the new session — the R.4c notice is done.
+          // They've moved on in the new session — the fallback notice is done.
           setNotices((n) => (n.session ? { ...n, session: false } : n));
-        } else if (
-          m.type === "status" ||
-          m.type === "thinking_delta" ||
-          m.type === "text_delta" ||
-          m.type === "tool_use"
-        ) {
-          // Busy re-derives from ANY turn activity, not just the
-          // user_prompt — a tail resume mid-turn replays none of the turn's
-          // opening frames, and busy was cleared on the disconnect (R.4c).
-          // The turn COUNTER re-derives with it (nextOpenTurns' floor rule,
-          // 2026-07-29 bughunt — see turn-busy.ts).
-          setBusy(true);
-          // SA.2/SA.3: a SUBAGENT's traffic (parentId set) still proves the
-          // turn is busy, but it is not the parent's voice — child prose and
-          // child tool churn must not steer the activity label (the deck
-          // shows each subagent's own current action; bughunt 2026-08-14 r2
-          // aligned tool_use with the design after the server-side comment
-          // claimed it and the client contradicted it), and child prose
-          // never lands in the turn-end announcement. The announcer still
-          // speaks child tools — the audible peer of the deck's ticker.
-          const subagentTraffic =
-            (m.type === "text_delta" || m.type === "thinking_delta" || m.type === "tool_use") &&
-            m.parentId;
-          if (m.type === "status") setActivity({ state: m.state, label: m.label });
-          else if (m.type === "thinking_delta") {
-            if (!subagentTraffic) setActivity({ state: "thinking" });
-          } else if (m.type === "tool_use") {
-            if (!subagentTraffic) setActivity({ state: "tool", label: m.name });
-          }
-          // Streamed prose means the last specific label is over; the
-          // indicator falls back to the generic "working…".
-          else if (!subagentTraffic) setActivity(null);
-          // A.1: the response is announced once at turn_end, so the prose is
-          // banked here rather than spoken per token.
-          if (m.type === "text_delta" && !subagentTraffic) turnText.current += m.text;
-          // Tool activity is the other thing a sighted user reads off the
-          // transcript mid-turn; announce the name, not the arguments.
-          if (m.type === "tool_use" && live) announce(`Running ${m.name}.`);
-        } else if (m.type === "tool_result") {
-          // A finished tool must not keep naming itself — a frozen "Bash"
-          // through the next model round trip reads as "done?" (2026-07-29).
-          // A CHILD's result is not the labeled tool finishing: subagent
-          // traffic never steers the root label, in either direction
-          // (bughunt 2026-08-14 r2).
-          if (!m.parentId) setActivity((a) => (a?.state === "tool" ? null : a));
-        } else if (m.type === "turn_end") {
-          setBusy(openTurns.current > 0);
-          setActivity(null);
-          setAsks([]); // a request that outlived its turn is void (server denies)
-          if (live) announce(turnResponse(turnText.current));
-          turnText.current = "";
-        } else if (m.type === "permission_request") {
-          setAsks((a) => [
-            ...a,
-            { tool: m.tool, detail: m.detail, id: m.id, ...(m.parentId ? { parentId: m.parentId } : {}) },
-          ]);
-          // Assertive: this one blocks the turn until answered. A replayed
-          // ask still paints the bar (it may be genuinely pending), just
-          // without re-interrupting the reader.
-          if (live)
-            announce(
-              `Permission needed${m.parentId ? " (subagent)" : ""}: ${m.tool}. ${m.detail}`,
-              true,
-            );
-        } else if (m.type === "permission_resolved") {
-          // The ask was answered on ANOTHER viewport, or auto-denied by the
-          // daemon's timeout — drop it HERE too. Before this, the bar sat
-          // until turn_end and a tap on it was a silent stale no-op at the
-          // adapter (the phone-hangs bug, 2026-07-28). A locally-answered ask
-          // is already gone (the click removed it), so the filter no-ops and
-          // the announcement stays quiet.
-          if (asksRef.current.some((a) => a.id === m.id)) {
-            announce(m.allow ? "Permission allowed." : "Permission denied.");
-          }
-          setAsks((a) => a.filter((x) => x.id !== m.id));
         } else if (m.type === "agents") {
-          setDaemonInfo({
-            agents: m.agents,
-            cwd: m.cwd,
-            home: m.home,
-            folderPicker: m.folderPicker,
-            relay: m.relay,
-            version: m.version,
-            billing: m.billing,
-          });
+          setDaemonInfo(daemonInfoFrom(m));
+        } else if (m.type === "entitlement") {
+          setDaemonInfo((d) => withEntitlement(d, m));
         } else if (m.type === "subscription") {
           setSubReply(m);
         } else if (m.type === "prompt_options") {
           setPromptOptions(m.options);
         } else if (m.type === "session_created") {
-          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
+          setFileOpenRequest(null);
+          setMeta({
+            sessionId: m.sessionId,
+            cwd: m.cwd,
+            shellCwd: m.shellCwd ?? m.cwd,
+            agent: m.agent,
+            model: m.model,
+            demo: m.demo,
+          });
           setNotices((n) => ({
             ...n,
-            onboarding: null,
+            agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
+        } else if (m.type === "shell_cwd") {
+          setMeta((current) => ({ ...current, shellCwd: m.cwd }));
         } else if (m.type === "refused") {
           // No session — the relay refused this subscription-backed
-          // attach. Show the reason (also surfaced at onboarding if we're there) (R.4i).
-          setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
+          // attach. Show the reason (also surfaced in the agent picker if we're there).
+          setNotices((n) => ({ ...n, refused: m.message, agentPicker: m.message }));
           announce(m.message, true);
         } else if (m.type === "error") {
-          // An error ENDS the turn — the daemon says so (registry.ts flips the
-          // session to idle on it), so the indicator must come down here too.
-          // Without this the shell showed "working…" for the life of the
-          // session after any errored turn, and a reload replayed the same
-          // imbalance rather than clearing it (2026-07-30).
-          setBusy(openTurns.current > 0);
-          setActivity(null);
-          // Only the onboarding card consumes this; in-session errors already
-          // render in the output zone.
-          setNotices((n) => ({ ...n, onboarding: m.message }));
-          announce(m.message, true);
+          // Only the agent picker card consumes this; in-session errors already
+          // render in the output zone (the turn reducer brought busy down).
+          setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
           setBang((b) => ({ ...b, tail: "" }));
         } else if (m.type === "bang_output") {
@@ -470,7 +310,7 @@ export function Shell() {
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
-          // the session-cumulative figure → take it as-is, never add (T2.6).
+          // the session-cumulative figure → take it as-is, never add.
           // Reset-on-zone_reset keeps both replay-safe: re-summing tokens and
           // re-taking the final cost both land on the right number.
           setUsage((u) => ({
@@ -482,16 +322,11 @@ export function Shell() {
             cost: m.costUsd ?? u.cost,
           }));
         } else if (m.type === "zone_reset") {
-          openTurns.current = 0;
-          setBusy(false);
-          setActivity(null);
-          setAsks([]);
           setUsage(ZERO_USAGE);
           setPromptOptions([]);
-          turnText.current = "";
         }
       }),
-    [bus, announce],
+    [bus, applyTurn],
   );
 
   useEffect(
@@ -499,7 +334,7 @@ export function Shell() {
       bus.onConnection((c, refusal) => {
         setConnected(c);
         setConnNote(c ? undefined : refusal);
-        // A.1: losing the socket is silent on screen except for a dot
+        // Losing the socket is silent on screen except for a dot
         // changing colour — assertive, and only on a real transition.
         if (wasConnected.current !== null && wasConnected.current !== c) {
           if (c) announce("Reconnected.");
@@ -509,14 +344,10 @@ export function Shell() {
         // A dropped socket can't be mid-turn from this viewport's point
         // of view — clear the working state and the ■ esc stop affordance so
         // a dead daemon doesn't look like an agent still thinking. Replay (or
-        // the turn-activity frames above) re-derives busy after reconnect (R.4c).
-        if (!c) {
-          openTurns.current = 0;
-          setBusy(false);
-          setActivity(null);
-        }
+        // the turn-activity frames) re-derives busy after reconnect.
+        if (!c) applyTurn({ kind: "disconnected" });
       }),
-    [bus, announce],
+    [bus, announce, applyTurn],
   );
 
   // Esc interrupts from anywhere in the page, not just the textarea. Stable
@@ -526,22 +357,22 @@ export function Shell() {
   // one turn_end per open turn — the mock emits a single turn_end for all
   // abandoned work — so the counter drops to the one turn_end still coming.
   const interrupt = useCallback(() => {
-    openTurns.current = Math.min(openTurns.current, 1);
+    applyTurn({ kind: "interrupt" });
     bus.interrupt();
-  }, [bus]);
+  }, [bus, applyTurn]);
   useEscapeKey(busy ? interrupt : undefined);
 
-  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // Stable identity: AgentPicker keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => bus.refreshAgents(), [bus]);
 
-  // Tab title + favicon status light (Step 4.2) — painter in tab-status.ts.
+  // Tab title + favicon status light — painter in tab-status.ts.
   useEffect(() => {
     paintTabStatus(asks.length > 0 ? "permission" : busy ? "busy" : "idle");
   }, [busy, asks.length]);
 
-  // Needs-you notifications (NF.1): the same tri-state the tab light paints,
+  // Needs-you notifications: the same tri-state the tab light paints,
   // pushed through the notifier so a hidden viewport can toast. reset() on
   // any disconnect: the drop forces busy→false above, and that forced edge
   // must never read as a finished turn.
@@ -564,92 +395,56 @@ export function Shell() {
     ]);
   }, [notifier, connected, busy, asks, meta]);
 
-  // Phase FD: window-level drag targets — anywhere on the page is the drop
-  // zone (small targets punish drags), gated off onboarding (no session to
-  // stage into). Depth-counted because dragenter/dragleave fire per element
-  // crossed; only file drags participate (text selections drag too).
-  useEffect(() => {
-    if (!meta.sessionId) return;
-    let depth = 0;
-    const hasFiles = (e: DragEvent) =>
-      Array.from(e.dataTransfer?.types ?? []).includes("Files");
-    const enter = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      depth += 1;
-      setDragActive(true);
-    };
-    const over = (e: DragEvent) => {
-      if (hasFiles(e)) e.preventDefault();
-    };
-    const leave = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      depth = Math.max(0, depth - 1);
-      if (depth === 0) setDragActive(false);
-    };
-    const drop = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      depth = 0;
-      setDragActive(false);
-      const files = Array.from(e.dataTransfer?.files ?? []);
-      if (files.length) fileDrop.start(files);
-    };
-    window.addEventListener("dragenter", enter);
-    window.addEventListener("dragover", over);
-    window.addEventListener("dragleave", leave);
-    window.addEventListener("drop", drop);
-    return () => {
-      window.removeEventListener("dragenter", enter);
-      window.removeEventListener("dragover", over);
-      window.removeEventListener("dragleave", leave);
-      window.removeEventListener("drop", drop);
-    };
-  }, [meta.sessionId, fileDrop]);
+  // The whole page is the drop zone while a session exists (use-file-drop-zone.ts).
+  const onDroppedFiles = useCallback((files: File[]) => fileDrop.start(files), [fileDrop]);
+  const dragActive = useFileDropZone(Boolean(meta.sessionId), onDroppedFiles);
 
   const answer = (id: string, allow: boolean) => {
     bus.answerPermission(id, allow);
-    setAsks((a) => a.filter((x) => x.id !== id));
+    applyTurn({ kind: "answered", id });
   };
 
   // A leading `!` is intercepted by the trusted shell and runs as a real
-  // shell command (4.9); the finished transcript then reaches the agent as
+  // shell command; the finished transcript then reaches the agent as
   // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
     setReviewPromptVisible(false);
-    const m = text.match(/^!\s*(.+)$/s);
+    // `!!` is the silent form: same shell, same output, but the agent is
+    // never told — the user is just using the terminal.
+    const m = text.match(/^!(!?)\s*(.+)$/s);
     if (m) {
-      const command = m[1].trim();
-      setBang({ my: { id: bus.sendBang(command), command }, tail: "" });
+      const silent = m[1] === "!";
+      const command = m[2].trim();
+      setBang({ my: { id: bus.sendBang(command, silent), command }, tail: "" });
     } else {
       bus.sendPrompt(text);
     }
   };
 
-  // Onboarding shows until this viewport has a session — but not when the URL
+  // AgentPicker shows until this viewport has a session — but not when the URL
   // already names one (that path attaches straight through).
-  const showOnboarding = !hasUrlSession && !meta.sessionId;
+  const showAgentPicker = !hasUrlSession && !meta.sessionId;
 
   return (
-    <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
+    <div className={"shell" + (diffPanelOpen && reviewPromptVisible ? " diff-panel-draft-visible" : "")}>
       <Announcer message={announcement} />
-      {showOnboarding && (
-        <Onboarding
+      {showAgentPicker && (
+        <AgentPicker
           agents={daemonInfo.agents}
           defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
-          error={notices.onboarding}
-          onCwdChange={() => setNotices((n) => ({ ...n, onboarding: null }))}
+          error={notices.agentPicker}
+          onCwdChange={() => setNotices((n) => ({ ...n, agentPicker: null }))}
           onBrowse={daemonInfo.folderPicker ? bus.pickFolder : undefined}
           onPick={(agent, cwd, backend) => {
-            setNotices((n) => ({ ...n, onboarding: null }));
+            setNotices((n) => ({ ...n, agentPicker: null }));
             bus.createSession(agent, cwd, backend);
           }}
           onRefresh={refreshAgents}
         />
       )}
-      <div className="behind-dialog" inert={showOnboarding || undefined}>
+      <div className="behind-dialog" inert={showAgentPicker || undefined}>
         {notices.session && (
-          // SHELL-OWNED notice — honest about the swap the server made (R.4c).
+          // SHELL-OWNED notice — honest about the swap the server made.
           <NoticeLine
             text={
               "that session no longer exists — started a new one (it was ended, removed, or predates durable recovery)"
@@ -658,7 +453,7 @@ export function Shell() {
           />
         )}
         {notices.refused && (
-          // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
+          // SHELL-OWNED — the relay refused a subscription-backed session.
           <NoticeLine
             text={notices.refused}
             onDismiss={() => setNotices((n) => ({ ...n, refused: null }))}
@@ -667,7 +462,7 @@ export function Shell() {
         {meta.demo && (
           // SHELL-OWNED banner — the agent paints nothing here, so a demo
           // session is unmistakably labeled and the label can't be faked or
-          // cleared (same trust rule as the permission bar) (R.4b).
+          // cleared (same trust rule as the permission bar).
           <div className="demo-banner">
             <span className="demo-banner-badge">demo</span>
             <span className="demo-banner-text">
@@ -689,16 +484,16 @@ export function Shell() {
             rendering beside it; both closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
-            filesOpen={filesOpen}
-            changesOpen={changesOpen}
+            folderTreeOpen={folderTreeOpen}
+            diffPanelOpen={diffPanelOpen}
             disabled={!meta.sessionId}
-            onToggleFiles={() => toggleAuxiliary("files")}
-            onToggleChanges={() => toggleAuxiliary("changes")}
+            onToggleFolderTree={() => toggleAuxiliary("folder-tree")}
+            onToggleDiffPanel={() => toggleAuxiliary("diff-panel")}
           />
           <div className="main-col">
             <div className="zone-outer">
-              <FilesPanel
-                open={filesOpen && Boolean(meta.sessionId)}
+              <FolderTreePanel
+                open={folderTreeOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
@@ -707,9 +502,10 @@ export function Shell() {
                 onSwitch={switchAuxiliary}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
+                fileOpenRequest={fileOpenRequest}
               />
-              <ChangesPanel
-                open={changesOpen && Boolean(meta.sessionId)}
+              <DiffPanel
+                open={diffPanelOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestChanges={bus.requestFsChanges}
                 requestRead={bus.requestFsRead}
@@ -722,17 +518,19 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <RenderZone
+              <OutputZone
                 ref={inputNavigationRef}
                 subscribe={bus.subscribe}
                 sendAction={bus.sendAction}
                 busy={busy}
                 focusPrompt={focusPrompt}
+                workspaceRoot={meta.cwd}
+                onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
               />
             </div>
             <ActivityLine busy={busy} label={activityLabel(activity)} />
-            <PermBar asks={asks} onAnswer={answer} />
+            <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
                 command={bang.my.command}
@@ -766,12 +564,12 @@ export function Shell() {
               onSend={send}
               busy={busy}
               onInterrupt={interrupt}
-              cwd={tildify(meta.cwd, daemonInfo.home)}
+              cwd={tildify(meta.shellCwd ?? meta.cwd, daemonInfo.home)}
               options={promptOptions}
               textareaRef={promptRef}
               containerRef={promptContainerRef}
               draft={promptDraft}
-              globalTriggersDisabled={showOnboarding || settingsOpen}
+              globalTriggersDisabled={showAgentPicker || settingsOpen}
               onNavigateLatestInput={navigateToLatestInput}
               inputNavigation={{
                 // The disclosure occupies the space directly above the
@@ -798,10 +596,12 @@ export function Shell() {
               cwd={meta.cwd}
               usage={usage}
               mode={mode}
-              onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
+              onToggleTheme={toggleMode}
               onOpenSettings={() => setSettingsOpen(true)}
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
+              relayOff={daemonInfo.relayOff}
+              entitlement={daemonInfo.entitlement}
               version={daemonInfo.version}
               billing={daemonInfo.billing === "license-key"}
               subRequest={bus.requestSubscription}
@@ -831,7 +631,7 @@ export function Shell() {
                     onToggle: toggleNotify,
                   }
             }
-            // The card's Session section (R.4l) — on phone this is THE place
+            // The card's Session section — on phone this is THE place
             // these facts live (the bar carries only the agent name; the
             // prompt crumb is desktop-only), so it gets everything.
             session={{
@@ -870,43 +670,43 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
  *  always present so the affordance never moves; its Files and Changes icons
  *  share one auxiliary workspace slot. Disabled until there's a session.
- *  DESKTOP ONLY (2026-07-25, Kyle): on ≤640px the strip is hidden — a
+ *  DESKTOP ONLY: on ≤640px the strip is hidden — a
  *  permanent 46px rail is too much of a 390px screen — and both toggles live
  *  in the status bar instead. */
 function ActivityBar({
-  filesOpen,
-  changesOpen,
+  folderTreeOpen,
+  diffPanelOpen,
   disabled,
-  onToggleFiles,
-  onToggleChanges,
+  onToggleFolderTree,
+  onToggleDiffPanel,
 }: {
-  filesOpen: boolean;
-  changesOpen: boolean;
+  folderTreeOpen: boolean;
+  diffPanelOpen: boolean;
   disabled: boolean;
-  onToggleFiles: () => void;
-  onToggleChanges: () => void;
+  onToggleFolderTree: () => void;
+  onToggleDiffPanel: () => void;
 }) {
   return (
     <div className="activity-bar">
       <button
-        className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
-        onClick={onToggleFiles}
+        className={"ab-btn ab-folder-tree" + (folderTreeOpen ? " is-active" : "")}
+        onClick={onToggleFolderTree}
         disabled={disabled}
-        title={filesOpen ? "Hide files" : "Show files"}
+        title={folderTreeOpen ? "Hide files" : "Show files"}
         aria-label="Files"
-        aria-expanded={filesOpen}
+        aria-expanded={folderTreeOpen}
       >
-        <FilesGlyph />
+        <FolderTreeGlyph />
       </button>
       <button
-        className={"ab-btn ab-changes" + (changesOpen ? " is-active" : "")}
-        onClick={onToggleChanges}
+        className={"ab-btn ab-diff-panel" + (diffPanelOpen ? " is-active" : "")}
+        onClick={onToggleDiffPanel}
         disabled={disabled}
-        title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+        title={diffPanelOpen ? "Hide workspace changes" : "Show workspace changes"}
         aria-label="Workspace changes"
-        aria-expanded={changesOpen}
+        aria-expanded={diffPanelOpen}
       >
-        <ChangesGlyph />
+        <DiffPanelGlyph />
       </button>
     </div>
   );

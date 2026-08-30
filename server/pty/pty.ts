@@ -1,14 +1,15 @@
-// @lydell/node-pty over upstream node-pty (2026-07-23): identical API, but
-// prebuilt binaries ship as platform optionalDependencies (the esbuild
-// pattern) — no install script, so current npm's script-blocking can't
-// break the install, and users need no compiler toolchain. Upstream's
-// postinstall compile crashed the daemon at first boot on default npm.
+// @lydell/node-pty over upstream node-pty: identical API, but prebuilt
+// binaries ship as platform optionalDependencies (the esbuild pattern) — no
+// install script, so current npm's script-blocking can't break the install,
+// and users need no compiler toolchain. Upstream's postinstall compile
+// crashes the daemon at first boot on default npm.
 import { spawn, type IPty } from "@lydell/node-pty";
+import { shellEnv } from "../project-env";
 import { existsSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 
 /**
- * The `!` bash passthrough (Step 4.9). Commands run through a real PTY — not
+ * The `!` bash passthrough. Commands run through a real PTY — not
  * a plain pipe — so `isatty()` is true and interactive programs (`sudo`,
  * `ssh`, y/n prompts) prompt normally; that interactivity is the whole point,
  * and it's what the terminal agents' own `!` can't do.
@@ -20,14 +21,14 @@ export type BangProc = {
   kill(): void;
 };
 
-// Tier 1 renders the stream as plain text, so ANSI control sequences (colors,
-// cursor movement, title-setting) are stripped server-side — the agent's
-// injected context wants clean text too. A full terminal (xterm.js) that
-// consumes the raw stream is Tier 2. CSI (parameter bytes are ECMA-48's full
-// 0x30–0x3F, so colon-subparameter SGR like `38:5:196` and the `<=>?` private
-// prefixes strip too), OSC and DCS (BEL- or ST-terminated), and single-char
-// ESC sequences; then CRLF/lone-CR normalize to LF (a progress bar's redraws
-// stack as lines — acceptable for Tier 1).
+// The stream renders as plain text (no terminal emulator), so ANSI control
+// sequences (colors, cursor movement, title-setting) are stripped
+// server-side — the agent's injected context wants clean text too. CSI
+// (parameter bytes are ECMA-48's full 0x30–0x3F, so colon-subparameter SGR
+// like `38:5:196` and the `<=>?` private prefixes strip too), OSC and DCS
+// (BEL- or ST-terminated), and single-char ESC sequences; then CRLF/lone-CR
+// normalize to LF (a progress bar's redraws stack as lines — acceptable for
+// plain text).
 const ANSI_RE =
   /\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
@@ -152,7 +153,7 @@ export function spawnBang(
   // A missing shell binary must throw HERE, identically on every platform:
   // win32 node-pty throws synchronously (ConPTY), but unix only fails after
   // the fork, inside the child — this check gives the caller one clean,
-  // catchable failure mode instead of two (R.4f). Bare names walk PATH so a
+  // catchable failure mode instead of two. Bare names walk PATH so a
   // `SHELL=zsh` typo gets the same clean throw as an absolute path.
   if (!shellFound(file)) {
     throw new Error(`shell not found: ${file}`);
@@ -162,8 +163,11 @@ export function spawnBang(
     cols: 120,
     rows: 30,
     cwd,
+    // Not process.env verbatim: keys the checkout's .env supplied stay out
+    // of the shell (project-env.ts shellEnv) — a terminal wouldn't export
+    // them, and `!` output is recorded.
     env: {
-      ...(process.env as Record<string, string>),
+      ...shellEnv(),
       ...(prefix && cwdFile ? { [CWD_FILE_ENV]: cwdFile } : {}),
     },
   });

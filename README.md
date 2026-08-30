@@ -23,7 +23,11 @@ configuration, and permission model.
 - A real pseudo-terminal (PTY) for `!` commands, including interactive
   programs and password prompts, inside shell-owned UI.
 - Optional remote browser and phone access through an end-to-end-encrypted
-  relay; provider credentials remain on the machine running Mirafold.
+  relay; provider credentials remain on the machine running Mirafold. The
+  `⧉ pair` button in the status bar is where this lives: with an active
+  Mirafold Pro license key it shows the pairing QR; without one — or with a
+  key the billing backend refuses — it says so and links to
+  [mirafold.com/pay](https://mirafold.com/pay).
 
 Mirafold drives a real coding agent with access to your filesystem and shell.
 Review permission prompts, use it only in directories you are prepared to give
@@ -58,7 +62,7 @@ checkout safe.
 
 ## First run
 
-Onboarding asks for a supported agent, one of its detected backends, and a
+AgentPicker asks for a supported agent, one of its detected backends, and a
 working directory. Mirafold uses the selected agent's native engine and any
 supported authentication it detects. If no usable live backend is available,
 the session runs the built-in scripted demo so the entire interface can be
@@ -71,7 +75,10 @@ in [docs/local-models.md](docs/local-models.md).
 Inside a session:
 
 - Type ordinary prompts in the command box.
-- Prefix a command with `!` to run it in Mirafold's interactive shell.
+- Prefix a command with `!` to run it in Mirafold's interactive shell; the
+  agent then sees the transcript as its own turn, as in the terminal. Prefix
+  it with `!!` to run it the same way but shell-only — the agent never sees
+  it.
 - Open `/` for mission control and `/s/<session-id>` for a session viewport.
 - Use the Files and Changes workspaces to inspect the current directory and
   its Git working-tree changes.

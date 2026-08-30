@@ -107,7 +107,12 @@ test("GET /health answers ok; other HTTP is 404", async () => {
 
 test("a remote viewport drives a full turn; a local viewport mirrors it byte-for-byte", async () => {
   const remote = await RemoteClient.connect(relay.port, CODE);
-  await remote.type("agents");
+  const hello = (await remote.type("agents")) as Any;
+  // A remote viewport is proof the relay is on: it gets neither the pairing
+  // code (must never cross the relay) nor a "relay off" reason (would draw
+  // an upsell on a phone that is already paired).
+  assert.equal(hello.relay, undefined);
+  assert.equal(hello.relayOff, undefined);
   remote.send({ type: "create", agent: "claude-code" } as never);
   const created = (await remote.type("session_created")) as Any;
 

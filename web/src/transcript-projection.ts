@@ -1,7 +1,7 @@
 import type { ZoneMsg } from "./session-bus";
 import { subagentSummary, type SubagentSummary } from "./subagent-deck";
 import {
-  groupSettledTools,
+  groupToolActivity,
   type ActivityItem,
   type FoldedActivity,
 } from "./tool-visibility";
@@ -84,6 +84,8 @@ export type BangRow = {
   output: string;
   exitCode?: number | null;
   done: boolean;
+  /** The `!!` form — shell only, the agent never saw it. */
+  silent?: true;
 };
 
 export type PickerTranscriptRow = {
@@ -96,7 +98,7 @@ export type PickerTranscriptRow = {
   active: boolean;
 };
 
-export type ToolFoldItem = FoldedActivity<ToolRow, ThinkingRow>;
+export type ToolFoldItem = FoldedActivity<ToolRow, ThinkingRow, TextRow>;
 
 export type ToolFoldRow = {
   kind: "tool-fold";
@@ -104,7 +106,23 @@ export type ToolFoldRow = {
   items: ToolFoldItem[];
   actionCount: number;
   summary: string;
+  /** The turn that produced these calls is still running ("working" vs
+   *  "worked"). */
+  live: boolean;
 };
+
+/** Narration the fold may absorb between two calls: a short assistant
+ *  remark ("Typecheck is clean — running the tests next."), not a paragraph.
+ *  Anything longer is a real boundary and stays its own visible row. */
+export const NARRATION_MAX_LINES = 2;
+export const NARRATION_MAX_CHARS = 160;
+export function isShortNarration(row: TextRow): boolean {
+  if (row.role !== "assistant") return false;
+  const text = row.text.trim();
+  if (!text) return false;
+  const lines = text.split("\n").filter((line) => line.trim()).length;
+  return lines <= NARRATION_MAX_LINES && text.length <= NARRATION_MAX_CHARS;
+}
 
 export type SubagentDeckRow = {
   kind: "subagent-deck";
@@ -190,8 +208,9 @@ const sameFoldItems = (
     if (!other || item.kind !== other.kind) return false;
     return item.kind === "tool"
       ? item.tool === (other as Extract<ToolFoldItem, { kind: "tool" }>).tool
-      : item.thinking ===
-          (other as Extract<ToolFoldItem, { kind: "thinking" }>).thinking;
+      : item.kind === "thinking"
+        ? item.thinking === (other as Extract<ToolFoldItem, { kind: "thinking" }>).thinking
+        : item.text === (other as Extract<ToolFoldItem, { kind: "text" }>).text;
   });
 
 const sameDeckItems = (
@@ -202,9 +221,14 @@ const sameDeckItems = (
 function toolFoldRow(
   id: number,
   items: ToolFoldItem[],
+  live: boolean,
   previous: OutputZoneRow | undefined,
 ): ToolFoldRow {
-  if (previous?.kind === "tool-fold" && sameFoldItems(previous.items, items)) {
+  if (
+    previous?.kind === "tool-fold" &&
+    previous.live === live &&
+    sameFoldItems(previous.items, items)
+  ) {
     return previous;
   }
   const calls = items.flatMap((item) => (item.kind === "tool" ? [item.tool] : []));
@@ -214,7 +238,7 @@ function toolFoldRow(
     .slice(0, 3)
     .map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ""}`)
     .join(" · ");
-  return { kind: "tool-fold", id, items, actionCount: calls.length, summary };
+  return { kind: "tool-fold", id, items, actionCount: calls.length, summary, live };
 }
 
 function subagentDeckRow(
@@ -275,8 +299,8 @@ function buildSnapshot(
     cardItemsByParent.set(entry.parentId, items);
   }
 
-  const compactedTools = groupSettledTools(
-    entries.flatMap((entry): Array<ActivityItem<ToolEntry, ThinkingRow>> =>
+  const compactedTools = groupToolActivity(
+    entries.flatMap((entry): Array<ActivityItem<ToolEntry, ThinkingRow, TextRow>> =>
       entry.kind === "tool"
         ? entry.parentId && !entry.isError
           ? []
@@ -285,9 +309,11 @@ function buildSnapshot(
             : [{ kind: "tool", tool: entry }]
         : entry.kind === "thinking"
           ? [{ kind: "thinking", thinking: entry }]
-          : entry.kind === "subtext"
-            ? []
-            : [null],
+          : entry.kind === "text" && isShortNarration(entry)
+            ? [{ kind: "text", text: entry }]
+            : entry.kind === "subtext"
+              ? []
+              : [null],
     ),
   );
 
@@ -300,7 +326,7 @@ function buildSnapshot(
   const rows: OutputZoneRow[] = [];
   for (const entry of entries) {
     if (entry.kind === "subtext") continue;
-    if (entry.kind === "thinking") {
+    if (entry.kind === "thinking" || entry.kind === "text") {
       if (!compactedTools.hidden.has(entry.id)) rows.push(entry);
       continue;
     }
@@ -312,13 +338,8 @@ function buildSnapshot(
             ? { kind: "tool", tool: visibleToolRow(item.tool) }
             : item,
         );
-        rows.push(
-          toolFoldRow(
-            entry.id,
-            visibleItems,
-            previousById.get(entry.id),
-          ),
-        );
+        const live = compacted.some((item) => item.kind === "tool" && !item.tool.settled);
+        rows.push(toolFoldRow(entry.id, visibleItems, live, previousById.get(entry.id)));
         continue;
       }
       if (compactedTools.hidden.has(entry.id)) continue;
@@ -347,8 +368,8 @@ function buildSnapshot(
         : row.kind === "artifact"
           ? row.artifactId
           : undefined;
-    // The old dock lookup used Array.find(), so a cross-kind wire-id collision
-    // binds to the first painting in transcript order.
+    // A cross-kind wire-id collision binds to the first painting in
+    // transcript order (first wins, as Array.find() would).
     if (paintingId !== undefined && !paintingsById.has(paintingId)) {
       paintingsById.set(paintingId, row as PaintingRow);
     }
@@ -653,6 +674,7 @@ export function createTranscriptProjection(): TranscriptProjection {
             command: msg.command,
             output: "",
             done: false,
+            ...(msg.silent ? { silent: true as const } : {}),
           },
         ];
         return true;
@@ -695,9 +717,11 @@ export function createTranscriptProjection(): TranscriptProjection {
       case "permission_request":
       case "permission_resolved":
       case "session_created":
+      case "shell_cwd":
       case "agents":
       case "folder_picked":
       case "subscription":
+      case "entitlement":
       case "refused":
       case "usage":
       case "fs_tree":

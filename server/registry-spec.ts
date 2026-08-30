@@ -2,10 +2,10 @@
 // components the agent may render and what props each accepts.
 //
 // One zod shape per component serves three consumers:
-//   1. Step 1.2 — render tools: the SDK's tool() helper takes the raw shape
-//      directly, so the agent's tool-input schema IS this spec.
-//   2. Step 1.3 — the front end keys its React registry off ComponentName.
-//   3. Step 1.4 — client/server prop validation via the derived z.object.
+//   1. Render tools: the SDK's tool() helper takes the raw shape directly,
+//      so the agent's tool-input schema IS this spec.
+//   2. The front end keys its React registry off ComponentName.
+//   3. Client/server prop validation via the derived z.object.
 //
 // The .describe() strings are what the model reads when deciding how to fill
 // props — write them for the agent, not for humans.
@@ -17,7 +17,7 @@ import { z } from "zod";
 const markdown = (what: string) =>
   z.string().describe(`${what} Supports inline markdown (bold, links, \`code\`).`);
 
-// Phase 2: action descriptors components may carry. The agent-facing subset
+// Action descriptors components may carry. The agent-facing subset
 // is prompt|tool — state actions are shell-internal and not authorable.
 export const actionSpec = z.discriminatedUnion("kind", [
   z.object({
@@ -161,9 +161,20 @@ export const registryShapes = {
           // agent-controlled script one click from the shell's scope.
           href: z
             .url()
-            .refine((u) => /^https?:$/.test(new URL(u).protocol), {
-              message: "href must be an http(s) URL",
-            })
+            .refine(
+              (u) => {
+                // zod 4 runs the refine even after z.url() failed, and
+                // `new URL("docs/README.md")` THROWS — a relative link (the
+                // model's commonest mistake) became a TypeError out of the
+                // schema instead of a validation message (audit 2026-08-26).
+                try {
+                  return /^https?:$/.test(new URL(u).protocol);
+                } catch {
+                  return false;
+                }
+              },
+              { message: "href must be an http(s) URL" },
+            )
             .describe("Absolute http(s) URL."),
           description: z.string().optional().describe("One-line description, muted."),
         }),
@@ -436,7 +447,7 @@ export const registryShapes = {
 
   // NOT agent-authored — there is no render tool for this. The server
   // synthesizes it from the agent's TodoWrite calls (session.ts) so the
-  // terminal's live task list shows up as a real, update-in-place component (T2.5).
+  // terminal's live task list shows up as a real, update-in-place component.
   "todo-list": {
     todos: z
       .array(
@@ -462,7 +473,7 @@ export const registrySchemas = Object.fromEntries(
 ) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
 
 /**
- * Tolerant twins for the CLIENT side (R.4h — the Postel split). The component
+ * Tolerant twins for the CLIENT side (the Postel split). The component
  * vocabulary is part of the wire contract in practice, and the wire rule is
  * additive-only: a newer daemon may send props from a newer vocabulary, and a
  * client built yesterday must render the parts it knows, not reject the whole

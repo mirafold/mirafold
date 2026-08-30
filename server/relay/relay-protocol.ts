@@ -1,9 +1,8 @@
-// Phase R.1 — the relay envelope. The daemon serves remote viewports through
-// ONE outbound connection to the relay; every remote viewport is multiplexed
+// The relay envelope. The daemon serves remote viewports through ONE
+// outbound connection to the relay; every remote viewport is multiplexed
 // over it by viewport id. `WireMsg` and `ClientMsg` ride inside `p` as opaque
-// strings (plain JSON today, ciphertext once R.3 lands) — the relay routes on
-// `t`/`v` only and must never parse `p`, and the wire protocol itself is
-// untouched by this layer.
+// ciphertext strings — the relay routes on `t`/`v` only and must never parse
+// `p`, and the wire protocol itself is untouched by this layer.
 
 import { randomBytes } from "node:crypto";
 
@@ -39,9 +38,9 @@ export type DaemonToRelay =
   | { t: "close"; v: string } // daemon dropped the viewport
   | { t: "pong" };
 
-// URL contract with the relay (the in-repo stub now, the deployed R.2 service
-// later). Viewports use the same /ws path a local browser uses against the
-// daemon, so the web client connects to either end unchanged. R.3: both ends
+// URL contract with the relay (the in-repo stub and the deployed service
+// alike). Viewports use the same /ws path a local browser uses against the
+// daemon, so the web client connects to either end unchanged. Both ends
 // identify the pair by `?pair=<pairId>` — the SHA-256-derived id from
 // relay-crypto.ts — and the pairing code itself never travels to the relay.
 export const DAEMON_PATH = "/daemon";
@@ -59,7 +58,7 @@ export const CLOSE_OVERLOADED = 4004; // relay at a capacity cap
 export const CLOSE_UNENTITLED = 4007; // dial-in without a valid entitlement token
 
 // Request header the daemon presents its entitlement token on when dialing in
-// (the paid-tier gate, R.5). Shared contract with the relay's contract.ts —
+// (the paid-tier gate). Shared contract with the relay's contract.ts —
 // the sibling itest's parity guard pins them equal.
 export const ENTITLEMENT_HEADER = "mirafold-entitlement";
 
@@ -73,7 +72,7 @@ export const HANDSHAKE_TIMEOUT_MS = 15_000;
 
 /**
  * High-entropy pairing code (~128 bits, URL-safe). It is the root of trust
- * for the remote path: printed by the daemon, shown to the user (QR in R.4),
+ * for the remote path: printed by the daemon, shown to the user (and as a QR),
  * and the input to every key in relay-crypto.ts. It is NEVER sent to the
  * relay — only its derived pairId is.
  */
@@ -91,7 +90,7 @@ export const MIN_PAIRING_CODE_LENGTH = 16;
 // parser reads `code=([A-Za-z0-9_-]+)` — a space or `&` in a pinned code
 // pairs the DAEMON fine but truncates on the phone, deriving a different
 // pairId and yielding an eternal "Desktop not reachable" with no warning
-// anywhere (2026-07-29 bughunt). Minted codes are base64url and always fit;
+// anywhere. Minted codes are base64url and always fit;
 // a pin outside the alphabet is refused at the source — refusing beats
 // honoring, as with the short-pin rule above.
 export const PAIRING_CODE_RE = /^[A-Za-z0-9_-]+$/;

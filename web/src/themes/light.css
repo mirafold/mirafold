@@ -1,4 +1,4 @@
-/* ---- Standard, light side (V.1, 2026-07-18; display name is just
+/* ---- Standard, light side (display name is just
    "Standard" — one concept on both pill sides, the group headers
    disambiguate; prose lists the pair as "Standard (dark and light)") --------
    The plain-terminal theme's light twin, and the LIGHT-SIDE DEFAULT: black
@@ -12,11 +12,10 @@
    Why this file is light.css: the id `light` is load-bearing — it's the
    built-in fallback the pill's light side resolves to when a stored slot is
    stale (resolveSlot leans on "the default's id equals the appearance
-   label"). The original designed Light theme was DROPPED 2026-07-18 (Kyle's
-   call): the V.1 terminal-grade floors removed lightness as a design
-   dimension and left the two light themes near-indistinguishable — one had
-   to go, and the stock terminal is the one with the unambiguous identity.
-   This palette (born as standard-light.css the same day) took over the id. */
+   label"). There is no separate designed Light theme: the terminal-grade
+   contrast floors remove lightness as a design dimension, so a second light
+   theme would be near-indistinguishable from this one — the stock terminal
+   is the one with the unambiguous identity. */
 
 :root[data-theme="light"] {
   color-scheme: light;

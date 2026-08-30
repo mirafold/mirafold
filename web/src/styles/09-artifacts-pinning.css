@@ -1,4 +1,4 @@
-/* ---- Artifacts (Phase 3) -------------------------------------------------
+/* ---- Artifacts -------------------------------------------------
    Shell-drawn frame around the sandboxed iframe. The chrome bar (label +
    "sandboxed" badge) lives OUTSIDE the iframe so agent content can't fake
    or restyle it. User-resizable vertically; the iframe fills the rest. */
@@ -23,7 +23,7 @@
   justify-content: space-between;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78em;
   color: var(--fg-dim);
   user-select: none;
@@ -58,6 +58,12 @@
   color: var(--fg);
 }
 
+.artifact-frame-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
 .artifact-frame {
   flex: 1;
   width: 100%;
@@ -65,8 +71,16 @@
   display: block;
   background: var(--surface);
 }
+/* The activation layer: shell-owned, transparent, above the frame until the
+   user clicks it (Artifact.tsx). */
+.artifact-activate {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background: transparent;
+}
 
-/* Failure fallback (Step 3.4): the frame is gone; source takes its place. */
+/* Failure fallback: the frame is gone; source takes its place. */
 .artifact-failed {
   height: auto;
   max-height: 340px;
@@ -100,7 +114,7 @@
   padding: 10px;
   background: var(--code-bg);
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   color: var(--code-fg);
   white-space: pre-wrap;
@@ -145,7 +159,7 @@
   align-self: flex-start;
   margin: 0 4px;
   padding: 6px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-dim);
   background: transparent;
@@ -185,7 +199,7 @@
 }
 
 .pin-dock-title {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -220,7 +234,7 @@
   width: 30px;
   writing-mode: vertical-rl;
   padding: 14px 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-dim);
   background: transparent;
@@ -234,3 +248,10 @@
   background: var(--surface);
 }
 
+
+/* A pinned painting that threw (PinDock.tsx RenderBoundary). */
+.pin-dock-fallback {
+  padding: 8px 10px;
+  color: var(--fg-dim);
+  font-size: 12px;
+}

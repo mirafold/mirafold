@@ -1,4 +1,4 @@
-// The Codex model catalog, asked of Codex itself (V.2's /model parity).
+// The Codex model catalog, asked of Codex itself.
 //
 // Terminal Codex's /model picker is interactive TUI chrome the headless SDK
 // can't reach, but the LIST it shows comes from the binary's own
@@ -36,11 +36,13 @@ interface RawCodexModelRow {
 const codexBin = () => agentBin("MIRAFOLD_CODEX_BIN", "codex");
 
 /** `-c key=value` args for the spawn, values TOML-quoted. Nested tables
- *  flatten to dotted keys, the same form the codex CLI takes. */
-function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
+ *  flatten to dotted keys, the same form the codex CLI takes; an ARRAY is a
+ *  leaf, written whole (JSON's `["a","b"]` is TOML's) — a dotted index
+ *  (`args.0=`) is rejected by the binary (CA.2, 2026-08-25). */
+export function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
   return Object.entries(config).flatMap(([k, v]) => {
     const key = prefix ? `${prefix}.${k}` : k;
-    return typeof v === "object" && v !== null
+    return typeof v === "object" && v !== null && !Array.isArray(v)
       ? configArgs(v as Record<string, unknown>, key)
       : ["-c", `${key}=${JSON.stringify(v)}`];
   });
@@ -51,9 +53,9 @@ function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
  * protocol error, or timeout — the caller decides how to degrade (the
  * adapter surfaces an honest error, never a made-up list).
  *
- * `config` pins the question to the provider the ASKER means (2026-07-20).
- * Without it the binary answers through whatever `model_provider` the user's
- * config.toml names — so a session bound to first-party OpenAI was being
+ * `config` pins the question to the provider the ASKER means. Without it
+ * the binary answers through whatever `model_provider` the user's
+ * config.toml names — so a session bound to first-party OpenAI would be
  * handed OpenRouter's catalog, and its "default" model, which a ChatGPT
  * account then refuses. The binary also keeps ONE global
  * `$CODEX_HOME/models_cache.json` across providers, so the wrong answer is

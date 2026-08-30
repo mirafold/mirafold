@@ -1,14 +1,15 @@
-/* ---- Solarized Light (S.5) --------------------------------------------------
+/* ---- Solarized Light --------------------------------------------------------
    Transcribed from the canonical Base16 "Solarized Light" scheme (palette by
    Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
-   via the S.2 recipe in manifest.ts. Light scheme: surfaces go LIGHTER than
+   via the recipe in manifest.ts. Light scheme: surfaces go LIGHTER than
    the cream --bg ("follow the spirit, not the arithmetic sign"). Accents stay
    canonical; hand-tunes from the QA walk are noted inline. Code/diff surfaces
    stay pinned dark via base.css, as in every theme.
-   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
-   whole fg ramp + all four accents darkened far off the canonical values —
-   the soft Solarized contrast failed the readability floors outright (fg
-   was 4.4:1 worst-case, accent/warn ~3:1 as text). What survives: the cream
+   Deviations for the terminal-grade contrast floors: the
+   whole fg ramp + all four accents sit far darker than the canonical values —
+   the soft Solarized contrast fails the readability floors outright
+   (canonical fg is 4.4:1 worst-case, accent/warn ~3:1 as text). What
+   survives: the cream
    base3 canvas and the hue family. Only lightness moved. */
 
 :root[data-theme="solarized-light"] {

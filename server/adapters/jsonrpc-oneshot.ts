@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { envWithout } from "./types";
 
 // Provider catalog replies are normally tens of kilobytes. Bound cumulative
 // stdout as it crosses the process boundary so a corrupt binary cannot retain
@@ -28,6 +29,7 @@ export function jsonRpcOneShot<T>(opts: {
   return new Promise((resolve, reject) => {
     const child = spawn(opts.command, opts.args, {
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
+      env: envWithout(), // never the daemon's own secrets
       stdio: ["pipe", "pipe", "ignore"],
     });
     let settled = false;
@@ -37,7 +39,7 @@ export function jsonRpcOneShot<T>(opts: {
       clearTimeout(timer);
       child.kill();
       // A child that ignores SIGTERM still dies; unref so the timer never
-      // holds the daemon open (2026-07-18 audit).
+      // holds the daemon open.
       setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
       if (err) reject(err);
       else resolve(result as T);
@@ -69,8 +71,7 @@ export function jsonRpcOneShot<T>(opts: {
           continue; // stray non-JSON noise on stdout
         }
         // A bare scalar/`null` line is noise too — handing it to onMessage
-        // would throw inside this stream listener and crash the whole daemon
-        // (reproduced live, 2026-07-19 audit).
+        // would throw inside this stream listener and crash the whole daemon.
         if (typeof msg !== "object" || msg === null) continue;
         try {
           opts.onMessage(msg, send, finish);

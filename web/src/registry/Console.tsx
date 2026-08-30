@@ -10,7 +10,7 @@ import { CopyButton } from "./CopyButton";
 // A pathological payload can't hang the tab: past this, the tail is dropped
 // with a visible note (the head carries the command context; agents are told
 // to quote excerpts).
-const CONSOLE_CLIP = 200_000;
+export const CONSOLE_CLIP = 200_000;
 
 export type AnsiSpan = { text: string; className?: string };
 
@@ -92,7 +92,7 @@ export function Console({ command, output, exitCode }: ComponentProps<"console">
   const clipped = output.length > CONSOLE_CLIP;
   // A fixed-offset cut can land inside an escape sequence; the strip rules
   // then eat only `\x1b[`, leaking the tail ("31m") as literal text — drop a
-  // trailing partial sequence with the cut (2026-07-28 fix).
+  // trailing partial sequence with the cut.
   const spans = ansiSpans(
     clipped ? output.slice(0, CONSOLE_CLIP).replace(/\x1b\[?[0-9;]*$/, "") : output,
   );

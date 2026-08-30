@@ -19,7 +19,7 @@
 
 .prompt-options {
   position: absolute;
-  z-index: 30;
+  z-index: var(--z-menu);
   left: 12px;
   right: 12px;
   bottom: calc(100% + 6px);
@@ -55,7 +55,7 @@
 
 .prompt-option-value,
 .prompt-option-hint {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .prompt-option-value {
@@ -78,7 +78,7 @@
 .prompt-option-source {
   flex: none;
   padding: 1px 5px;
-  color: var(--fg-muted);
+  color: var(--fg-dim);
   background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -103,17 +103,17 @@
   line-height: 1.5; /* match the textarea so the glyph sits on the first line */
 }
 
-/* The session's working dir at the prompt (Step 4.8) — dim, mono, terminal-
+/* The session's working dir at the prompt — dim, mono, terminal-
    prompt style: `~/Projects/foo ❯`. Ellipsizes from the left so the leaf
    (the part that identifies the project) always stays visible. Collapsible
    down to just the caret — click the path to hide it, the caret to bring it
-   back; the choice persists (2026-07-16). */
+   back; the choice persists. */
 .prompt-cwd {
   background: none;
   border: 0;
   padding: 0;
   cursor: pointer;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   line-height: 1.76; /* baseline-align with the 0.95em textarea text */
   color: var(--fg-faint);
@@ -152,7 +152,7 @@
   color: inherit;
   border: none;
   padding: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.95em;
   line-height: 1.5;
   outline: none;
@@ -177,7 +177,7 @@
   background: var(--warn-bg-2);
   border: 1px solid var(--warn-border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .bang-bar-badge {
@@ -225,28 +225,28 @@
   color: var(--error);
 }
 
-/* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
+/* Permission bar: drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
 
-/* The always-visible work indicator (2026-07-29): prompt-area chrome, never
-   a transcript entry, so no scroll position can hide it. The glyph frames
-   cycle from ActivityLine.tsx (JS, where reduced motion is honored) — the
-   2026-07-25 lesson baked in: a CSS pulse here was silently killed by the
-   rise-animation override and the line sat frozen. */
+/* The always-visible work indicator: prompt-area chrome, never a
+   transcript entry, so no scroll position can hide it. The glyph frames
+   cycle from ActivityLine.tsx (JS, where reduced motion is honored): a CSS
+   pulse here is silently killed by the rise-animation override and the
+   line sits frozen. */
 .activity-line {
   display: flex;
   align-items: baseline;
   gap: 7px;
   margin-top: 8px;
   padding: 0 15px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dim);
   animation: rise 0.16s ease-out both;
   /* The label is engine-supplied (a tool name, MCP servers included) and
      this line is chrome, not scrollable transcript — so an over-long one
-     must ellipsize here rather than widen the page (2026-07-29 audit).
+     must ellipsize here rather than widen the page.
      The server cap is the first bound; this is the layout's own. */
   min-width: 0;
 }
@@ -269,7 +269,7 @@
   color: var(--fg-faint);
 }
 
-.perm-bar {
+.permission-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -278,15 +278,15 @@
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   animation: rc-mount 0.18s ease-out;
 }
 
 /* Everything except allow/deny is one button: it opens the full-command
    card, because the one-line preview truncates (always on phone) and the
-   body is what a thumb tries to tap (2026-07-28, Kyle). */
-.perm-body {
+   body is what a thumb tries to tap. */
+.permission-body {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -301,11 +301,11 @@
   cursor: pointer;
 }
 
-.perm-body:hover .perm-detail {
+.permission-body:hover .permission-detail {
   color: var(--fg-strong);
 }
 
-.perm-badge {
+.permission-badge {
   color: var(--warn-fg);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -313,8 +313,8 @@
   flex-shrink: 0;
 }
 
-/* SA.3: the ask came from a subagent — a dim factual chip, shell-composed. */
-.perm-subagent {
+/* The ask came from a subagent — a dim factual chip, shell-composed. */
+.permission-subagent {
   color: var(--fg-faint);
   border: 1px solid var(--border-mid);
   border-radius: 4px;
@@ -323,13 +323,13 @@
   flex-shrink: 0;
 }
 
-.perm-tool {
+.permission-tool {
   color: var(--fg-strong);
   font-weight: 600;
   flex-shrink: 0;
 }
 
-.perm-detail {
+.permission-detail {
   flex: 1;
   min-width: 0;
   color: var(--fg-mid);
@@ -338,13 +338,13 @@
   text-overflow: ellipsis;
 }
 
-.perm-more {
+.permission-more {
   color: var(--fg-dim);
   flex-shrink: 0;
 }
 
-.perm-allow,
-.perm-deny {
+.permission-allow,
+.permission-deny {
   flex-shrink: 0;
   padding: 3px 12px;
   font: inherit;
@@ -353,22 +353,22 @@
   background: transparent;
 }
 
-.perm-allow {
+.permission-allow {
   color: var(--accent);
   border: 1px solid var(--ok-border);
 }
 
-.perm-allow:hover {
+.permission-allow:hover {
   background: var(--ok-bg);
   border-color: var(--ok-border-strong);
 }
 
-.perm-deny {
+.permission-deny {
   color: var(--error);
   border: 1px solid var(--err-border);
 }
 
-.perm-deny:hover {
+.permission-deny:hover {
   background: var(--err-bg);
   border-color: var(--err-border-strong);
 }
@@ -376,18 +376,18 @@
 /* The full-command card: same modal shell as pairing/settings (backdrop and
    card rules live with those), plus the command itself — wrapped, scrollable
    past 60vh, and focusable so a keyboard can scroll it. */
-.perm-modal-head {
+.permission-modal-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
-.perm-modal-detail {
+.permission-modal-detail {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   line-height: 1.5;
   color: var(--fg-body);
@@ -402,13 +402,13 @@
   scrollbar-width: thin;
 }
 
-/* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
+/* Stop affordance: shell-drawn, visible only while a turn is
    in flight. Esc does the same thing from anywhere. */
 .stop-btn {
   flex-shrink: 0;
   align-self: flex-start;
   padding: 2px 9px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.6;
   color: var(--fg-dim);
@@ -423,59 +423,14 @@
   border-color: var(--err-border);
 }
 
-.tool-activity-group {
-  margin: 3px 0 7px;
-}
-
-.tool-activity-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 4px 7px;
-  color: var(--fg-faint);
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  font: 0.82em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tool-activity-head:hover {
-  color: var(--fg-dim);
-  background: var(--surface-hover);
-}
-
-.tool-activity-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.tool-activity-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-activity-calls {
-  margin: 4px 0 2px 16px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border-faint);
-}
-
-
-/* ---- File drag-and-drop (Phase FD) --------------------------------------
+/* ---- File drag-and-drop --------------------------------------
    Shell-owned drop affordances: a full-window overlay while a file drag is
    over the page, and a compact upload strip above the prompt box. */
 
 .drop-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -490,7 +445,7 @@
   border: 1px dashed var(--accent);
   border-radius: 10px;
   color: var(--fg-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
 }
 
@@ -510,7 +465,7 @@
   border-radius: 6px;
   background: var(--surface-2);
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -528,4 +483,12 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+/* Bidi isolation on the answer-or-act surface: a direction control inside
+   an ask must not re-order the chrome around it (visible-controls.ts marks
+   the control itself; audit 2026-08-26). */
+.permission-detail,
+.permission-modal-detail {
+  unicode-bidi: isolate;
 }

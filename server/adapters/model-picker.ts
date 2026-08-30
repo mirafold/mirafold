@@ -1,14 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 
-// The /model picker re-skin shared by the codex and gemini adapters (V.2,
-// reshaped 2026-07-22): the engine's own catalog painted as ONE shell-owned
-// `picker` wire message — arrow-key + click selection at any row count.
-// Choosing a row sends `clickText(id)` back through the adapter's /model
-// path; `switchHint` rides along as the typed alternative. (The earlier
-// question-component form and its 2–4 option fallback are retired — the
-// registry's caps are discipline on agent-generated UI and must never bind
-// a shell re-skin.)
+// The /model picker re-skin shared by the codex and gemini adapters: the
+// engine's own catalog painted as ONE shell-owned `picker` wire message —
+// arrow-key + click selection at any row count. Choosing a row sends
+// `clickText(id)` back through the adapter's /model path; `switchHint` rides
+// along as the typed alternative. (Not a question component: the registry's
+// caps are discipline on agent-generated UI and must never bind a shell
+// re-skin.)
 
 export type ModelPickerRow = {
   id: string;
@@ -18,7 +17,7 @@ export type ModelPickerRow = {
 };
 
 export function emitModelPicker(
-  emit: (msg: WireMsg) => void,
+  emit: (msg: SessionMsg) => void,
   rows: ModelPickerRow[],
   opts: {
     clickText: (id: string) => string;

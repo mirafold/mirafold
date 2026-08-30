@@ -9,6 +9,15 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
+    <!-- The host-independent half of the shell's CSP, in the document itself
+         so no host that serves this bundle can forget it (the daemon header
+         and public/_headers carry the full policy incl. connect-src, which a
+         <meta> must NOT restrict — the relay dial depends on it). Policies
+         intersect: this can only tighten. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="frame-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>Mirafold</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -16,8 +25,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <script>
       // Apply the stored theme before first paint so a light-theme user
-      // never sees a dark flash (4.3). Shell keeps it in sync after mount.
-      // Two-slot model (S.3): mode key -> that side's slot key -> theme id.
+      // never sees a dark flash. Shell keeps it in sync after mount.
+      // Two-slot model: mode key -> that side's slot key -> theme id.
       // Key names + fallback mirror themes/manifest.ts by value (no imports
       // here); an unknown slot id stamps harmlessly — no theme file matches,
       // so bare :root (dark) applies until Shell re-stamps the resolved id.

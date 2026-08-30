@@ -8,6 +8,7 @@ import { GeminiCliSession } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../sessions/workspace-trust";
 import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_CONTEXT } from "../render-tools";
 
 const RENDER_MCP_COMMAND = renderMcpCommand().command;
 
@@ -250,7 +251,7 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
     { type: "tool_result", tool_id: "t1", status: "success", output: "file.txt" },
     // genui render with an explicit id in params (update-in-place) — must
     // paint a render, never a tool row.
-    { type: "tool_use", tool_name: "mcp_mirafold_render_card", tool_id: "r1", parameters: { title: "T", id: "keep-me" } },
+    { type: "tool_use", tool_name: "mcp_mirafold_render_card", tool_id: "r1", parameters: { title: "T", body: "b", id: "keep-me" } },
     { type: "tool_result", tool_id: "r1", status: "success", output: "Rendered card (id: ignored-1234)" },
     // genui artifact without an id — takes the stub-assigned one from output.
     { type: "tool_use", tool_name: "mcp_mirafold_emit_artifact", tool_id: "r2", parameters: { html: "<b>x</b>", title: "demo" } },
@@ -279,7 +280,7 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");
   assert.equal(render.id, "keep-me"); // explicit param id wins
-  assert.deepEqual(render.props, { title: "T" });
+  assert.deepEqual(render.props, { title: "T", body: "b" });
 
   const art = msgs.find((m) => m.type === "artifact")!;
   assert.equal(art.html, "<b>x</b>");
@@ -684,6 +685,7 @@ test("guidance skips slash-leading turns and rides the first prose turn instead"
     args = spawnArgs(argsLog);
     const prompt = args[args.indexOf("-p") + 1];
     assert.match(prompt, /## Generative UI/);
+    assert.ok(prompt.includes(MIRAFOLD_CONTEXT), "the environment fact rides the first prose turn");
     assert.match(prompt, /hello$/);
 
     s.pushPrompt("again");
@@ -769,12 +771,12 @@ test("an untrusted workspace asks the user before anything runs, then proceeds o
     // Nothing ran while the ask was open — the whole point of the gate.
     assert.equal(existsSync(argsLog), false, "no child spawned before the answer");
     assert.equal(msgs.some((m) => m.type === "turn_end"), false, "turn still open");
-    // K.2: the auth stub is already there (constructor-time), but the loadable
-    // MCP entry is NOT — that's the piece deferred to an actual trust yes.
     const settingsFile = path.join(ws, ".gemini", "settings.json");
-    const beforeAllow = JSON.parse(readFileSync(settingsFile, "utf8"));
-    assert.equal(beforeAllow.security.auth.selectedType, "gemini-api-key");
-    assert.equal(beforeAllow.mcpServers, undefined, "no MCP entry while the ask is still open");
+    assert.equal(
+      existsSync(settingsFile),
+      false,
+      "no project settings file is created before the trust answer",
+    );
 
     s.resolvePermission(ask.id, true);
     await waitFor("turn_end");
@@ -783,6 +785,7 @@ test("an untrusted workspace asks the user before anything runs, then proceeds o
       "the resolution is announced so every viewport drops its bar",
     );
     const afterAllow = JSON.parse(readFileSync(settingsFile, "utf8"));
+    assert.equal(afterAllow.security.auth.selectedType, "gemini-api-key");
     assert.equal(
       afterAllow.mcpServers[MIRAFOLD_MCP].command,
       RENDER_MCP_COMMAND,
@@ -793,7 +796,16 @@ test("an untrusted workspace asks the user before anything runs, then proceeds o
     // the run proceed but still won't load the project settings that select
     // API-key auth, so the turn dies on IneligibleTierError instead.
     assert.match(argv, /ENV_TRUST=true/, "the yes is carried into the child as workspace trust");
-    assert.equal(isWorkspaceTrusted(ws), true, "asked once — the answer is remembered");
+    assert.equal(
+      isWorkspaceTrusted(ws, "gemini-cli"),
+      true,
+      "asked once — Gemini's answer is remembered",
+    );
+    assert.equal(
+      isWorkspaceTrusted(ws, "codex"),
+      false,
+      "Gemini's answer does not authorize Codex's different config write",
+    );
   } finally {
     s.close();
     delete process.env.FAKE_ARGS_LOG;
@@ -814,13 +826,105 @@ test("denying runs nothing, says why, and does not remember a yes", async () => 
     const notice = msgs.find((m) => m.type === "notice");
     assert.ok(notice, "the user is told why nothing happened");
     assert.match(notice.text, /won't run in a folder you haven't trusted/);
-    assert.equal(isWorkspaceTrusted(ws), false, "a no is not recorded as a yes");
+    assert.equal(isWorkspaceTrusted(ws, "gemini-cli"), false, "a no is not recorded as a yes");
     const settingsFile = path.join(ws, ".gemini", "settings.json");
-    const afterDeny = JSON.parse(readFileSync(settingsFile, "utf8"));
-    assert.equal(afterDeny.mcpServers, undefined, "a denied trust never gets the MCP entry either");
+    assert.equal(existsSync(settingsFile), false, "a denied trust creates no project settings");
   } finally {
     s.close();
     delete process.env.FAKE_ARGS_LOG;
     rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// AUDIT 2026-08-26: the consented write is to THIS folder's settings file,
+// but the path was a plain join — a checkout shipping `.gemini` or
+// `.gemini/settings.json` as a symlink (dangling ones pass existsSync)
+// redirected the merge to any user-owned path. Now: refused, nothing written.
+for (const variant of ["dir", "file"] as const) {
+  test(`a repository's .gemini ${variant} symlink never redirects the consented settings write`, async () => {
+    const { symlinkSync, mkdirSync } = await import("node:fs");
+    const outside = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-outside-"));
+    const { s, ws, msgs, waitFor } = untrustedSession();
+    if (variant === "dir") {
+      symlinkSync(outside, path.join(ws, ".gemini"));
+    } else {
+      mkdirSync(path.join(ws, ".gemini"));
+      symlinkSync(path.join(outside, "settings.json"), path.join(ws, ".gemini", "settings.json"));
+    }
+    try {
+      s.pushPrompt("hello");
+      const ask = await waitFor("permission_request");
+      s.resolvePermission(ask.id, true);
+      await waitFor("turn_end");
+      const err = msgs.find((m) => m.type === "error");
+      assert.ok(err, "the turn fails with a message");
+      assert.match(err.message, /symlink/);
+      assert.equal(existsSync(path.join(outside, "settings.json")), false, "nothing was written through the link");
+      assert.deepEqual(
+        (await import("node:fs")).readdirSync(outside),
+        [],
+        "nothing at all landed outside the folder",
+      );
+    } finally {
+      s.close();
+      rmSync(ws, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+}
+
+test("/model in an untrusted folder asks for trust first; a deny spawns nothing and ends the turn", async () => {
+  const argsLog = path.join(tmp, "trust-model-args");
+  rmSync(argsLog, { force: true });
+  process.env.FAKE_ARGS_LOG = argsLog;
+  const { s, ws, msgs, waitFor } = untrustedSession();
+  try {
+    s.pushPrompt("/model");
+    const ask = await waitFor("permission_request");
+    assert.match(ask.detail, /trust this folder/);
+    assert.equal(existsSync(argsLog), false, "the catalog spawn waits for the answer");
+    s.resolvePermission(ask.id, false);
+    await waitFor("turn_end");
+    assert.equal(existsSync(argsLog), false, "a deny never spawns Gemini in the folder");
+    assert.ok(!msgs.some((m) => m.type === "picker"), "no picker was painted");
+    assert.ok(msgs.some((m) => m.type === "notice" && /haven't trusted/.test(m.text)));
+    assert.equal(isWorkspaceTrusted(ws, "gemini-cli"), false);
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// Cold review of the audit fix above (2026-08-26): the path guard covered
+// `.gemini` and `settings.json` but not the THIRD write — the invalid-JSON
+// backup — which wrote the repo's own bytes through a symlink planted under
+// the backup's name. Now every write opens O_NOFOLLOW, the backup exclusively.
+test("a repository cannot route the invalid-JSON backup through a planted symlink; the backup lands beside the file", async () => {
+  const { symlinkSync, mkdirSync, readdirSync } = await import("node:fs");
+  const outside = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-outside-"));
+  const victim = path.join(outside, "authorized_keys");
+  writeFileSync(victim, "the user's own bytes\n");
+  const { s, ws, msgs, waitFor } = untrustedSession();
+  const dir = path.join(ws, ".gemini");
+  mkdirSync(dir);
+  const planted = "ssh-ed25519 AAAA-attacker attacker@evil\n";
+  writeFileSync(path.join(dir, "settings.json"), planted); // a real file, not JSON
+  symlinkSync(victim, path.join(dir, "settings.json.mirafold-backup"));
+  try {
+    s.pushPrompt("hello");
+    const ask = await waitFor("permission_request");
+    s.resolvePermission(ask.id, true);
+    await waitFor("turn_end");
+    assert.equal(readFileSync(victim, "utf8"), "the user's own bytes\n", "the victim never received the repo's bytes");
+    assert.ok(!msgs.some((m) => m.type === "error"), "the turn proceeds — the backup found another name");
+    const backups = readdirSync(dir).filter((n) => /^settings\.json\.mirafold-backup\.\d+$/.test(n));
+    assert.equal(backups.length, 1, "one timestamped backup beside the file");
+    assert.equal(readFileSync(path.join(dir, backups[0]!), "utf8"), planted);
+    assert.equal(JSON.parse(readFileSync(path.join(dir, "settings.json"), "utf8")).security.auth.selectedType, "gemini-api-key");
+  } finally {
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });

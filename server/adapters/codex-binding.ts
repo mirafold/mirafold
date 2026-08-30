@@ -1,14 +1,14 @@
-import { Codex, type CodexOptions } from "@openai/codex-sdk";
-import { envWithout, installedAgentBin } from "./types";
+import { agentBin, envWithout } from "./types";
 import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
-import { listCodexModels, type CodexModel } from "./codex-model-list";
+import { configArgs, listCodexModels, type CodexModel } from "./codex-model-list";
 import { codexProviders, type CodexProviders } from "./codex-config";
+import type { AppServerSpawn } from "./codex-app-server";
 
 export type CodexBackendKind = "api-key" | "subscription" | "local";
 
 const RENDER_MCP = renderMcpCommand();
 
-/** The provider half of an onboarding pick's enforcement. */
+/** The provider half of an agent picker pick's enforcement. */
 export function codexProviderBinding(
   kind: CodexBackendKind | undefined,
   endpoint: string | undefined,
@@ -60,20 +60,49 @@ export function codexEngineDefaultModel(
   return model.id;
 }
 
-/** Build the SDK runtime and model catalogs under one enforced provider
- * binding. Catalog and turn routing must share both the binary and provider;
- * splitting either can display a model the eventual turn cannot run. */
+/** The per-process config every Codex session passes as `-c` overrides:
+ *  Mirafold's render MCP server, the provider the pick promised, and — for
+ *  an API-key pick — the auth mode that makes app-server honor the env key.
+ *  Everything else (sandbox, approvals, model defaults, the user's own MCP
+ *  servers) is inherited from `~/.codex/config.toml` untouched. */
+export function codexSessionConfig(
+  kind: CodexBackendKind | undefined,
+  binding: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    mcp_servers: {
+      [MIRAFOLD_MCP]: {
+        command: RENDER_MCP.command,
+        args: RENDER_MCP.args,
+        // Mirafold's own render tools only emit validated UI messages; the
+        // headless engine cannot prompt for their approval.
+        default_tools_approval_mode: "approve",
+      },
+    },
+    ...binding,
+    // CA.1 spike (2026-08-25): app-server prefers the auth.json ChatGPT login
+    // over OPENAI_API_KEY unless the login method is forced — without this an
+    // "api-key" session would silently run on the subscription, which the
+    // relay's no-subscription bound cannot allow. Process-local: `-c` never
+    // touches the user's config.toml or auth.json.
+    ...(kind === "api-key" ? { forced_login_method: "api" } : {}),
+  };
+}
+
+/** Build the app-server spawn and the model catalogs under one enforced
+ * provider binding. Catalog and turn routing must share both the binary and
+ * provider; splitting either can display a model the eventual turn cannot
+ * run. */
 export function createCodexRuntimeBinding(options: {
   kind: CodexBackendKind | undefined;
   endpoint?: string;
   provider?: string;
   model?: string;
-  makeCodex?: (options: CodexOptions) => Codex;
   listModels?: () => Promise<CodexModel[]>;
   listEngineModels?: () => Promise<CodexModel[]>;
 }): {
-  codex: Codex;
-  engineBin?: string;
+  spawn: AppServerSpawn;
+  engineBin: string;
   listModels: () => Promise<CodexModel[]>;
   listEngineModels: () => Promise<CodexModel[]>;
   firstPartyOpenAI: boolean;
@@ -87,52 +116,31 @@ export function createCodexRuntimeBinding(options: {
   const endpointForRedaction =
     endpoint ?? providerConfig.entries.find((entry) => entry.id === selectedProvider)?.baseUrl;
 
-  // Every explicit onboarding pick forces the provider its label promised.
+  // Every explicit agent picker pick forces the provider its label promised.
   // A discovered local endpoint gets a per-session Responses provider;
   // config-declared local providers keep their own table and are selected by
   // id. A bare local pick and an unspecified backend inherit Codex's config.
   const binding = codexProviderBinding(kind, endpoint, provider);
 
-  // Drive the user's installed Codex when present so the terminal and SDK
-  // share one engine version; machines without it retain the SDK fallback.
-  // An explicit override is SPAWN intent and rides verbatim — even missing,
-  // so the first turn ENOENTs honestly (the detection/spawn split of
-  // types.ts, 2026-08-13); only the unset case consults installation lookup.
-  const installedCodex =
-    process.env.MIRAFOLD_CODEX_BIN || installedAgentBin("MIRAFOLD_CODEX_BIN", "codex");
-  const codex = (options.makeCodex ?? ((codexOptions: CodexOptions) => new Codex(codexOptions)))({
-    ...(installedCodex ? { codexPathOverride: installedCodex } : {}),
-    ...(kind === "api-key" && process.env.OPENAI_API_KEY
-      ? { apiKey: process.env.OPENAI_API_KEY }
-      : {}),
+  // The user's installed Codex (or the operator's explicit override) is the
+  // engine — the same binary the terminal runs, so they share one version.
+  // A missing binary spawns anyway and the first turn ENOENTs honestly (the
+  // detection/spawn split of types.ts).
+  const engineBin = agentBin("MIRAFOLD_CODEX_BIN", "codex");
+  const spawn: AppServerSpawn = {
+    command: engineBin,
+    args: ["app-server", ...configArgs(codexSessionConfig(kind, binding))],
     // Subscription must beat key precedence; local sessions must not receive
-    // a key intended for another provider.
-    ...(kind === "subscription" || kind === "local"
-      ? { env: envWithout("OPENAI_API_KEY") }
-      : {}),
-    config: {
-      mcp_servers: {
-        [MIRAFOLD_MCP]: {
-          command: RENDER_MCP.command,
-          args: RENDER_MCP.args,
-          // Mirafold's own render tools only emit validated UI messages; the
-          // headless engine cannot prompt for their approval.
-          default_tools_approval_mode: "approve",
-        },
-      },
-      ...binding,
-    },
-  });
+    // a key intended for another provider. An api-key pick keeps the env key
+    // (and forces the api login method above).
+    env: kind === "subscription" || kind === "local" ? envWithout("OPENAI_API_KEY") : envWithout(),
+  };
 
   // Ask the exact spawned binary for both catalogs under the same binding.
-  // Injected test doubles may omit this private runtime path; model discovery
-  // then performs its ordinary installed-binary lookup.
-  const engineBin = (codex as unknown as { exec?: { executablePath?: string } }).exec
-    ?.executablePath;
   const engineModels = () => listCodexModels(undefined, engineBin, binding);
 
   return {
-    codex,
+    spawn,
     engineBin,
     listModels: options.listModels ?? engineModels,
     listEngineModels: options.listEngineModels ?? engineModels,

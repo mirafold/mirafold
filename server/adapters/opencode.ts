@@ -1,12 +1,14 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { envInt } from "../env";
 import { classifyOpenCodeProvider, type CredentialKind } from "../provider-policy";
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
+import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
+import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
 import {
   OpenCodeServerProcess,
@@ -28,7 +30,7 @@ import {
 const INTERRUPT_GRACE_MS = envInt("MIRAFOLD_OPENCODE_INTERRUPT_GRACE_MS", 5_000);
 
 // Concurrent unanswered permission asks before new ones auto-deny at the
-// engine — bloat insurance against a flooding engine (audit 2026-08-13). A
+// engine — bloat insurance against a flooding engine. A
 // human answers one at a time; a real turn never approaches this.
 const MAX_PENDING_PERMISSIONS = 64;
 
@@ -50,9 +52,23 @@ const MAX_ENGINE_COMMANDS = 500;
  * bridge to the shell's bar and are answered `once`/`reject` — never
  * `always`, which would persist an approval into their own OpenCode state.
  */
+// The folder-trust ask waits this long before denying — the same window the
+// other engines' gates use. A person reads the ask, not a machine.
+const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
+
+/** A denied (or timed-out) trust ask; the turn ends with this notice. */
+class TrustRefusedError extends Error {
+  constructor() {
+    super(
+      "OpenCode won't run in a folder you haven't trusted. Nothing ran. " +
+        "Send another prompt to be asked again, or switch agents.",
+    );
+  }
+}
+
 export class OpenCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private workspaceDir: string;
   private transport: OpenCodeTransport;
   private mapper: OpenCodeEventMapper;
@@ -61,7 +77,7 @@ export class OpenCodeSession implements AgentSession {
   private wantedResumeId?: string;
   private started?: Promise<void>;
   private closed = false;
-  private firstTurn = true;
+  private guidance = new RenderGuidanceOnce(RENDER_GUIDANCE);
   private modelLabel?: string;
   // The picked OpenCode agent (build/plan/custom primary); unset = the
   // engine's own default rides (no `agent` field on prompts).
@@ -69,18 +85,22 @@ export class OpenCodeSession implements AgentSession {
   // The engine's command catalog, learned at start — routes `/name` inputs
   // to the engine's dispatcher and feeds the prompt-options catalog.
   private engineCommands: OpenCodeCommandEntry[] = [];
-  // OC.4c: the classified backend kind, published to the registry once the
+  // The classified backend kind, published to the registry once the
   // provider verdict lands (and re-published on a /model provider switch).
   private kindListeners = new Set<(u: { kind: CredentialKind; provider?: string }) => void>();
   private lastKind?: { kind: CredentialKind; provider?: string };
-  // The judged provider/model pin — every prompt carries it (OC.3).
+  // The judged provider/model pin — every prompt carries it.
   private modelPin?: { providerID: string; modelID: string };
   // Providers whose gray-area disclosure already ran this session — the
   // notice states standing terms, so it rides once per provider, not per turn.
   private disclosedProviders = new Set<string>();
   private permissionTimeoutMs: number;
   private interruptGraceMs: number;
-  private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
+  // Emission stops at close(): the ledger still resolves (engine replies,
+  // promise settlement) but nothing more reaches a viewport.
+  private permissions = new PermissionLedger((msg) => {
+    if (!this.closed) this.emit(msg);
+  });
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
   // interrupt fallback, or close — whichever comes first).
   private turnActive = false;
@@ -88,7 +108,7 @@ export class OpenCodeSession implements AgentSession {
   private turnToken = 0;
   // Engine idles owed for turns whose send() was accepted. A turn abandoned
   // by the interrupt grace still owes one — its late idle must consume this
-  // debt instead of ending the NEXT turn (bughunt round 2, reproduced).
+  // debt instead of ending the NEXT turn.
   private pendingEngineIdles = 0;
   // Whether the ACTIVE turn's request reached the engine — an idle can only
   // end a turn whose engine work exists.
@@ -121,10 +141,17 @@ export class OpenCodeSession implements AgentSession {
     if (this.lastKind) cb(this.lastKind);
   }
 
-  /** Phase RC: the full lazy-start path — engine + policy + engine session —
+  /** The full lazy-start path — engine + policy + engine session —
    *  which publishes the truthful kind on the way (adoptPin). A failure has
    *  already reset the started latch, so a later local prompt retries. */
   verifyBackendKind(): Promise<void> {
+    // A remote create classifies by spawning the engine; in a folder nobody
+    // has vouched for, nobody is there to answer the ask — refuse now.
+    if (!this.isTrusted()) {
+      return Promise.reject(
+        new Error("this folder hasn't been trusted for OpenCode yet — open it from this machine first"),
+      );
+    }
     return this.ensureStarted();
   }
 
@@ -148,8 +175,8 @@ export class OpenCodeSession implements AgentSession {
     this.modelPin = parseModelPin(opts.model);
     // Provider-QUALIFIED, opencode's own addressing: the bare id is
     // ambiguous across providers, and the checkpointed modelName must
-    // round-trip through parseModelPin on restore (bughunt 2026-08-13 —
-    // a bare label silently lost the pin after recovery).
+    // round-trip through parseModelPin on restore (a bare label would
+    // silently lose the pin after recovery).
     this.modelLabel = this.modelPin
       ? `${this.modelPin.providerID}/${this.modelPin.modelID}`
       : undefined;
@@ -194,15 +221,17 @@ export class OpenCodeSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
   interrupt() {
+    // Stop also answers an open ask (a trust question raised outside a
+    // turn by /model or /agent included): the user walked away from it.
+    this.permissions.denyAll();
     if (!this.turnActive) return;
     const token = this.turnToken;
     const sessionID = this.sessionID;
-    this.denyPendingPermissions();
     const fallback = () => {
       this.graceTimer = undefined;
       if (!this.turnActive || this.turnToken !== token) return;
@@ -217,10 +246,9 @@ export class OpenCodeSession implements AgentSession {
       if (this.graceTimer) return; // repeated Stop clicks share one abort/deadline
       // A FAILED abort must not end the turn instantly — that is the one
       // case where the engine is still generating, and freeing the worker
-      // interleaves the next prompt with the live stream (bughunt
-      // 2026-08-13). The grace starts BEFORE the HTTP call: an abort request
-      // that never settles must still release the turn (release review,
-      // 2026-08-14). The engine's own idle usually wins this race.
+      // interleaves the next prompt with the live stream. The grace starts
+      // BEFORE the HTTP call: an abort request that never settles must still
+      // release the turn. The engine's own idle usually wins this race.
       this.graceTimer = setTimeout(fallback, this.interruptGraceMs);
       this.graceTimer.unref?.();
       void Promise.resolve()
@@ -232,9 +260,7 @@ export class OpenCodeSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    const timer = this.pendingPermissions.get(id);
-    if (timer === undefined) return; // stale/unknown — already resolved
-    this.resolvePermissionInternal(id, allow, timer, true);
+    this.permissions.resolve(id, allow); // stale/unknown ids are a no-op
   }
 
   close() {
@@ -243,13 +269,13 @@ export class OpenCodeSession implements AgentSession {
     this.recoveryGeneration += 1;
     clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
-    this.denyPendingPermissions();
+    this.permissions.denyAll();
     this.endTurn(); // release a worker awaiting an in-flight turn
     this.transport.close();
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -257,17 +283,57 @@ export class OpenCodeSession implements AgentSession {
     if (!this.closed) this.mapper.handle(ev);
   }
 
-  // Two latches, deliberately split (bughunt 2026-08-13). ENGINE: spawn +
-  // event stream + command catalog — needs no pin, so `/model` can rescue a
-  // pinless session instead of dying on the very policy error it exists to
-  // fix. STARTED: policy + engine session on top. A policy/creation failure
-  // resets only the outer latch — re-running the engine latch respawned a
-  // fresh `opencode serve` per retry, orphaning the previous server and
-  // doubling the event pump.
+  // Two latches, deliberately split. ENGINE: spawn + event stream + command
+  // catalog — needs no pin, so `/model` can rescue a pinless session instead
+  // of dying on the very policy error it exists to fix. STARTED: policy +
+  // engine session on top. A policy/creation failure resets only the outer
+  // latch — re-running the engine latch would respawn a fresh `opencode
+  // serve` per retry, orphaning the previous server and doubling the event
+  // pump.
   private engineUp?: Promise<void>;
+  // Set once the user says yes IN THIS SESSION — the disk record is the
+  // durable answer; this just avoids re-reading it every spawn.
+  private trusted = false;
+
+  private isTrusted(): boolean {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "opencode")) this.trusted = true;
+    return this.trusted;
+  }
+
+  /**
+   * The folder-trust gate (the terminal's own first-run question). `opencode
+   * serve` applies the folder's own opencode.json / .opencode the moment it
+   * starts — including any MCP server it names, i.e. programs a checkout
+   * brought with it (probed 2026-08-26: an opencode.json command ran at
+   * session create). So the first engine spawn asks, exactly as the
+   * terminal does; a folder already vouched for starts without a question.
+   */
+  private ensureTrusted(): Promise<boolean> {
+    if (this.isTrusted()) return Promise.resolve(true);
+    if (this.closed) return Promise.resolve(false);
+    return this.permissions.ask(
+      {
+        tool: "OpenCode",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets OpenCode run here and applies this folder's own opencode.json and .opencode ` +
+          `settings (including any MCP servers they define), exactly as the terminal does once ` +
+          `you trust it there.`,
+      },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
+        if (allow) {
+          this.trusted = true;
+          trustWorkspace(this.workspaceDir, "opencode"); // remembered for this disclosed effect
+        }
+      },
+    );
+  }
 
   private ensureEngine(): Promise<void> {
     this.engineUp ??= (async () => {
+      // Before anything spawns in the folder.
+      if (!(await this.ensureTrusted())) throw new TrustRefusedError();
       await this.transport.start(
         (ev) => this.handleEvent(ev),
         (detail) => this.onEngineDied(detail),
@@ -278,6 +344,8 @@ export class OpenCodeSession implements AgentSession {
         0,
         MAX_ENGINE_COMMANDS,
       );
+      // A catalog that had to wait for the trust answer is sent now.
+      this.refreshPromptOptions();
     })();
     return this.engineUp.catch((err) => {
       // Only a failed ENGINE start may retry the spawn; the transport keeps
@@ -308,7 +376,7 @@ export class OpenCodeSession implements AgentSession {
     });
   }
 
-  /** The R.4i gate, provider-resolved (PLAN OC.3): every turn of this session
+  /** The provider-policy gate, provider-resolved: every turn of this session
    *  runs on the pinned provider (we set `model` on each prompt), so the pin
    *  is what the policy judges — classified from the running engine's own
    *  catalog, never from the user's auth.json. Refusals throw; the message
@@ -328,7 +396,7 @@ export class OpenCodeSession implements AgentSession {
   }
 
   /** Classify `pin`, and on an allowed verdict make it THIS session's pin:
-   *  publish the truthful kind to the registry (OC.4c — the relay gate's
+   *  publish the truthful kind to the registry (the relay gate's
    *  input) and emit the gray-area disclosure when the provider carries one.
    *  Returns the refusal reason instead when the pin may not run — the
    *  shared verdict behind session start and a `/model` switch. */
@@ -362,6 +430,9 @@ export class OpenCodeSession implements AgentSession {
       emit: (msg) => this.emit(msg),
       isClosed: () => this.closed,
       listCommands: async () => {
+        // Never a spawn before the folder is trusted: the engine rows arrive
+        // once the first turn's ask is answered (ensureEngine re-sends).
+        if (!this.isTrusted()) return [];
         await this.ensureEngine();
         return this.engineCommands;
       },
@@ -383,9 +454,9 @@ export class OpenCodeSession implements AgentSession {
       await this.ensureStarted();
       // An interrupt during startup already ended this turn — sending now
       // would run a GHOST turn outside any envelope: its stream interleaves
-      // with the next prompt and its eventual idle ends the wrong turn
-      // (bughunt 2026-08-13). The guidance flag is untouched too, so the
-      // first REAL turn still carries it.
+      // with the next prompt and its eventual idle ends the wrong turn.
+      // The guidance flag is untouched too, so the first REAL turn still
+      // carries it.
       if (!this.turnActive || this.turnToken !== token) return;
       if (this.contextResetNoticePending) {
         this.contextResetNoticePending = false;
@@ -406,7 +477,13 @@ export class OpenCodeSession implements AgentSession {
       // Token-guarded: a send that fails AFTER the grace fallback already
       // ended this turn must not error-and-end whatever turn now runs.
       if (this.turnActive && this.turnToken === token) {
-        if (!this.closed) this.emit({ type: "error", message: errText(err) });
+        if (!this.closed) {
+          if (err instanceof TrustRefusedError) {
+            this.emit({ type: "notice", text: err.message });
+          } else {
+            this.emit({ type: "error", message: errText(err) });
+          }
+        }
         this.endTurn();
       }
     }
@@ -418,6 +495,15 @@ export class OpenCodeSession implements AgentSession {
       const item = await this.queue.next();
       if (item === CLOSE) return;
       const trimmed = item.trim();
+      // Anything slash-shaped spawns the engine (its catalog, or a turn), so
+      // in a folder nobody has vouched for the ask comes FIRST, once — not
+      // from inside a picker's error path, and not twice.
+      if (trimmed.startsWith("/") && !this.isTrusted()) {
+        await runSlashTurn((msg) => this.emit(msg), async () => {
+          if (!(await this.ensureTrusted())) this.emit({ type: "notice", text: new TrustRefusedError().message });
+        });
+        if (!this.isTrusted()) continue;
+      }
       if (trimmed === "/model" || trimmed.startsWith("/model ")) {
         await this.runModelCommand(trimmed.slice("/model".length).trim());
       } else if (trimmed === "/agent" || trimmed.startsWith("/agent ")) {
@@ -427,7 +513,7 @@ export class OpenCodeSession implements AgentSession {
         // command — and a RESTORED session replays checkpointed command
         // options before its engine has started, so the catalog must be
         // loaded first or an advertised `/init` would reach the model as
-        // prose (bughunt round 2; ADAPTERS.md's interception rule). A
+        // prose (ADAPTERS.md's interception rule). A
         // failed engine start falls back to the prompt path, whose own
         // error surfacing covers it.
         if (/^\/[\w:-]/.test(trimmed) && this.engineCommands.length === 0) {
@@ -458,7 +544,7 @@ export class OpenCodeSession implements AgentSession {
       listModels: async () => {
         await this.ensureEngine();
         // Every ALLOWED provider rows here — gray areas included, since
-        // OC.4c flows their true kind to the registry and their disclosure
+        // their true kind flows to the registry and their disclosure
         // rides the pick (the picker offers only what a pick can run).
         const allowed = new Set(
           (await this.transport.providerCatalog())
@@ -475,7 +561,7 @@ export class OpenCodeSession implements AgentSession {
         try {
           // Engine latch only: `/model` must be able to RESCUE a pinless
           // session, and ensureStarted's policy gate throws exactly the
-          // no-pin error this command exists to fix (bughunt 2026-08-13).
+          // no-pin error this command exists to fix.
           await this.ensureEngine();
           return await this.adoptPin(pin);
         } catch (err) {
@@ -513,23 +599,20 @@ export class OpenCodeSession implements AgentSession {
 
   private runTurn(text: string): Promise<void> {
     return this.runEngineTurn(async () => {
-      const prompt = this.firstTurn ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
+      const prompt = this.guidance.carry(text);
       await this.transport.prompt(this.sessionID as string, {
         parts: [{ type: "text", text: prompt }],
         ...(this.modelPin ? { model: this.modelPin } : {}),
         ...(this.currentAgent ? { agent: this.currentAgent } : {}),
       });
-      // Flipped only once the engine ACCEPTED the prompt: flipping before the
-      // await burns the guidance on a failed first turn and every later turn
-      // runs bare (the codex adapter's 2026-07-29 lesson, inherited).
-      this.firstTurn = false;
+      this.guidance.delivered(); // only once the engine ACCEPTED the prompt
     });
   }
 
   /** The engine PROCESS died after a successful start (crash, OOM, kill).
    *  Surface it, end any live turn, and reset the latches so the next
-   *  prompt respawns a fresh engine — without this the session stayed
-   *  busy-wedged forever (bughunt round 2). */
+   *  prompt respawns a fresh engine — without this the session would stay
+   *  busy-wedged forever. */
   private onEngineDied(detail: string) {
     if (this.closed) return;
     this.recoveryGeneration += 1;
@@ -537,7 +620,7 @@ export class OpenCodeSession implements AgentSession {
     this.started = undefined;
     this.sessionID = undefined;
     this.pendingEngineIdles = 0;
-    this.denyPendingPermissions(false);
+    this.permissions.denyAll("moot");
     this.emit({ type: "error", message: detail });
     this.endTurn();
   }
@@ -565,7 +648,7 @@ export class OpenCodeSession implements AgentSession {
         // refuse it. Fresh context is an honest degraded recovery, and the
         // next turn says so before sending anything to the model.
         if (this.closed || generation !== this.recoveryGeneration) return;
-        this.firstTurn = true;
+        this.guidance.reset();
         this.contextResetNoticePending = true;
         next = await this.transport.createSession();
       }
@@ -599,11 +682,11 @@ export class OpenCodeSession implements AgentSession {
     clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
     // A turn's end moots its gated asks: without this, a stale
-    // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
-    // turn (bughunt). No engine reply — the engine has already moved on.
-    this.denyPendingPermissions(false);
+    // permission_resolved would fire up to PERMISSION_TIMEOUT_MS later,
+    // mid-next-turn. No engine reply — the engine has already moved on.
+    this.permissions.denyAll("moot");
     // Usage flushes inside the end path — one per completed turn, just
-    // before turn_end, never between turns (bughunt round 2).
+    // before turn_end, never between turns.
     if (!this.closed) this.mapper.flushUsage();
     this.mapper.endTurn();
     if (!this.closed) this.emit({ type: "turn_end" });
@@ -617,64 +700,47 @@ export class OpenCodeSession implements AgentSession {
     detail: string;
     parentId?: string;
   }) {
-    if (this.closed || this.pendingPermissions.has(ask.id)) return;
+    if (this.closed || this.permissions.has(ask.id)) return;
     // Cap concurrent unanswered asks: a hostile/looping engine spamming
-    // distinct permission ids can't grow this map + its timers without bound
-    // (audit 2026-08-13 hardening). Beyond the cap the ask is auto-denied at
-    // the engine — the same deny-by-default the timeout applies, just now.
-    if (this.pendingPermissions.size >= MAX_PENDING_PERMISSIONS) {
+    // distinct permission ids can't grow the ledger + its timers without
+    // bound. Beyond the cap the ask is auto-denied at the engine — the same
+    // deny-by-default the timeout applies, just now.
+    if (this.permissions.size >= MAX_PENDING_PERMISSIONS) {
       void this.transport.replyPermission(ask.id, "reject").catch(() => {});
       return;
     }
-    // Deny-by-default: an unanswered ask must not pin the turn open forever.
-    // A SUBAGENT's ask (parentId set — SA.3) rides the same bar, same timer,
-    // same deny-by-default; before the lane opened these were dropped whole
-    // and a gated subagent simply hung (SA.0 finding).
-    const timer = setTimeout(() => {
-      const pending = this.pendingPermissions.get(ask.id);
-      if (pending !== undefined) this.resolvePermissionInternal(ask.id, false, pending, true);
-    }, this.permissionTimeoutMs);
-    this.pendingPermissions.set(ask.id, timer);
-    this.emit({
-      type: "permission_request",
-      tool: ask.permission,
-      detail: ask.detail,
-      id: ask.id,
-      ...(ask.parentId ? { parentId: ask.parentId } : {}),
-    });
-  }
-
-  /** protocol.ts contract: permission_request MUST resolve visibly on EVERY
-   *  path — browser answer, timeout, external reply, interrupt, close. */
-  private resolvePermissionInternal(
-    id: string,
-    allow: boolean,
-    timer: ReturnType<typeof setTimeout>,
-    replyToEngine: boolean,
-  ) {
-    clearTimeout(timer);
-    this.pendingPermissions.delete(id);
-    if (replyToEngine) {
-      void this.transport
-        .replyPermission(id, allow ? "once" : "reject")
-        .catch((err) => {
+    // A SUBAGENT's ask (parentId set) rides the same bar, same timer, same
+    // deny-by-default; dropping them whole would leave a gated subagent
+    // hung.
+    void this.permissions.ask(
+      {
+        id: ask.id,
+        tool: ask.permission,
+        detail: ask.detail,
+        ...(ask.parentId ? { parentId: ask.parentId } : {}),
+      },
+      this.permissionTimeoutMs,
+      (allow, how) => {
+        // The engine hears every resolution WE own. A reply the stream
+        // reported from another client ("external") or a turn/engine that is
+        // already gone ("moot") gets none — the engine already knows.
+        if (how === "external" || how === "moot") return;
+        void this.transport.replyPermission(ask.id, allow ? "once" : "reject").catch((err) => {
           if (!this.closed)
-            this.emit({ type: "error", message: `permission reply failed: ${errText(err)}` });
+            this.emit({
+              type: "error",
+              message: `permission reply failed: ${errText(err)}`,
+              terminal: false,
+            });
         });
-    }
-    if (!this.closed) this.emit({ type: "permission_resolved", id, allow });
+      },
+    );
   }
 
   /** The stream reported a reply we didn't send (another attached client). */
   private onPermissionReplied(requestID: string, reply: string) {
-    const timer = this.pendingPermissions.get(requestID);
-    if (timer === undefined) return; // our own echo — already resolved
-    this.resolvePermissionInternal(requestID, reply !== "reject", timer, false);
-  }
-
-  private denyPendingPermissions(replyToEngine = true) {
-    for (const [id, timer] of [...this.pendingPermissions])
-      this.resolvePermissionInternal(id, false, timer, replyToEngine);
+    // Our own echo has already resolved; resolve() is a no-op then.
+    this.permissions.resolve(requestID, reply !== "reject", "external");
   }
 }
 

@@ -134,6 +134,7 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
   await client.type("bang_start");
   const err = (await client.type("error")) as Any;
   assert.match(err.message, /shell not found: \/nonexistent\/genui-itest-shell/);
+  assert.equal(err.terminal, false, "a shell spawn failure does not end the model turn");
   const end = (await client.type("bang_end")) as Any;
   assert.equal(end.id, "bf");
   assert.equal(end.exitCode, null);
@@ -162,7 +163,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   await client.opened();
   await client.type("agents");
   client.send({ type: "create", agent: "claude-code", cwd: root } as never);
-  await client.type("session_created");
+  const created = (await client.type("session_created")) as Any;
+  assert.equal(created.shellCwd, root);
 
   const bang = async (id: string, command: string) => {
     client.send({ type: "bang", id, command } as never);
@@ -178,6 +180,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   // ever typed in this test, a turn follows each bang — the transcript
   // reached the agent immediately (the mock answers every pushPrompt).
   await bang("cwd1", "cd child");
+  const inside = (await client.type("shell_cwd")) as Any;
+  assert.equal(inside.cwd, path.join(root, "child"));
   await client.type("turn_end", 30_000);
   await bang("cwd2", "pwd");
   assert.ok(outputOf("cwd2").includes(path.join(root, "child")), "cd did not persist");
@@ -185,6 +189,8 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
 
   // Escaping above the workspace is undone and announced, like the terminal.
   await bang("cwd3", "cd ../..");
+  const reset = (await client.type("shell_cwd")) as Any;
+  assert.equal(reset.cwd, root);
   const notice = (await client.type("notice", 20_000)) as Any;
   assert.equal(notice.text, `Shell cwd was reset to ${root}`);
   await client.type("turn_end", 30_000);
@@ -193,6 +199,63 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   assert.ok(back.includes(root), "cwd lost entirely after the reset");
   assert.ok(!back.includes(path.join(root, "child")), "reset did not land on the root");
 
+  client.close();
+  await bd.stop();
+});
+
+test("a silent `!!` bang runs, shows, replays and persists its cd — and the agent never hears of it", async () => {
+  const bd = await startDaemon();
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-silent-")));
+  mkdirSync(path.join(root, "child"));
+  const client = new TestClient(bd.port);
+  await client.opened();
+  await client.type("agents");
+  client.send({ type: "create", agent: "claude-code", cwd: root } as never);
+  await client.type("session_created");
+  const outputOf = (id: string) =>
+    (client.received as Any[])
+      .filter((m) => m.type === "bang_output" && m.id === id)
+      .map((m) => m.data)
+      .join("");
+  const modelTraffic = () =>
+    (client.received as Any[]).filter((m) => m.type === "turn_end" || m.type === "text_delta").length;
+
+  // The silent form: the start frame carries the flag (so every viewport and
+  // the replay ring draw `!!`), the output flows, the cd sticks…
+  client.send({ type: "bang", id: "s1", command: "cd child && echo shell-only", silent: true } as never);
+  const start = (await client.type("bang_start")) as Any;
+  assert.equal(start.silent, true);
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "s1", "bang_end s1", 20_000);
+  const moved = (await client.type("shell_cwd")) as Any;
+  assert.equal(moved.cwd, path.join(root, "child"));
+  assert.match(outputOf("s1"), /shell-only/);
+  // …and the mock — which answers EVERY pushPrompt with a turn — stays
+  // silent, because no prompt was ever pushed.
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(modelTraffic(), 0, "a silent bang must not start a model turn");
+
+  // The cd carried into the next command, and a plain `!` still hands its
+  // transcript to the agent — the seam works both ways in one session.
+  client.send({ type: "bang", id: "p1", command: "pwd" } as never);
+  const plain = (await client.type("bang_start")) as Any;
+  assert.equal("silent" in plain, false, "a plain bang carries no silent flag");
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "p1", "bang_end p1", 20_000);
+  assert.ok(outputOf("p1").includes(path.join(root, "child")), "the silent cd did not persist");
+  await client.type("turn_end", 30_000);
+
+  // A late viewport replays the silent row with its flag intact.
+  const { client: late, created: lateCreated } = await attachSession(
+    bd.port,
+    (client.received as Any[]).find((m) => m.type === "session_created")!.sessionId,
+  );
+  assert.equal(lateCreated.shellCwd, path.join(root, "child"));
+  const replayed = (await late.waitFor(
+    (m) => m.type === "bang_start" && (m as Any).id === "s1",
+    "replayed silent bang_start",
+  )) as Any;
+  assert.equal(replayed.silent, true);
+
+  late.close();
   client.close();
   await bd.stop();
 });

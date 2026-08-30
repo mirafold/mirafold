@@ -74,8 +74,7 @@ function markNoNewline(
   // can be context when they differ (everything past the smaller index is
   // single-signed). When the sides disagree, git splits it (`-x` + marker /
   // `+x`), and so must we: leaving it as context hides a real byte change
-  // behind a "reviewed" mark (bughunt 2026-08-13 — the old code split only
-  // the oldLast === newLast case).
+  // behind a "reviewed" mark.
   const oldLast = findLastSourceLine("+");
   const newLast = findLastSourceLine("-");
   const contextAt =

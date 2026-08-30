@@ -1,6 +1,5 @@
-/* ---- Mirafold (Step 4.3; split out in S.1; display name "Dark" → "Mirafold"
-   2026-07-18, when the designed Light was dropped — the house theme carries
-   the house name, and nothing implies a missing "Light" twin) ---------------
+/* ---- Mirafold (the house theme carries the house name, and nothing implies
+   a missing "Light" twin) ---------------------------------------------------
    One semantic palette per theme file; structural CSS (styles.css) consumes
    only var(...). This is the default and the identity — it owns bare :root,
    so an unset/unknown data-theme falls back here, and its id stays `dark`
@@ -26,8 +25,7 @@
   --fg-dimmer: #939aaa;
   --fg-faint: #7e8ba5;
   /* accents */
-  /* the brand mark's canonical green (favicon.svg/logo.svg) — aligned from
-     #4ade80 when the mark became the home glyph (2026-07-18) */
+  /* the brand mark's canonical green (favicon.svg/logo.svg) */
   --accent: #40d17f;
   --info: #7ab8ff;
   --warn-fg: #d4a852;

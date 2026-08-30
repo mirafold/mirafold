@@ -4,19 +4,19 @@ import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { envInt } from "../env";
 import type { OpenCodeProviderEntry } from "../provider-policy";
-import { errText } from "./types";
+import { envWithout, errText } from "./types";
 
 /** One event off `GET /event` — `properties` is the engine's payload,
- *  deliberately loose: shapes are locked by the OC.0 live capture (see
- *  opencode.spike.md), and the published SDK types demonstrably drift from
+ *  deliberately loose: shapes are locked by the live capture in
+ *  opencode.spike.md, and the published SDK types demonstrably drift from
  *  the live server (permission.asked vs permission.updated), so we type at
  *  the seam we verified rather than trust a generated union. */
 export type OpenCodeEvent = { type: string; properties: Record<string, unknown> };
 
 /** Remove the minted per-session server password from a stderr tail before it
  *  can ride into an error WireMsg (broadcast + checkpointed). Pure and
- *  exported so the redaction is testable without poking a live transport
- *  (audit 2026-08-13). `scrub()` in the log layer catches Basic/sk- shapes;
+ *  exported so the redaction is testable without poking a live transport.
+ *  `scrub()` in the log layer catches Basic/sk- shapes;
  *  this removes the exact bare-hex secret we generated, which scrub can't. */
 export const redactSecret = (tail: string, secret: string): string =>
   secret ? tail.split(secret).join("[redacted]") : tail;
@@ -26,8 +26,8 @@ export const redactSecret = (tail: string, secret: string): string =>
 export interface OpenCodeTransport {
   /** Spawn + health-check the server and subscribe the event stream.
    *  `onDied` fires if the engine PROCESS exits after a successful start —
-   *  without it a mid-turn crash left the session busy-wedged forever
-   *  (bughunt round 2); the transport clears its own start latch so the
+   *  without it a mid-turn crash would leave the session busy-wedged
+   *  forever; the transport clears its own start latch so the
    *  next start() respawns fresh. */
   start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void>;
   createSession(): Promise<{ id: string }>;
@@ -57,11 +57,10 @@ export interface OpenCodeTransport {
     args: string,
     opts: { model?: string; agent?: string },
   ): Promise<void>;
-  // Session-agnostic since SA.3 (POST /permission/{requestID}/reply — the
-  // modern endpoint): a SUBAGENT session's ask is answered by the same call,
-  // no session id required. The per-session endpoint it replaces is marked
-  // deprecated in the live 1.18.18 spec (and, measured in the SA.0 probe,
-  // never validated session↔permission ownership anyway).
+  // Session-agnostic (POST /permission/{requestID}/reply): a SUBAGENT
+  // session's ask is answered by the same call, no session id required. The
+  // per-session endpoint is marked deprecated in the live 1.18.18 spec (and,
+  // measured, never validated session↔permission ownership anyway).
   replyPermission(
     permissionID: string,
     // Never "always": that would persist an approval into the user's own
@@ -111,10 +110,10 @@ function freePort(): Promise<number> {
 /**
  * Production transport: one `opencode serve` per session (the server is
  * project-scoped by cwd), driven raw over its documented HTTP + SSE surface.
- * Deliberately no `@opencode-ai/sdk` (decision finalized at OC.1): the live
- * probe caught the generated types drifting from the real server, our surface
- * is six endpoints + an SSE parse, and zero dependencies beats stale types —
- * the shapes we rely on are the ones OC.0 captured.
+ * Deliberately no `@opencode-ai/sdk`: the live probe caught the generated
+ * types drifting from the real server, our surface is six endpoints + an SSE
+ * parse, and zero dependencies beats stale types — the shapes we rely on are
+ * the ones opencode.spike.md captured.
  */
 export class OpenCodeServerProcess implements OpenCodeTransport {
   private child?: ChildProcess;
@@ -123,15 +122,15 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   private closed = false;
   private stderrTail = "";
   // The per-session basic-auth secret we mint — redacted from any stderr
-  // that rides into an error WireMsg (audit 2026-08-13: opencode's own
+  // that rides into an error WireMsg (opencode's own
   // stderr is engine-controlled; scrub() catches Basic/Bearer/sk- shapes
   // but not this bare hex, so redact the exact value we know).
   private authSecret = "";
   // One spawn per instance, even under concurrent/retried start() calls: a
-  // re-entered start orphaned the previous `opencode serve` (only the latest
-  // child was killed on close) and doubled the event pump (bughunt
-  // 2026-08-13). A FAILED start kills its child and clears the latch so a
-  // later call may retry with a fresh spawn.
+  // re-entered start would orphan the previous `opencode serve` (only the
+  // latest child is killed on close) and double the event pump. A FAILED
+  // start kills its child and clears the latch so a later call may retry
+  // with a fresh spawn.
   private starting?: Promise<void>;
 
   constructor(
@@ -188,7 +187,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       {
         cwd: this.options.cwd,
         env: {
-          ...(this.options.env ?? process.env),
+          ...(this.options.env ?? envWithout()),
           OPENCODE_CONFIG_CONTENT: JSON.stringify(this.options.configContent),
           OPENCODE_SERVER_PASSWORD: password,
         },
@@ -214,7 +213,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
         // Per-attempt abort is load-bearing, not hygiene: a connection made
         // in the window between the port binding and the app serving is never
         // answered, and awaiting it forever wedges start() past the deadline
-        // (observed live, OC.2 probe 2026-08-13). Abandon and re-poll.
+        // (observed live). Abandon and re-poll.
         const res = await fetch(`${this.base}/global/health`, {
           headers: { authorization: this.auth },
           signal: AbortSignal.timeout(1_000),
@@ -245,7 +244,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
 
   /** The engine's tool registry (and MCP connections) initialize lazily; a
    *  prompt sent immediately after health races it and the model is offered
-   *  ZERO tools — observed live (OC.2 probe: request 1 carried no tools, so
+   *  ZERO tools — observed live (request 1 carried no tools, so
    *  the scripted render call bounced). The injected render server reporting
    *  "connected" is the readiness signal start() actually promises. On
    *  deadline we proceed anyway: the engine still converses, renders just

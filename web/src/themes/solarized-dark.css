@@ -1,13 +1,13 @@
-/* ---- Solarized Dark (S.5) ---------------------------------------------------
+/* ---- Solarized Dark ---------------------------------------------------------
    Transcribed from the canonical Base16 "Solarized Dark" scheme (palette by
    Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
-   via the S.2 recipe in manifest.ts. Derived tiers are the recipe's mixes;
+   via the recipe in manifest.ts. Derived tiers are the recipe's mixes;
    hand-tunes from the QA walk are noted inline.
-   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
-   whole fg ramp + info/error lifted far off the canonical values, and the
-   surface stack regenerated as a tight envelope of --bg — Solarized's
-   famously soft contrast failed the readability floors outright (fg was
-   4.4:1 worst-case; Kyle: every theme strained his eyes, terminals don't).
+   Deviations for the terminal-grade contrast floors: the
+   whole fg ramp + info/error sit far off the canonical values, and the
+   surface stack is a tight envelope of --bg — Solarized's famously soft
+   contrast fails the readability floors outright (canonical fg is 4.4:1
+   worst-case).
    What survives of Solarized: the base03 canvas, the hue family, the four
    canonical-hued accents. Only lightness moved. */
 

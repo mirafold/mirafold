@@ -4,7 +4,7 @@ import { clientSchemas, type ComponentName } from "@registry-spec";
 import { registry } from "./index";
 import { ActionContext } from "./actions";
 
-// A malformed instruction must never break the UI (PLAN 1.4). Three layers:
+// A malformed instruction must never break the UI. Three layers:
 //   1. unknown component name  → fallback
 //   2. props fail the schema   → fallback
 //   3. component throws anyway → error boundary → fallback
@@ -30,7 +30,11 @@ function Fallback({
   );
 }
 
-class RenderBoundary extends ReactComponent<
+/** Contains a throw from one piece of agent-derived content to that piece —
+ *  the registry components use it around every paint, and the output zone
+ *  wraps every transcript row in it so a malformed engine record can never
+ *  unmount the shell (socket, prompt box, permission bar included). */
+export class RenderBoundary extends ReactComponent<
   { fallback: ReactNode; children: ReactNode },
   { failed: boolean }
 > {
@@ -54,7 +58,7 @@ export const RenderBlock = memo(function RenderBlock({
   component: string;
   props: Record<string, unknown>;
   renderId: string;
-  // Provided by the shell via RenderZone; binds this block's identity to
+  // Provided by the shell via OutputZone; binds this block's identity to
   // every action it emits. Components ask; the shell sends.
   onAction: (action: Action, sourceId: string) => void;
 }) {
@@ -62,11 +66,11 @@ export const RenderBlock = memo(function RenderBlock({
   // Own-property lookups only: `component` is a wire string, and a prototype
   // key ("toString", "constructor") would otherwise pass both lookups truthy
   // and then throw in safeParse — during THIS component's render, above the
-  // boundary it installs, unmounting the whole zone (2026-07-28 review).
+  // boundary it installs, unmounting the whole zone.
   const Impl = Object.hasOwn(registry, name)
     ? (registry[name] as ComponentType<Record<string, unknown>>)
     : undefined;
-  // Tolerant twin, not the strict source schema (R.4h): a newer daemon's
+  // Tolerant twin, not the strict source schema: a newer daemon's
   // extra props must strip, not fail this whole component into the fallback.
   const schema = Object.hasOwn(clientSchemas, name) ? clientSchemas[name] : undefined;
   // Re-parsed only when the props object changes — an update-in-place render

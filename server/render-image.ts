@@ -6,14 +6,14 @@
 // generativeUIMsg for the stdio adapters); the stdio stub itself stays a thin
 // schema-only process with no file access.
 //
-// Security posture mirrors the Explorer's read path: realpath containment via
+// Security posture mirrors the folder tree's read path: realpath containment via
 // `inside()` (a planted symlink can't walk out), the secret-file denial, a
 // hard byte cap, and a magic-byte allowlist of RASTER formats only — SVG is
 // deliberately excluded (it's a document format with script surface, not a
 // picture). Whatever the agent put in `src`/`error` never survives: those
 // fields are daemon-filled here or absent.
 
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { inside } from "./sessions/actions";
 import { isSecretFile } from "./security/permissions";
 
@@ -40,7 +40,7 @@ const SNIFFS: [kind: string, ok: (b: Buffer) => boolean][] = [
 
 /** Resolves an agent-authored image render into wire props: `src` filled on
  *  success, `error` on refusal — never both, and never anything the agent
- *  wrote in either field. Synchronous on purpose (the fs-explorer precedent):
+ *  wrote in either field. Synchronous on purpose (the fs-folder-tree precedent):
  *  the read is byte-capped, so no call holds the event loop meaningfully. */
 export function resolveImageProps(
   root: string,
@@ -60,12 +60,22 @@ export function resolveImageProps(
   if (isSecretFile(abs)) return fail("not an image file");
   let buf: Buffer;
   try {
-    const st = statSync(abs);
-    if (!st.isFile()) return fail("not a file");
-    if (st.size > IMAGE_MAX_BYTES) {
-      return fail(`too large (${(st.size / 1e6).toFixed(1)} MB; the cap is 2 MB)`);
+    // Open without following a link and read THAT descriptor: `inside()`
+    // realpathed the name an instant ago, but the file it named can be
+    // swapped for a link or a FIFO between the check and the read (the
+    // folder tree's readRegularFile does the same; audit 2026-08-26).
+    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = constants;
+    const fd = openSync(abs, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) return fail("not a file");
+      if (st.size > IMAGE_MAX_BYTES) {
+        return fail(`too large (${(st.size / 1e6).toFixed(1)} MB; the cap is 2 MB)`);
+      }
+      buf = readFileSync(fd);
+    } finally {
+      closeSync(fd);
     }
-    buf = readFileSync(abs);
   } catch {
     return fail("unreadable");
   }

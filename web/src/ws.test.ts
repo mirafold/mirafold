@@ -1,4 +1,5 @@
 import { test, type TestContext } from "node:test";
+import { FakeWS, fakeStorage, shimDom } from "./testing/fake-ws";
 import assert from "node:assert/strict";
 import { CLIENT_VERSION } from "./version";
 import {
@@ -16,111 +17,6 @@ import {
   newSessionHref,
   storedPairing,
 } from "./relay-pairing";
-
-/** In-memory Storage stub for newSessionHref (which takes storage injected). */
-function fakeStorage(init: Record<string, string> = {}): Storage {
-  const m = new Map(Object.entries(init));
-  return {
-    getItem: (k: string) => m.get(k) ?? null,
-    setItem: (k: string, v: string) => void m.set(k, String(v)),
-    removeItem: (k: string) => void m.delete(k),
-    clear: () => m.clear(),
-    key: (i: number) => [...m.keys()][i] ?? null,
-    get length() {
-      return m.size;
-    },
-  } as Storage;
-}
-
-// L.2b3: the reconnect state machine, driven through a stubbed WebSocket —
-// no browser, no jsdom. The stub exposes what the client touches (readyState,
-// handler props, send/close) plus test-side controls to open a socket,
-// deliver a frame, and complete a close. Every instance is tracked so the
-// core invariant — at most one live socket, ever — is directly observable.
-
-class FakeWS {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
-  static instances: FakeWS[] = [];
-  readyState = FakeWS.CONNECTING;
-  sent: string[] = [];
-  onopen: (() => void) | null = null;
-  onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: ((ev?: { code?: number }) => void) | null = null;
-  constructor(public url: string) {
-    FakeWS.instances.push(this);
-  }
-  send(data: string) {
-    this.sent.push(data);
-  }
-  close() {
-    // Browser semantics: close() only starts the handshake; onclose comes
-    // later (finishClose) — the CLOSING window the duplicate-socket race
-    // lived in.
-    if (this.readyState === FakeWS.CONNECTING || this.readyState === FakeWS.OPEN) {
-      this.readyState = FakeWS.CLOSING;
-    }
-  }
-  open() {
-    this.readyState = FakeWS.OPEN;
-    this.onopen?.();
-  }
-  receive(msg: unknown) {
-    this.onmessage?.({ data: JSON.stringify(msg) });
-  }
-  /** A frame that is ALREADY a wire string (sealed handshake/ciphertext). */
-  receiveRaw(data: string) {
-    this.onmessage?.({ data });
-  }
-  finishClose(code?: number) {
-    this.readyState = FakeWS.CLOSED;
-    this.onclose?.(code === undefined ? undefined : { code });
-  }
-  parsedSent(): { type: string }[] {
-    return this.sent.map((s) => JSON.parse(s) as { type: string });
-  }
-  pings(): number {
-    return this.parsedSent().filter((m) => m.type === "ping").length;
-  }
-}
-
-type Handler = () => void;
-
-/** window/document stand-ins: real listener registries so tests can fire
- * online/visibilitychange and assert removal on close(). */
-function shimDom() {
-  const win = new Map<string, Set<Handler>>();
-  const doc = new Map<string, Set<Handler>>();
-  const listeners = (m: Map<string, Set<Handler>>) => ({
-    addEventListener: (type: string, fn: Handler) => {
-      if (!m.has(type)) m.set(type, new Set());
-      m.get(type)!.add(fn);
-    },
-    removeEventListener: (type: string, fn: Handler) => {
-      m.get(type)?.delete(fn);
-    },
-  });
-  const g = globalThis as Record<string, unknown>;
-  g.window = listeners(win);
-  g.document = { ...listeners(doc), visibilityState: "visible" };
-  return {
-    online: () => {
-      for (const fn of win.get("online") ?? []) fn();
-    },
-    visible: () => {
-      for (const fn of doc.get("visibilitychange") ?? []) fn();
-    },
-    pagehide: () => {
-      for (const fn of win.get("pagehide") ?? []) fn();
-    },
-    listenerCount: () =>
-      (win.get("online")?.size ?? 0) +
-      (doc.get("visibilitychange")?.size ?? 0) +
-      (win.get("pagehide")?.size ?? 0),
-  };
-}
 
 function setup(t: TestContext) {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
@@ -160,7 +56,7 @@ test("hello goes first on every open; sends while connecting queue in order", (t
   );
 });
 
-test("a null hello sends nothing but still flushes the queue (P.4 onboarding)", (t) => {
+test("a null hello sends nothing but still flushes the queue (P.4 agent picker)", (t) => {
   const { client, sock } = setup(t);
   client.setHello(() => null);
   client.send({ type: "prompt", text: "queued" });
@@ -696,6 +592,27 @@ test("relay path: a completed handshake resets the ladder (health = usable chann
   client.close();
 });
 
+test("relay path: a failed seal closes the socket instead of silently skipping every later send", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const healthy = sock();
+  healthy.open();
+  await answerHandshake(healthy, client);
+  const subtle = globalThis.crypto.subtle as unknown as Record<string, unknown>;
+  Object.defineProperty(subtle, "encrypt", {
+    configurable: true,
+    value: () => Promise.reject(new Error("seal failed")),
+  });
+  try {
+    client.send({ type: "ping" });
+    await drainUntil(() => healthy.readyState === FakeWS.CLOSING, "socket closed after a failed seal");
+  } finally {
+    delete subtle.encrypt;
+  }
+  client.close();
+});
+
 test("relay path: an unanswered handshake is bounded — the deadline closes into the retry ladder", async (t) => {
   const { client, sock } = setupRelay(t);
   client.setHello(() => null);
@@ -805,4 +722,46 @@ test("adoption never overwrites a live device-store pairing", () => {
   const adopted = adoptStoredPairing(device, legacy, 1_000);
   assert.equal(adopted?.code, "device-code-16chars");
   assert.equal(device.getItem("mirafold-relay-code"), "device-code-16chars");
+  // What the guard protects is the AGE WINDOW: an adoption that re-stamped
+  // paired-at kept the bearer credential alive forever, and the code check
+  // above cannot see it (test-audit 2026-08-26).
+  assert.equal(device.getItem("mirafold-relay-paired-at"), "500", "adoption never re-stamps a live pairing's age");
+});
+
+test("AUDIT: a fragment pairing lands in storage only once the handshake succeeded (the wiring, not the helper)", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const store = globalThis.localStorage;
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored on arrival");
+  const s = sock();
+  s.open();
+  await drainUntil(() => s.sent.length >= 1, "client handshake frame sent");
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored while the handshake is open");
+  await answerHandshake(s, client);
+  assert.equal(store.getItem("mirafold-relay-code"), PAIR_CODE, "stored once the daemon answered");
+  client.close();
+});
+
+// AUDIT 2026-08-26: two ingress guards. A frame is an object with a string
+// type and string text; a fresh `#code=` pairing is remembered only after a
+// successful handshake.
+test("AUDIT: admitWireFrame drops non-object frames and non-string text fields, keeps ordinary frames", async () => {
+  const { admitWireFrame } = await import("./ws");
+  for (const bad of [null, 1, "s", [], { type: 1 }, { type: "text_delta", text: 5 }, { type: "error", message: null }, { type: "bang_output", data: {} }, { type: "artifact", html: [] }]) {
+    assert.equal(admitWireFrame(bad), null, JSON.stringify(bad));
+  }
+  assert.deepEqual(admitWireFrame({ type: "text_delta", text: "hi" }), { type: "text_delta", text: "hi" });
+  assert.deepEqual(admitWireFrame({ type: "turn_end" }), { type: "turn_end" });
+  assert.deepEqual(admitWireFrame({ type: "unknown_future_type", seq: 9 }), { type: "unknown_future_type", seq: 9 });
+});
+
+test("AUDIT: rememberPairing is the only write; a fragment pairing is not stored until the handshake succeeds", async () => {
+  const { rememberPairing, storedPairing } = await import("./relay-pairing");
+  const store = fakeStorage();
+  assert.equal(storedPairing(store, null, 1_000), null);
+  rememberPairing({ code: "abcdefghijklmnop", ws: "wss://relay.example" }, store, 1_000);
+  assert.deepEqual(storedPairing(store, null, 2_000), { code: "abcdefghijklmnop", ws: "wss://relay.example" });
+  rememberPairing({ code: "qrstuvwxyzabcdef", ws: null }, store, 3_000);
+  assert.deepEqual(storedPairing(store, null, 4_000), { code: "qrstuvwxyzabcdef", ws: null }, "a fresh code without a relay clears the stale origin");
 });

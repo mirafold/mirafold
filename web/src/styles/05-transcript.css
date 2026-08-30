@@ -3,7 +3,7 @@
    strips and agent turns, thinking, service notices, tool calls, and the
    `!` command's output. */
 
-/* #12: welcome shown in a fresh session with no transcript yet — centered in
+/* Welcome shown in a fresh session with no transcript yet — centered in
    the empty output zone so it's clearly "your session", not raw emptiness. */
 .zone-empty {
   margin: auto;
@@ -46,14 +46,14 @@
 
 .glyph {
   color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   user-select: none;
 }
 
 /* User input renders as a command strip: a tinted band with a green edge
    that segments the scrollback — everything between strips is agent output. */
 .turn-user {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
   color: var(--fg-strong);
   white-space: pre-wrap;
@@ -95,7 +95,7 @@
   line-height: 1.5;
 }
 
-/* Submitted-input navigation (Phase IH). Desktop has enough horizontal room
+/* Submitted-input navigation. Desktop has enough horizontal room
    to keep both chronological arrows directly in every command strip. They are
    shell-owned controls outside the model-authored text; phone replaces them
    with the prompt-area disclosure in the one phone block. */
@@ -309,12 +309,23 @@
   margin-top: 0;
 }
 
-.markdown a {
+.markdown :is(a, .markdown-file-link) {
   color: var(--info);
 }
 
-.response-document .markdown a {
+.response-document .markdown :is(a, .markdown-file-link) {
   text-underline-offset: 0.16em;
+}
+
+.markdown-file-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .markdown code {
@@ -324,7 +335,22 @@
   font-size: 0.9em;
 }
 
-.markdown pre {
+/* A fenced block in prose is dressed as the `code` painting (Md.tsx
+   FencedCode): the painting's box around the shared head + body. The bare
+   `pre` rules below stay for any pre that is not that body. */
+.markdown-fence {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.markdown-fence .rc-code-body code {
+  padding: 0 12px;
+}
+
+.markdown pre:not(.rc-code-body) {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -333,7 +359,7 @@
   color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
 }
 
-.response-document :is(.markdown pre, .markdown-table-scroll) {
+.response-document :is(.markdown pre:not(.rc-code-body), .markdown-fence, .markdown-table-scroll) {
   max-width: 100%;
   margin: 0.9rem 0;
   scrollbar-width: thin;
@@ -395,7 +421,7 @@
   border-bottom: 0;
 }
 
-/* ---- Thinking (Phase T2.1) ------------------------------------------------
+/* ---- Thinking ------------------------------------------------
    The model's reasoning, full fidelity: streams dim and italic while the
    turn runs, folds to one clickable line once real output starts.
    Collapsed is fine — invisible is not. */
@@ -427,12 +453,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   font-style: normal;
 }
 
-/* ---- Service-status line (F.2) ------------------------------------------
+/* ---- Service-status line ------------------------------------------
    Events the terminal shows and the adapter would otherwise drop — a retry,
    a compaction, a rate-limit warning, a model refusal. Same dim system-line
    family as the thinking block, never agent markdown. rate_limit / refusal
@@ -444,7 +470,7 @@
   gap: 8px;
   align-items: baseline;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   max-width: 80ch;
@@ -462,7 +488,7 @@
   border-left-color: var(--warn-fg);
 }
 
-/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
+/* An engine's OWN words, badged with its name. Unbadged,
    this line is Mirafold speaking; a verbatim model-chosen string must not be
    able to pass for that. The badge replaces the glyph rather than joining it,
    so the two cases can't be confused at a glance, and the dashed rule marks

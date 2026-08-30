@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// mirafold launcher (Step 4.10): boot the daemon in the CURRENT directory
-// (sessions default to it — terminal parity, 4.8) and open the browser once
+// mirafold launcher: boot the daemon in the CURRENT directory
+// (sessions default to it — terminal parity) and open the browser once
 // it's listening. The daemon does the real work; this is spawn + open only.
 // `--no-open` skips the browser (tests, servers, second terminals).
 import { spawn } from "node:child_process";
@@ -12,7 +12,7 @@ import { openBrowser } from "./browser-open.js";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const daemon = path.resolve(HERE, "..", "dist-server", "index.js");
 
-// R.4g: --version/--help answer without booting anything. The launcher isn't
+// --version/--help answer without booting anything. The launcher isn't
 // bundled, so it reads the package.json shipped beside it at runtime.
 const version = () =>
   JSON.parse(readFileSync(path.resolve(HERE, "..", "package.json"), "utf8")).version;
@@ -36,7 +36,8 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       `  -h, --help       show this help and exit\n` +
       `\n` +
       `Config is read from .env in the launch directory (see .env.example) —\n` +
-      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_RELAY_URL, MIRAFOLD_DEBUG=1.\n` +
+      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_DEBUG=1 (never the token,\n` +
+      `relay, license key or pairing code — export those in the terminal).\n` +
       `\n` +
       `Logs: warnings/errors also land in ~/.local/state/mirafold/mirafold.log\n` +
       `(size-capped, no session content ever; MIRAFOLD_LOG_FILE moves it, empty disables).`,
@@ -72,8 +73,8 @@ const child = spawn(process.execPath, [daemon], {
 // The daemon prints its final URL (it may walk past a busy port, and it carries
 // the auth token as ?token=…) — mirror stdout and open the browser on the first
 // URL seen. Matched against an ACCUMULATED tail, not per chunk: a line split
-// across two data events matched neither chunk alone, and the browser never
-// opened (2026-07-28 fix). The (?=\s) lookahead insists on the character after
+// across two data events would match neither chunk alone, and the browser
+// would never open. The (?=\s) lookahead insists on the character after
 // the URL — "(ws…"'s leading space or the newline — so a chunk ending mid-token
 // can't open a truncated URL. \S* captures the token query.
 let opened = false;
@@ -93,7 +94,7 @@ child.stdout.on("data", (buf) => {
       } else {
         // Say it, because the open is often invisible: a compositor won't let
         // a background process raise a window, so an already-running browser
-        // can gain a tab behind everything (2026-07-30, first tester run).
+        // can gain a tab behind everything.
         console.log("[mirafold] opening it in your browser — check your tabs if no window appears");
         opener.once("error", () =>
           console.log("[mirafold] the system browser opener failed — open the URL above"),

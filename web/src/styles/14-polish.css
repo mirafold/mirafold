@@ -1,4 +1,4 @@
-/* ---- Cross-cutting polish (Step 4.3) ---------------------------------------
+/* ---- Cross-cutting polish ---------------------------------------
    Rules that span surfaces: arrival motion, the theme-switch fade,
    selection, a11y helpers, scrollbars, reduced motion. ORDER MATTERS here —
    the rise list and the transition list override equal-specificity
@@ -33,7 +33,7 @@ body,
 .status-bar,
 .pin-dock,
 .rc-link,
-.onb-agent {
+.agent-picker-agent {
   transition:
     background-color 0.22s ease,
     color 0.22s ease,
@@ -44,7 +44,7 @@ body,
   background: var(--selection);
 }
 
-/* Available to screen readers, invisible on screen (A.1). Not `display:none`
+/* Available to screen readers, invisible on screen. Not `display:none`
    or `visibility:hidden` — both remove the element from the accessibility
    tree, which would silence the live regions this exists for. */
 .sr-only {
@@ -69,7 +69,7 @@ html {
   scrollbar-color: var(--border-hover) transparent;
 }
 
-.render-zone,
+.output-zone,
 .pin-dock {
   scrollbar-width: thin;
 }

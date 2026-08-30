@@ -1,4 +1,4 @@
-// The one door all daemon logging goes through (R.4g grown up):
+// The one door all daemon logging goes through:
 //
 // - console: `[ISO] [component] level: message` lines. info+ always; debug
 //   only with MIRAFOLD_DEBUG=1 (or the launcher's --verbose). Debug goes to
@@ -27,8 +27,8 @@ import path from "node:path";
 import { envFlag } from "./env";
 
 /** True when debug-level output is enabled (MIRAFOLD_DEBUG=1 / --verbose).
- *  MIRAFOLD_DEBUG=0 and =false mean OFF (2026-07-29 bughunt — Boolean("0")
- *  is true, so setting 0 to disable debug used to enable it). */
+ *  MIRAFOLD_DEBUG=0 and =false mean OFF (Boolean("0") is true, so a naive
+ *  check would treat 0 as enabling debug). */
 export const verbose = envFlag(process.env.MIRAFOLD_DEBUG) || process.argv.includes("--verbose");
 
 const MAX_LINE = 4_000; // payload-scale content has no business in a log line
@@ -62,15 +62,24 @@ function writeFile(line: string) {
   if (!fileOk || !logFile) return;
   try {
     if (fileBytes < 0) {
-      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      // Private like the checkpoint store: the log names projects, uploads,
+      // session ids and engine stderr — not for other local users.
+      fs.mkdirSync(path.dirname(logFile), { recursive: true, mode: 0o700 });
       fileBytes = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
+      if (fileBytes > 0) {
+        try {
+          fs.chmodSync(logFile, 0o600);
+        } catch {
+          /* an operator-owned path we may append to but not re-mode */
+        }
+      }
     }
     if (fileBytes > MAX_FILE_BYTES) {
       fs.renameSync(logFile, `${logFile}.1`); // replaces the prior generation
       fileBytes = 0;
     }
     const buf = `${line}\n`;
-    fs.appendFileSync(logFile, buf);
+    fs.appendFileSync(logFile, buf, { mode: 0o600 });
     fileBytes += Buffer.byteLength(buf);
   } catch {
     fileOk = false;
@@ -97,7 +106,7 @@ const clip = (msg: string) => (msg.length > MAX_LINE ? `${msg.slice(0, MAX_LINE)
  * is a raw tail of engine stderr. Gemini's REST API authenticates with the key
  * in the QUERY STRING, and CLI/SDK failure paths routinely echo the failing
  * request URL — so a plausible crash writes a live API key into the exact file
- * we tell users to attach to bug reports (2026-07-27 audit).
+ * we tell users to attach to bug reports.
  *
  * Patterns are deliberately shaped (known credential prefixes, named query
  * params) rather than entropy-guessing, so ordinary log text is never mangled.
@@ -117,8 +126,6 @@ export function scrub(msg: string): string {
       // Fragments do not reach HTTP, but a raw configured URL may use one as
       // local secret-bearing metadata and logs are promised paste-safe.
       .replace(/(https?:\/\/[^\s"'`#]+)#[^\s"'`]+/gi, "$1#[redacted]")
-      // ?key=… / &api_key=… / ?access_token=… — the Gemini-style query credential
-      .replace(/([?&](?:key|api[-_]?key|access[-_]?token|auth|token)=)[^&\s"'`]+/gi, "$1[redacted]")
       // Authorization headers echoed into an error string
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
       // OpenAI / Anthropic / OpenRouter style: sk-…, sk-ant-…, sk-or-…
@@ -129,8 +136,7 @@ export function scrub(msg: string): string {
       .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[redacted-key]")
       // AWS access key ids (Bedrock — an engine Claude Code supports; the
       // adapter passes process.env through, so a session echoing SigV4 or a
-      // key id into engine stderr must not land in the flight recorder —
-      // audit 2026-08-13).
+      // key id into engine stderr must not land in the flight recorder).
       .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted-key]")
       // Google Vertex OAuth access tokens (ya29.…)
       .replace(/\bya29\.[0-9A-Za-z_-]{20,}/g, "[redacted-key]")
@@ -158,7 +164,16 @@ export function scrubSelectedEndpoint(msg: string, endpoint?: string): string {
 
 /** Scrub BEFORE clipping — clipping first could sever a credential mid-string
  *  and leave the surviving half unmatched. */
-const sanitize = (msg: string) => clip(scrub(msg));
+// A log line is one line, and a terminal reads it: a newline in an engine
+// or client string forged a whole second line (a fake "token accepted"),
+// and ESC sequences retitled the terminal (audit 2026-08-26, probed). Every
+// C0/DEL byte goes — a newline becomes a visible ⏎ so a multi-line stderr
+// still reads as one record.
+const neutralizeControls = (msg: string) =>
+  msg.replace(/\r?\n|[\u0085\u2028\u2029]/g, "⏎").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+/** Exported for the Tier-1 pin only. */
+export const sanitizeLogLine = (msg: string) => clip(scrub(neutralizeControls(msg)));
+const sanitize = sanitizeLogLine;
 
 function emit(level: Level, component: string, msg: string) {
   const tag = level === "info" ? "" : ` ${level}:`;

@@ -23,7 +23,9 @@ type Any = WireMsg & Record<string, any>;
 let d: Daemon;
 
 before(async () => {
-  d = await startDaemon();
+  // MAX_WS_PAYLOAD pinned: an exported value in the dev shell would otherwise
+  // turn the 1009-close assertion into a hang (test-audit 2026-08-26).
+  d = await startDaemon({ MAX_WS_PAYLOAD: "1000000" });
 });
 after(async () => {
   await d.stop();
@@ -109,7 +111,7 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   const malformed = aTail.filter((m) => m.type === "error" && m.message === "malformed client message");
   assert.equal(malformed.length, 4);
   // The three valid-id/bad-path fs_reads each got exactly one error reply;
-  // the bad-id Explorer/Changes frames got nothing at all.
+  // the bad-id folder tree/Changes frames got nothing at all.
   const fsFiles = aTail.filter((m) => m.type === "fs_file") as Any[];
   assert.equal(fsFiles.length, 3);
   assert.ok(fsFiles.every((m) => typeof m.error === "string"));
@@ -220,7 +222,12 @@ test("an oversized frame closes that socket only — the daemon survives (2026-0
   // killing every session, for one viewport's paste.
   const { client: a } = await createSession(d.port);
   a.send({ type: "prompt", text: "x".repeat(1_100_000) });
-  const { code } = await a.closed;
+  // Bounded: with the cap gone the offender is never closed, and an unbounded
+  // await turned that regression into a hang (test-audit 2026-08-26).
+  const { code } = await Promise.race([
+    a.closed,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("the oversized frame did not close the offender within 10 s — MAX_WS_PAYLOAD not enforced?")), 10_000).unref()),
+  ]);
   assert.equal(code, 1009); // ws's "message too big" close, on the offender only
 
   // The daemon is untouched: a fresh viewport drives a full turn.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { agentBin, capOutput, installedAgentBin, toolDetail } from "./types";
+import { agentBin, capOutput, envWithout, installedAgentBin, toolDetail } from "./types";
 
 // The default cap is 64 KB (TOOL_OUTPUT_CAP_BYTES), read at module load.
 const CAP = 64_000;
@@ -132,4 +132,29 @@ test("toolDetail falls back to sliced JSON, and undefined for empty/non-objects"
   assert.equal(toolDetail("nope"), undefined);
   const long = toolDetail({ foo: "x".repeat(300) });
   assert.ok(long && long.length <= 160 && long.startsWith("{"));
+});
+
+// AUDIT 2026-08-26: an engine's `env` tool call lands in the transcript and
+// the checkpoint, and project-configured MCP servers inherit the engine's
+// env — the daemon's OWN credentials must not be there to read.
+test("envWithout always strips the daemon's own credentials, keeps the agent's", () => {
+  withEnv(
+    {
+      MIRAFOLD_TOKEN: "t",
+      MIRAFOLD_LICENSE_KEY: "mf_k",
+      MIRAFOLD_RELAY_CODE: "code",
+      MIRAFOLD_ENTITLEMENT_TOKEN: "ent",
+      OPENAI_API_KEY: "sk-agent",
+      GEMINI_API_KEY: "g",
+    },
+    () => {
+      const env = envWithout("GEMINI_API_KEY");
+      for (const k of ["MIRAFOLD_TOKEN", "MIRAFOLD_LICENSE_KEY", "MIRAFOLD_RELAY_CODE", "MIRAFOLD_ENTITLEMENT_TOKEN", "GEMINI_API_KEY"]) {
+        assert.equal(env[k], undefined, `${k} withheld`);
+      }
+      assert.equal(env.OPENAI_API_KEY, "sk-agent");
+      assert.equal(envWithout().OPENAI_API_KEY, "sk-agent");
+      assert.equal(envWithout().MIRAFOLD_RELAY_CODE, undefined);
+    },
+  );
 });

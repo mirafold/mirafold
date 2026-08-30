@@ -8,6 +8,8 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { CodeHead } from "./Code";
+import { workspacePathFromHref } from "../workspace-file-link";
 
 // remark-gfm's task-list checkbox (`- [x] thing`) renders as a bare
 // `<input disabled>` with no accessible name — a screen reader announces
@@ -26,9 +28,51 @@ function childrenText(children: ReactNode): string {
     .trim();
 }
 
+/** The verbatim text of a rendered node tree (highlight.js token spans
+ *  included), untrimmed — a fence's first line may be indented on purpose.
+ *  Exported for Tier-1. */
+export function nodeText(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((c) => {
+      if (typeof c === "string") return c;
+      if (typeof c === "number") return String(c);
+      if (isValidElement(c)) return nodeText((c.props as { children?: ReactNode }).children);
+      return "";
+    })
+    .join("");
+}
+
+/** The language a fence named (` ```ts `), read off the class react-markdown
+ *  gives its <code>; undefined for a bare fence. Exported for Tier-1. */
+export function fenceLanguage(className: string | undefined): string | undefined {
+  return className?.match(/(?:^|\s)language-([\w+#.-]+)/)?.[1];
+}
+
+/** A fenced code block the agent typed in prose, dressed exactly like the
+ *  `code` painting: the same header strip (language, copy) over the same
+ *  body — so "code the agent offers you" is one object whichever way it
+ *  arrived (Kyle, 2026-08-25). Deliberately NOT `.rc`: a fence is prose,
+ *  not a painting, and must not count as one. */
+function FencedCode({ node: _node, children, ...props }: ComponentProps<"pre"> & { node?: unknown }) {
+  const code = Children.toArray(children).find(isValidElement) as
+    | ReactElement<{ className?: string; children?: ReactNode }>
+    | undefined;
+  const lang = fenceLanguage(code?.props.className);
+  // The body ends in the fence's own newline; the clipboard shouldn't.
+  const text = nodeText(code?.props.children).replace(/\n$/, "");
+  return (
+    <div className="markdown-fence rc-code">
+      <CodeHead name={lang ?? "code"} code={text} />
+      <pre {...props} className="rc-code-body">
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 // react-markdown blanks the href of any scheme off its allowlist
-// (javascript:, data:, …). Two adjustments, both from the 2026-07-28 phone
-// session: exp/exps — Expo Go's deep-link schemes, how a mobile app built in
+// (javascript:, data:, …). Two adjustments: exp/exps — Expo Go's
+// deep-link schemes, how a mobile app built in
 // a session reaches the phone — are re-allowed (a plain external-app
 // navigation, no script surface); everything else stays stripped, and a
 // stripped link renders as its text, never a clickable anchor going nowhere.
@@ -48,18 +92,23 @@ function ScrollableMarkdownTable({
   );
 }
 
-// The markdown renderer overrides shared with RenderZone's turn text: anchors
+// The markdown renderer overrides shared with OutputZone's turn text: anchors
 // get the safety rule (links open in a new tab, and react-markdown never emits
 // raw HTML from its source), and task-list items get an accessible checkbox label.
+type MarkdownAnchorProps = ComponentProps<"a"> & { node?: unknown };
+
+function MarkdownAnchor({ node: _node, href, children, ...props }: MarkdownAnchorProps) {
+  return href ? (
+    <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
 export const mdOverrides = {
-  a: ({ node: _node, href, children, ...props }: ComponentProps<"a"> & { node?: unknown }) =>
-    href ? (
-      <a {...props} href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    ),
+  a: (props: MarkdownAnchorProps) => <MarkdownAnchor {...props} />,
   code: ({ node: _node, className, children, ...props }: ComponentProps<"code"> & { node?: unknown }) => (
     <code
       {...props}
@@ -71,6 +120,7 @@ export const mdOverrides = {
       {children}
     </code>
   ),
+  pre: FencedCode,
   table: ScrollableMarkdownTable,
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);
@@ -90,6 +140,51 @@ export const mdOverrides = {
     return <li {...props}>{children}</li>;
   },
 };
+
+/**
+ * Transcript Markdown gets one shell-owned addition to the shared renderer:
+ * links naming a file in this session open Mirafold's Files presenter. The
+ * same href remains subject to mdUrlTransform unless it is a proven workspace
+ * path; that exception is what lets a Windows drive path reach the component
+ * instead of being mistaken for an unknown URL scheme.
+ */
+export function workspaceMarkdown(
+  workspaceRoot: string | undefined,
+  onOpenWorkspaceFile: ((path: string) => void) | undefined,
+) {
+  if (!workspaceRoot || !onOpenWorkspaceFile) {
+    return { components: mdOverrides, urlTransform: mdUrlTransform };
+  }
+  return {
+    urlTransform: (url: string) =>
+      workspacePathFromHref(url, workspaceRoot) ? url : mdUrlTransform(url),
+    components: {
+      ...mdOverrides,
+      a: ({ node: _node, href, children, className, title, ...props }: MarkdownAnchorProps) => {
+        const path = workspacePathFromHref(href, workspaceRoot);
+        return path ? (
+          <button
+            type="button"
+            className={["markdown-file-link", className].filter(Boolean).join(" ")}
+            title={title ?? `Open ${path} in Files`}
+            onClick={() => onOpenWorkspaceFile(path)}
+          >
+            {children}
+          </button>
+        ) : (
+          <MarkdownAnchor
+            {...props}
+            className={className}
+            title={title}
+            href={href}
+          >
+            {children}
+          </MarkdownAnchor>
+        );
+      },
+    },
+  };
+}
 
 const unwrapParagraph = {
   p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,

@@ -1,5 +1,5 @@
-// The Gemini model catalog, asked of Gemini CLI itself (V.2's /model parity,
-// Gemini half — the codex-model-list.ts analog).
+// The Gemini model catalog, asked of Gemini CLI itself (the
+// codex-model-list.ts analog).
 //
 // Terminal Gemini's /model opens a picker dialog — TUI chrome the headless
 // stream-json surface can't reach (headless bare /model is a fatal "dialog

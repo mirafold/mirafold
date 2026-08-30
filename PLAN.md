@@ -131,6 +131,17 @@ Each step below is sized to be completed reliably in a single prompt. Work them
 in order. Each has **Goal / Build / Files / Done when**. Do not start a step
 until the previous step's "Done when" is satisfied. Check items off as you go.
 
+**`/next` is permission WITHIN a phase only — never permission to start a new
+phase (Kyle, 2026-08-25, absolute).** `/next` (or `$next`) means: do the next
+unfinished step of the phase that is already in progress. When the current
+phase's last step is done, or no phase is in progress, `/next` STOPS and
+reports — it does not open the next phase, and it does not pick a branch that
+happens to exist. Starting a phase requires Kyle's EXPRESS request naming
+that phase, in his own words, in the conversation; a phase in this file, a
+memory note saying "next = X", or an existing `feature/*` branch is never
+that request. This rule exists because Phase PN was started twice without it
+being asked for (the `feature/file-panes` branch, and again on 2026-08-25).
+
 ---
 
 ## Completed phases (archived)
@@ -2119,6 +2130,16 @@ layer = one directory = one fetch).
   git fidelity behind a TTL cache + one serialized git queue; `fs_diff`
   discovers the repo containing the file; the legacy `fs_list` old-client
   floor pinned as-is, never to be "fixed"). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+- [ ] **Open decision (recorded 2026-08-25, Kyle's call) — when the
+  old-bundle floor retires.** Three code sites exist only for a browser
+  bundle older than the daemon (the relay's app origin can serve a cached
+  one): the whole-tree `fs_list`/`fs_tree` handler (`fs-handlers.ts`) and
+  the two `LEGACY CLIENT` branches in `resolveChosenBackend`
+  (`server/adapters/index.ts` — the by-URL endpoint choice and the
+  by-kind configured-Claude choice). They share one support window and
+  should retire together, in a release note, once no served bundle can
+  predate the lazy tree and opaque backend ids. Nothing else in the repo
+  depends on them; the client stopped sending `fs_list` in Phase E2.
 
 ### Deferred from the 2026-07-26 security audit — ✅ both landed with phase W
 
@@ -2333,7 +2354,7 @@ the relay, which a terminal cannot do at all. (Promoted from
 POST-RELEASE.md's "Input augment" entry; clipboard PASTE of files/images
 stays parked there.)
 
-**Bounds.** Staging is `os.tmpdir()/mirafold-uploads/<sessionId>/` (0700);
+**Bounds.** Staging is `<random per-daemon mkdtemp root>/<sessionId>/` (0700, never a fixed name in shared tmp — 2026-08-26 audit);
 v1 cleanup relies on the OS's tmp reaping (recorded decision — per-session
 delete-on-end can ride later). Caps: `FILE_UPLOAD_MAX_BYTES` (10 MB
 default, env), 2 concurrent uploads per connection, chunks bounded well
@@ -2717,7 +2738,340 @@ is one complete single-pass `$next` chunk.
   the explicitly enumerated 87-file safe run counts. Full original Phase body
   → **PLAN-ARCHIVE.md, “Moved 2026-08-19 (Phase IH — completed body).”**
 
+## Three phases from Kyle's 2026-08-25 usage notes (Kyle-directed; each opens ONLY on his express request naming it)
+
+Kyle used Mirafold for a day and brought back nine findings. Investigated
+2026-08-25 (three code sweeps, findings recorded per phase below); every
+decision was settled with him the same day. Recommended order: **CX → TR →
+CA** (smallest first; CX's paragraph also stops an agent misattributing
+Codex's sandbox to "a Mirafold session policy"). Each phase is one branch
+off fresh `next`, one PR, merged before the next is cut.
+
+## Phase CX — Agent context + the silent bang (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/agent-context-silent-bang` → `next`)
+
+- [x] **Step CX.1 — Tell the agent where it is** — done 2026-08-25:
+  `MIRAFOLD_CONTEXT` opens `RENDER_GUIDANCE` under "## Where you are"; Tier-1
+  proves the paragraph reaches Claude's `systemPrompt.append` and the
+  first-turn prepend of Codex, Gemini and OpenCode. Live check (the
+  "what environment am I in?" turn) is Kyle's to run.
+  - Finding: the only environment text any engine receives is one sentence
+    in `RENDER_GUIDANCE` ("Your output renders in a web app…"). No name, no
+    "not a terminal". Agents assume a terminal/desktop and say so.
+  - Goal: every engine knows it is inside Mirafold, a browser app, without
+    spending context on anything more (Kyle: ~40 words, nothing about the
+    surfaces).
+  - Build: append one paragraph to `RENDER_GUIDANCE` (agent-neutral — Claude
+    gets it via `systemPrompt.append`, Codex/Gemini/OpenCode via the
+    first-turn prepend, all already wired): *"You are running inside
+    Mirafold, a browser app that re-skins this coding agent. The user reads
+    your output in a web page (sometimes on a phone), not in a terminal, a
+    desktop app, or an IDE — don't refer them to a terminal, Ctrl-C, or
+    'open in your editor.'"*
+  - Files: `server/render-tools.ts`; Tier-1 test that the paragraph reaches
+    each adapter's injection point (`claude-code.test.ts` system prompt
+    append, `RenderGuidanceOnce` carry for the other three).
+  - Done when: Tier-1 proves all four adapters carry it; a live turn
+    (Kyle-run) asking "what environment am I in?" names Mirafold and not a
+    terminal.
+
+- [x] **Step CX.2 — `!!` runs a command with no agent turn** — done 2026-08-25:
+  additive `silent?: true` on `bang` and `bang_start`; the handler skips the
+  context accumulator, `markModelTurnStarted` and `pushPrompt` for a silent
+  bang (cwd handoff and the 400 ms gate unchanged); `!!` glyph on the row,
+  tightened to the `!` column, with a hover title saying the agent never
+  sees it. Proven: Tier-1 (projection row, bus frame), Tier-2
+  (`bang.itest.ts`: flag on start + replay, output flows, no turn for 1.5 s
+  while the mock answers every prompt, `cd` carries into a following `!`
+  that DOES turn), Tier-3 (`app.e2e.ts`: `!!echo` strip + output, nothing
+  follows the block, no activity line). Full suites green: Tier-1 924,
+  Tier-2 153, Tier-3 116.
+  - Finding: `!` (the bang line) runs in a PTY and then pushes the transcript
+    to the agent as its own model turn (`bang-handlers.ts`) — faithful to
+    Claude Code's terminal `!`. There is no way to just use the shell.
+  - Decisions (Kyle, 2026-08-25): `!` stays exactly as it is (fidelity);
+    `!!` = same PTY path, same broadcast/replay to every viewport (shell-
+    owned, not secret), same `cd` persistence and jail, same 400 ms
+    throttle, and **the agent never sees it — not even as later context.**
+  - Build: additive only. `bang` client message gains `silent?: true`;
+    `bang_start` gains `silent?: true` so every viewport and the replay ring
+    draw the row right; `bang-handlers.ts` skips `markModelTurnStarted` and
+    `pushPrompt` when silent (no false-busy window, no queued-follow-up slot
+    consumed); `Shell.tsx`'s intercept becomes `^!(!?)\s*(.+)$`; the bang
+    row shows a `!!` glyph. Prompt completions unchanged.
+  - Files: `server/protocol.ts`, `server/sessions/bang-handlers.ts`,
+    `web/src/components/Shell.tsx`, `OutputZone.tsx` (bang row),
+    `transcript-projection.ts`, `styles/06-tools.css`; tests: Tier-2
+    `bang.itest.ts` (silent → the session's `pushPrompt` is never called,
+    output still broadcast + replayed, cwd persists across `!!` then `!`),
+    Tier-1 projection, Tier-3 e2e (`!!echo hi` → `!!` row with output, the
+    activity line never starts, the mock received no prompt).
+  - Done when: the e2e proves a `!!` command runs, shows, replays, and the
+    mock adapter's prompt log stays empty.
+
+## Phase TR — Transcript readability (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/transcript-readability` → `next`)
+
+Findings (2026-08-25 sweep): per-call bodies are always collapsed except on
+error (`ToolBlock.tsx`); the higher-level fold ("worked · N actions",
+`tool-visibility.ts`) already exists but forms only after `turn_end`, only
+for runs of ≥2 successful calls, and any prose between two calls splits the
+run — so a narrating agent produces a one-by-one parade forever. A manual
+expand is lost when a row reflows into the fold (remount). There is no
+jump-to-bottom affordance (only the `End` key with the scroller focused).
+Prose code fences render as a bare `<pre>` with no copy button while
+`render_code` has a header strip + `CopyButton`. Folder rows carry a folder
+glyph beside the chevron.
+
+- [x] **Step TR.1 — The fold forms live, absorbs short narration, keeps
+  the user's expands** — done 2026-08-25: `groupToolActivity` (was
+  `groupSettledTools`) folds on *finished + successful* rather than settled,
+  so the fold grows mid-turn ("working · N actions", gear pulsing) with the
+  in-flight call as its own row beneath, and relabels "worked" at
+  `turn_end`; short assistant remarks (≤ 2 lines, ≤ 160 chars —
+  `isShortNarration`) are absorbed like interior thinking and replayed inside
+  the fold as inert plain text; tool disclosure is lifted into `OutputZone`
+  (`toolToggles`, the `expandedThinking` pattern) so a hand-expanded call
+  stays expanded after it moves into the fold. Mock `tool-activity` gained a
+  remark + a deliberately slow third call; `shell-effects.e2e.ts` asserts
+  the live fold, the running row, the survive-the-move expand, and the
+  absorbed remark. Tier-1 929, Tier-3 116 green.
+  - Decisions (Kyle): fold **during** the turn — "working · N actions"
+    growing, only the in-flight call shown beneath it as its own row;
+    flips to "worked · N actions" at turn end. Narration of **≤ 2 lines**
+    between calls is absorbed into the fold (shown inside, in order, like
+    interior thinking); a longer paragraph stays visible and ends the run.
+    Failed/interrupted calls stay outside and open, as today. A manual
+    expand survives the reflow.
+  - Build: `tool-visibility.ts` relaxes the `settled` requirement to
+    "finished + successful" for live folding with the running call as the
+    trailing boundary; short-text absorption beside thinking absorption;
+    tool disclosure state lifted into `OutputZone` keyed by tool id (the
+    `expandedThinking` pattern). Fold label by turn state.
+  - Files: `web/src/tool-visibility.ts` (+test), `transcript-projection.ts`
+    (+test), `components/OutputZone.tsx`, `ToolBlock.tsx`; mock scenario
+    `tool-activity` gains a one-line narration between calls and a longer
+    paragraph; `server/testing/shell-effects.e2e.ts`.
+  - Done when: e2e shows, mid-turn, one growing `.tool-activity-group` with
+    only the running call outside it; the short narration is inside the
+    fold and the paragraph outside; a click-expanded call is still expanded
+    after `turn_end`; the failing call still stands alone, open.
+
+- [x] **Step TR.2 — Jump to latest** — done 2026-08-25: `useFollowTail`
+  mirrors `following` into render state (`detached`) and gains
+  `jumpToTail()`; the `↓` pill is a sibling of the scroller inside a new
+  `.transcript-column` wrapper — deliberately OUTSIDE the scroll flow (a
+  sticky child was scrolled "into view" by focus/automation, which re-armed
+  following and hid it mid-tap) — bottom-right on desktop, bottom-center and
+  40 px on the phone, fades in/out, hidden from the tab order and a11y tree
+  while at the tail; click = arm + scroll + focus the prompt. New
+  `follow-tail.e2e.ts` (desktop + phone: appears only in scrollback,
+  placement, click/tap returns to the tail, sending a prompt hides it). The
+  two live-document visual baselines were regenerated: that snapshot scrolls
+  to the top, so the pill now legitimately shows in it.
+  - Decision (Kyle): a small round pill with a single `↓`, bottom-right of
+    the transcript scroller inside `.zone-row`, ~12 px above the scroller's
+    bottom edge (above the activity line / prompt box, out of the 76ch
+    reading column); bottom-center on the phone. Visible only while
+    follow-tail is detached; fades out on reaching the bottom or sending a
+    prompt. Click = what `End` does (`armFollow` + scroll). No count, no
+    label; `aria-label="Jump to latest"`.
+  - Build: `use-follow-tail.ts` surfaces `following` as render state;
+    the pill component; CSS in `01-frame.css`.
+  - Files: `web/src/use-follow-tail.ts` (+test), `components/OutputZone.tsx`,
+    `styles/01-frame.css`; e2e in `document.e2e.ts` or a new
+    `follow-tail.e2e.ts`.
+  - Done when: e2e — scroll up during a streaming mock turn → pill visible;
+    click → at bottom, following, pill gone; never visible while at bottom;
+    phone viewport places it bottom-center.
+
+- [x] **Step TR.3 — Prose code fences get `render_code`'s header strip** —
+  done 2026-08-25: `CodeHead` extracted from `registry/Code.tsx` and shared;
+  `mdOverrides.pre` (`FencedCode` in `Md.tsx`) wraps every fence in
+  `.markdown-fence.rc-code` — the painting's box, the same head (language
+  from the highlight class, else "code"; `CopyButton` with the verbatim
+  text) over `pre.rc-code-body` — deliberately not `.rc`, so a fence never
+  counts as a painting. Tier-1 (`Md.test.ts`: head + copy + body class, bare
+  fence, inline code untouched, `fenceLanguage`/`nodeText`), Tier-3
+  (`app.e2e.ts`: the live-document fence shows `ts`, highlighting intact,
+  copy → "copied" and the clipboard holds the fence verbatim). Both
+  live-document visual baselines regenerated again for the new look.
+  - Decision (Kyle, "option 2"): a fenced code block the agent types in
+    prose renders with the same header strip as the `render_code` painting
+    — language on the left (when the fence names one), `copy` on the right
+    — so the two ways of showing code are one object.
+  - Build: a `pre` override in `registry/Md.tsx` (today it overrides only
+    `a`/`code`/`table`/`li`) that wraps the highlighted `<code>` in the
+    shared head from `registry/Code.tsx` (extract the head into a small
+    shared component; `CopyButton` copies the raw fence text). Applies
+    wherever `Md` renders — turn prose and card text alike.
+  - Files: `web/src/registry/Md.tsx`, `registry/Code.tsx`,
+    `registry/CopyButton.tsx`, `styles/05-transcript.css` /
+    `07-registry.css`; a mock scenario turn containing a fence; e2e.
+  - Done when: e2e — a fenced block in a mock turn shows the head with the
+    language and a `copy` that flips to `copied`; `render_code` unchanged.
+
+- [x] **Step TR.4 — No folder icon on folder rows** — done 2026-08-25:
+  directory rows and the root row render `FolderTreeNodeSpacer` (the empty
+  14 px icon column) in place of the folder glyph; the chevron is the folder.
+  The `folder`/`folder-open` glyph kinds and the `open` prop are gone from
+  `FolderTreeNodeGlyph` (leaves only). `app.e2e.ts` asserts chevron → spacer
+  → name on the root both open and closed, zero folder glyphs, and that a
+  dir name and a file name at the same depth share one x.
+  - Decision (Kyle): drop the folder glyph from directory rows and the root
+    row; keep the rotating chevron; files keep their icons; keep an empty
+    spacer where the glyph was so names align in one column.
+  - Files: `components/folder-tree/FolderTreeRows.tsx`,
+    `FolderTreePanel.tsx` (root row), `styles/02-folder-tree.css`; e2e.
+  - Done when: e2e — no `.folder-tree-node-icon-folder` /
+    `-folder-open` in the tree; a dir name and a file name at the same
+    depth share the same x.
+
+## Phase CA — Codex on app-server: terminal-equal permissions (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/codex-app-server` → `next`; hosted acceptance is Kyle-run)
+
+**Finding (verified 2026-08-25).** Mirafold passes Codex **no** sandbox or
+approval settings (`codex.ts` leaves `sandboxMode`/`approvalPolicy` unset
+on purpose) and never writes `~/.codex/config.toml`; the `.git`-is-read-only
+rule Kyle hit is Codex's own workspace-write sandbox, identical in the
+terminal. The real mismatch: the adapter drives Codex through
+`@openai/codex-sdk`, which spawns **`codex exec`** — Codex's
+*non-interactive* mode. In the terminal, with `approval_policy =
+"on-request"`, a sandbox block (writing `.git` on commit, network, a path
+outside the workspace) makes Codex **ask** "retry outside the sandbox?";
+under `exec` nobody can be asked (`resolvePermission` is a no-op, the SDK
+has no approval callback), so the command fails and the model improvises —
+which is why Kyle ended up hand-editing `config.toml`. Codex is the only
+adapter without a working approval round-trip. **Target (Kyle): no
+difference for the user between Codex in the terminal and Codex in
+Mirafold.** The fix is Codex's `app-server` JSON-RPC protocol — what its
+own TUI and the VS Code extension use — whose approval requests map onto
+the existing `permission_request` / `permission_resolved` messages and the
+permission bar. `app-server` is already spawned for the model and skills
+catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
+
+- [x] **Step CA.1 — The spike (throwaway, time-boxed)** — done 2026-08-25:
+  findings in `server/adapters/codex.spike.md`, "CA.1 spike". Verdict GREEN:
+  observed approval round trips for an out-of-workspace write (declined →
+  denied) and a network call (accepted → re-ran outside the sandbox);
+  `thread/resume`, `turn/interrupt`, and `developerInstructions` all work.
+  The "read-only" Kyle hit is `codex exec`'s failure mode (a bare
+  `read-only file system` error, nobody to ask); `.git` is not read-only in
+  0.149.1 on either path. One trust finding for CA.3: headless Codex (exec
+  AND app-server, even ephemeral) writes `trust_level = "trusted"` for the
+  cwd into `~/.codex/config.toml` with no dialog — Mirafold must ask first.
+  - Goal: watch the protocol do what the docs say before any product code.
+  - Build: drive `codex app-server` by hand from a scratch folder against
+    the installed `codex-cli` (0.149.1 today): initialize; new thread + one
+    turn; the full event stream (item shapes vs the exec-JSON ones the
+    mapper knows); an approval request when the sandbox blocks a `git
+    commit`, a network call, and an out-of-workspace write — and what
+    answering approve/deny does; thread resume; the first-open "trust this
+    folder?" dialog (surfaced, or client-owned?); how the `-c` config
+    overrides and `model_provider` binding ride along. Record all of it,
+    including the no-go list, in `server/adapters/codex.spike.md`.
+  - Done when: the spike doc records a real observed approval round trip
+    (a sandboxed commit produced a request; approving it made it succeed)
+    and names every place terminal-equal behavior is or isn't reachable.
+
+- [x] **Step CA.2 — The transport** — done 2026-08-25: `codex-app-server.ts`
+  (long-lived newline JSON-RPC client over stdio: our requests, the
+  engine's notifications, and the engine's own requests to us, kept apart
+  by shape) replaces `@openai/codex-sdk` (dependency REMOVED); `codex.ts`
+  spawns lazily on the first turn, `initialize` → `thread/start` (with
+  `developerInstructions` = RENDER_GUIDANCE + the deferred-tools addendum —
+  a real instructions hook at last) or `thread/resume` by id, `turn/start`
+  per prompt with `model`/`effort` as per-turn params (a `/model` or
+  `/effort` pick no longer restarts anything), `turn/interrupt` for stop; a
+  dead process is respawned and the thread resumed by id on the next
+  prompt. `codex-events.ts` maps the v2 `item/*` stream: prose streams as
+  deltas (held only from a code fence on, so a hand-written mermaid chart
+  still becomes the chart component), reasoning deltas, `commandExecution`
+  (declined → error row "(declined)"), `fileChange`, `mcpToolCall`
+  (`structuredContent`), `webSearch`, `turn/plan/updated` → checklist,
+  `thread/tokenUsage/updated` → one `usage` per turn (delta of totals),
+  `error`(willRetry)/`warning` → badged notices. The rollout-file model
+  lookup is gone — `thread/start` answers with the model. API-key picks pass
+  `-c forced_login_method="api"` (CA.1: app-server otherwise prefers
+  auth.json). Approvals are DECLINED fail-closed until CA.3. Fixed en route:
+  `configArgs` wrote arrays as `args.0=` (rejected by the binary) — arrays
+  now encode whole. `codex.test.ts` rewritten on an in-memory fake
+  app-server (59 tests); live smoke against the real binary: streamed prose,
+  model from thread/start, resume id, a declined out-of-workspace write.
+  Tier-1 935, Tier-2 153 green.
+  - **Fix 2026-08-25 (Kyle screenshot, still on this branch):** app-server
+    marks ANY nonzero exit `status:"failed"` (the exec path said
+    "completed"), so grep-no-match / `gh repo view` on a missing repo /
+    a failing test each rendered as an EXPANDED red error that broke the
+    fold. Faithful rule now matches the TUI: a command that RAN (has an exit
+    code) is non-error and foldable, exit code annotated; only a no-exit-code
+    failure or a decline is an error. Proven live + three unit tests
+    (incl. the screenshot's exact shape). Tier-1 941.
+  - Build: `codex-app-server.ts` — a JSON-RPC-over-stdio client (the
+    `jsonrpc-oneshot.ts` patterns, made long-lived) replacing the SDK spawn
+    in `codex-binding.ts` / `codex.ts`; same config overrides and provider
+    binding; `codex-events.ts` adapted to the app-server item stream;
+    resume preserved. Dependency call recorded: whether `@openai/codex-sdk`
+    still earns its place or is removed.
+  - Done when: Tier-2 `codex.test.ts` green on the new transport with a
+    scripted app-server stub; interrupt, resume, `/model`, `/effort` intact.
+
+- [x] **Step CA.3 — The approval round trip** — done 2026-08-25: a
+  `PermissionLedger` (the shared one the other adapters use) turns each
+  `item/commandExecution/requestApproval` / `item/fileChange/requestApproval`
+  / `item/permissions/requestApproval` into a `permission_request` on the
+  shell's bar — the command stated plainly, the engine's own `reason` (the
+  "retry outside the sandbox?" escalation) alongside it; the bar's answer
+  maps to `{decision:"accept"|"decline"}` / the granted permission profile.
+  Fail-closed on every path (timeout, close, dead process → decline). ALSO
+  the folder-trust gate (assigned here by the CA.1 spike): the first turn in
+  a folder Mirafold has no record of asks before anything spawns — `Codex`
+  tool, wording that says a yes records the folder as trusted in
+  `~/.codex/config.toml` — and only on a yes does `thread/start` run (so the
+  config write is consented, or never happens); remembered in
+  `workspace-trust.ts`, the same mechanism Gemini uses. Tier-2 (unit): the
+  three-way approval round trip, a timeout decline, and the trust gate
+  (asked/spawns-only-on-yes/records; denied → refusal notice, nothing
+  spawned, config untouched; pre-trusted → no ask). Live smoke: approving a
+  real out-of-workspace write made the command RUN (the file was written),
+  where CA.2 fail-closed left it nonexistent. Tier-1 940, Tier-2 153 green.
+  - Build: app-server approval requests → `permission_request` (tool +
+    detail, with the "retry outside the sandbox" meaning stated in the
+    shell's own words, engine words badged with `source`); the permission
+    bar's answer → the protocol's approve/deny; a `PermissionLedger` like
+    the other adapters; answers already sync across viewports.
+  - Done when: Tier-2 proves request → bar → answer → command proceeds or
+    is denied, and a denied request never runs.
+
+- [x] **Step CA.4 — Fidelity acceptance** — automated live DONE 2026-08-25;
+  hosted "feels like the terminal" judgment is Kyle's. `codex-live.ltest.ts`
+  (Tier-4, real binary) updated to the app-server transport and green: a real
+  Ollama turn streams text through the new stack with one turn_end and the
+  `/effort none` control; the pinned first-party catalog still holds; an
+  unreachable endpoint now surfaces Codex's own "Reconnecting… (willRetry)"
+  as retry notices and the discovered-local watchdog ends it (app-server
+  retries a connection failure forever, exactly as the TUI does — a hosted
+  blip shows the same notices and interrupt is the out). Beyond the suite,
+  three live smokes against the real binary during CA.2/CA.3 proved: streamed
+  prose + model-from-thread/start + resume id; a DECLINED out-of-workspace
+  write never ran; an APPROVED one did (the file was written). **Left for
+  Kyle:** a hosted session (subscription/api-key) doing real sandboxed work —
+  commit, a network call — and confirming the approve/deny prompts feel like
+  Codex in the terminal. That can't be automated (Tier-4 forbids metered
+  models).
+  - `codex-live.ltest.ts`: in a workspace-write sandbox, the agent commits
+    → Mirafold prompts → approve → the commit lands; deny → it doesn't;
+    `~/.codex/config.toml` byte-identical before and after (never written);
+    a relay viewport answers the same prompt. Kyle's verdict that it feels
+    like the terminal is the bar.
+
+---
+
 ## Phase PN — Panes (file views beside the transcript)
+
+**ON HOLD — do not build file panes for now (Kyle, 2026-08-25).** This phase
+is NOT a `/next` candidate: skip PN.2 and PN.3 when picking the next step, and
+do not continue or merge `feature/file-panes` (that branch was started by
+mistake). Phase TP below depends on this pane frame, so it is on hold too.
+The phase stays written down only so the design is not lost; Kyle lifts the
+hold explicitly when he wants it.
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
 structural prerequisite for TP — pane content must be a self-contained
@@ -2762,6 +3116,9 @@ instance per viewer.
     unrelated file's change (hint present) causes no refetch of that pane.
 
 ## Phase TP — Terminal pane (vim on the desktop; promoted from POST-RELEASE.md)
+
+**ON HOLD with Phase PN (Kyle, 2026-08-25)** — TP slots into PN's pane
+frame, so it is not a `/next` candidate until the PN hold is lifted.
 
 The POST-RELEASE "Embedded terminal pane" intake entry (2026-07-22),
 promoted 2026-07-26. Its settled scope carries over verbatim: a real
@@ -2989,6 +3346,255 @@ resolution path — adapters that emit `permission_request` MUST emit it
 nothing is pending. Pinned in all three tiers, mutation-tested; replay
 carries request→resolved so a reload can't repaint a stale bar. Full
 diagnosis → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+
+## Closed from the 2026-08-26 security audit (the `main…next` delta, 58 commits)
+
+Audited on the `polish` working tree; fixes landed there uncommitted, each
+with a break-the-guard test, cold-reviewed in two batches. Three of the
+findings were already closed by the `polish` work in progress (Codex Stop
+inert during app-server startup; the `!!` `silent` flag missing from the
+checkpoint decoder — one `!!` made a session unrecoverable after a restart;
+the Gemini auth stub written before the trust ask). What the audit added:
+
+- **A checkout's `.env` can no longer disable or pin the auth token** —
+  `.env.example` shipped a bare `MIRAFOLD_TOKEN=` and `cp .env.example .env`
+  turned auth off. `MIRAFOLD_TOKEN` left `PROJECT_ENV_KEYS`; the example
+  documents it as parent-environment-only. (`project-env.test.ts`)
+- **A connection whose session was evicted OR ended loses its handle**
+  (`refused` / `session_ended`), and `!`, `bang_input`, plus an allowing
+  `permission_response` now carry the drive-time relay gate that
+  `prompt`/acts/uploads had — the 2026-08-13 fix had missed those paths and
+  treated eviction as a stream detach only; a stale handle after `end()`
+  could spawn an invisible PTY (cold review). (`fleet-acts.test.ts`)
+- **Every Gemini project write opens `O_NOFOLLOW`** (the invalid-JSON backup
+  exclusively) and `.gemini` must be a real directory — the first cut
+  guarded two paths and the cold review routed the repo's own bytes through
+  a symlink planted under the backup's name. `/model` sits behind the trust
+  ask (it spawns Gemini in the folder). Ask text says "sets its auth type"
+  honestly. (`gemini-cli.test.ts`)
+- **The registry admits nothing the checkpoint decoder would refuse**
+  (`admitForCheckpoint`, judged by the store's own schemas): an overlong id,
+  a `NaN`/float/negative token count, an array `tool_use.input`, an
+  over-long catalog, an undecodable prompt-catalog entry — each used to
+  checkpoint fine and make the whole session unrestorable at the next start
+  (two cold-review rounds widened this from "ids" to the class). Coerced
+  where a legitimate reading exists, dropped otherwise; one round-trip test
+  over the hostile shapes pins it. One render-id grammar
+  (`RENDER_ID_GRAMMAR`) is enforced on the in-process server, the stdio
+  stub's ack, and `renderIdFor`, and told to the model.
+- Hardening, all pinned: Codex `item/permissions/requestApproval` states the
+  grant (`describePermissionProfile`); the Codex trust ask says Codex "may"
+  record trust (the config.toml write did not reproduce on codex-cli 0.149.1
+  under a fresh `CODEX_HOME`); checkpoint `nextSeq` regained its
+  bound with headroom (`MAX_NEXT_SEQ` = 2^48 — the safe-integer edge itself
+  pinned the stream after one message); `IDLE_STATE` frozen; release
+  workflow pins `npm@11.19.0`; `PermissionLedger`
+  settles exactly once structurally; `permission_request` tool/detail capped
+  (never scrubbed — the detail is what the user approves); `reduceTurn`
+  returns `prev` on a no-op frame (one Shell re-render per frame, gone).
+
+Nothing deferred. Left for Kyle: review + commit on `polish`.
+
+## Closed from the 2026-08-26 whole-project security audit
+
+Six reviewers over the full tree (network entry, filesystem/process paths,
+adapters, relay/crypto, web/sandbox, repo/CI/supply chain), each finding
+proven by probe; fixes landed uncommitted on `polish` in three batches, each
+cold-reviewed and the reviews' own findings fixed. Exploitable-now:
+
+- **Every engine now asks "trust this folder?" before its first spawn** —
+  a hostile checkout's `.claude/settings.json` hook, `.mcp.json` server and
+  `opencode.json` MCP command all ran at session start with no prompt
+  (probed). Claude Code and OpenCode gained the gate Gemini/Codex had
+  (`workspace-trust.ts` scopes; lazy engine start; slash commands ask too).
+- **A checkout's `.env` configures the agent, never the daemon** — three
+  lines redirected the license-key exchange and the relay to a hostile host
+  and pinned the pairing code (probed). Relay/entitlement/app-URL/local-
+  endpoint keys are operator-environment only.
+- **The repo-program guard's three bypasses closed** (`=` in a filter name,
+  submodule config, oversized config failing open): env-pair
+  neutralization, `--ignore-submodules=dirty`, fail-closed scan, and `git`
+  itself through the trusted-executable lookup. Pinned in
+  `git-trust.itest.ts`.
+- **An artifact can no longer seize keyboard focus** (probed: typed prompt
+  landed in the artifact) — focus enters a frame only on the user's gesture;
+  otherwise the artifact is blanked like a navigation. e2e-pinned.
+
+Ship-time: uploads stage under a random owner-only root with exclusive
+no-follow writes; the git-trust notice never echoes repo-chosen text; the
+daemon's own credentials never enter an engine child (`DAEMON_ONLY_ENV`);
+the release workflow verifies the tag's SSH signature against
+`.github/allowed_signers` and publishes from a job that runs no install
+scripts; app.mirafold.com gets the shell CSP via `web/public/_headers` +
+a `<meta>` policy (it had none); permission asks render bidi/invisible
+controls visibly; a `#code=` pairing is remembered only after its
+handshake succeeds.
+
+Hardening: log lines neutralized for control bytes and written 0600/0700;
+trust record realpath-only and exclusive; image reads O_NOFOLLOW; a restored
+"discovered" endpoint must be loopback; stdio render props validated
+server-side with the strict schema; license key never in the log; handshake
+nonce length checked; link-group href refine never throws; pin dock has a
+boundary; frame ingress guard; ICE/preconnect side channel disclosed.
+
+**Left for Kyle (GitHub settings, not code):** add a tag ruleset for `v*`
+requiring signed tags, and drop the admin "always" bypass on `main` (or
+require a PR) — see the session recap for the exact clicks. Review + commit
+on `polish`; then a patch release (findings 2–4 of the delta audit and the
+engine gate are live in 0.5.0).
+
+## Test-audit pass (2026-08-26) — the whole suite
+
+Baseline: Tier-1 998/998 ×3 (~22 s); Tier-2 156/156 ×3 idle, 155/154/156
+under load (~4 min); Tier-3 120/121 then 121/121 (~7.3 min); UI gate 10/10
+(68 s). 110 product mutations (three reviewers in worktrees + the
+coordinator), 104 caught. Repaired, each re-falsified:
+
+- **Proven worthless → repaired:** `file-upload.itest` "nothing staged from a
+  dead upload" (computed the DAEMON's staging dir in the test process — a
+  dir that never existed); `workspace-trust.test` duplicate-row claim asserted
+  on a Set; `git.test` rename framing survived the exact bug it names (now
+  pins the record count); `Console.test` hardcoded a private cap copy.
+- **Wrong thing → repaired:** `Artifact.test` pinned one CSP directive (now
+  the exact policy); `ws.test` "stored only after the handshake" tested the
+  helper, not the wiring (now drives `finishOpen`); adoption test now checks
+  `paired-at`; `codex.test` "config.toml never touched" now asserted with an
+  isolated `CODEX_HOME`; `csp.test` "aligned with the daemon's" now compares
+  against `server/index.ts`'s directives.
+- **Fragile → repaired:** `session.itest` seq-monotonic (excludes the
+  deliberately unsequenced `prompt_options`) and interrupt (no TURN content
+  after `turn_end`, not an exact frame count); `codex.test` trust tests
+  try/finally (a red run sat on the 5-min trust timer) + `CODEX_HOME`
+  isolation in `capturedSpawn`; `fleet-acts` stale-handle tests kill a
+  regressed PTY instead of hanging the run, and never `cat ~/.ssh/id_rsa`;
+  `hostile-client.itest` pins `MAX_WS_PAYLOAD`; `session-store.test` clears
+  both Anthropic credentials; `git-trust.itest` restores borrowed env.
+- **Weak → tightened:** exact `DETAIL_CAP`; byte accounting via
+  `Buffer.byteLength`; "idle clears" now leaves idle first; `session.itest`
+  artifact pinned to the mock's known html; `codex.test` waits go through
+  `wait-for.ts` (named, seen-list); the diagnosable `waitTurnIdle` moved
+  into `e2e-harness.ts` for every e2e file.
+- **Proven gaps → added, watched to fail under mutation:**
+  `security/bind.itest.ts` (the daemon is unreachable on the LAN address —
+  `0.0.0.0` passed every tier before); `auth.itest.ts` (the AUTH DISABLED
+  boot warning); `log.test.ts` (log file 0600); `Md.test.ts` (raw HTML inert,
+  hostile image sources get no src).
+- Fixture hygiene: the one real handle in a fixture replaced.
+
+**Follow-up the same day (Kyle: "do 2 through 5, and 1 if you recommend
+it"):**
+- *Real-clock coalescing test* → `t.mock.timers` (tick 4 holds, tick 1
+  flushes); re-falsified. Doing it exposed that a RED assertion in
+  `registry.test.ts` hung the whole Tier-1 run (the test's own `reg.end`
+  never ran, the open mock session kept the process alive) — a file-level
+  `after()` now ends every helper-made session.
+- *`app.e2e.ts` shared-session design* → the 16 tests that depended on a
+  neighbor's state (a spoken turn, a leftover artifact, `.fleet-row.first()`,
+  "back into a session created earlier", "the previous turn must be over")
+  run in `withFreshMockSession` with their own preconditions; `eventually`
+  / `awaitIdle` take the page explicitly. Two shapes now, documented at the
+  top of the file: shared page for "a session exists", fresh session for
+  anything that depends on session STATE. 53/53, 157 s alone.
+- *`diff-panel.e2e.ts:751` phone flake* → characterized, NOT reproduced:
+  8/8 whole-file runs idle (46–51 s each), on top of 3/3 + 3/3 focused on
+  record and two green full runs this session; the only two occurrences
+  ever were inside full Tier-3 runs (08-19, 08-20). No cause named, so no
+  fix; the wait now dumps a screenshot, the page's state (dialogs, file
+  rows, panel/view HTML) and the daemon log tail to
+  `MIRAFOLD_FLAKE_DUMP_DIR ?? os.tmpdir()` and names the path in the error,
+  so the next occurrence carries its evidence.
+- *The two wiring tests* → added: `PermissionBar.test.ts` (an ask's tool AND
+  detail route through `visibleControls`; the modal-card branch needs state
+  and is uncovered) and `PinDock.test.ts` (React server rendering rethrows
+  through error boundaries — probed — so it walks the element tree: one
+  `RenderBoundary` per pinned painting, the block its direct child, the
+  dock's own fallback). Both re-falsified (five mutations).
+- *Cold review of the batch* (fresh agent) → fixed the same sitting: the
+  shared "agent picker → full mock turn" test now leaves its session IDLE
+  (`awaitIdle`) — without it the next shared-page prompt was a coin flip
+  between "sent idle" and "queued mid-turn", a new order dependency the
+  conversion had created; the tool_use/permission announcer test renamed to
+  what it asserts (it never set up the "assertive interrupts polite"
+  scenario its title claimed); the dangling 2026-07-30 instrumentation
+  comment removed and the shared daemon's `MIRAFOLD_DEBUG` rationale
+  rewritten; `RenderBoundary`'s CATCH now pinned DOM-free in
+  `RenderBlock.test.ts` (derived error state → fallback; clean → child;
+  re-falsified twice); the CR.2 flake dump now also records the socket
+  state, page errors, and — new debug-only lines in `fs-handlers.ts`
+  (`fs_read` receipt / `fs_file` reply, console under `MIRAFOLD_DEBUG`,
+  never the log file; probed) — whether the read reached the daemon, with
+  the diff-panel daemon started in debug for that reason.
+- *The `registry.test.ts` re-pins* → recommended AGAINST, so left alone:
+  they carry provenance (M.1, the 2026-07-24/28 bugs) and most exercise
+  registry-only paths (`answerPermission`, `summary()` copies, `askedAt`
+  aging, `dispatchPrompt`); the three near-duplicates of `session-state.test`
+  cost ~40 lines. "Never delete a regression fixture" applies.
+**Suite health:** Tier-2's `session.itest` was the load-sensitive spot
+(fixed above); Tier-3's one flake in two runs was `follow-tail` (hardened
+twice before — on the proposed list).
+
+## Phase PB — The pair button is always there (Kyle-directed, opened + ✅ COMPLETE 2026-08-26)
+
+Before: a daemon with no relay configured rendered no pair button at all, so a
+new user never learned remote access existed. Now every LOCAL viewport draws
+`⧉ pair`; without a relay the card states why (additive hello field
+`relayOff`: `unentitled` | `opt-out` | `malformed-url`) — a plain link to
+`https://mirafold.com/pay` when nothing is configured (plus the
+`MIRAFOLD_LICENSE_KEY` line for an existing subscriber), the setting to change
+otherwise, never a sales pitch to someone who opted out. Remote viewports
+still receive neither field (a paired phone is not upsold). The link is an
+ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
+
+- [x] **PB.1** — `relayOff` on the hello (local only), `ConnectDevice`
+  always-present button + `RemoteAccessOff` card, CSS, README line. Tests:
+  `ConnectDevice.test.ts` (Tier 1), `session.itest`/`relay-service.itest`
+  hello assertions (Tier 2), "no relay: the pair button is still there…"
+  in `app.e2e.ts` incl. axe (Tier 3); two visual baselines re-taken for the
+  new status-bar button. Done 2026-08-26 on `feature/pair-upsell`.
+- [x] **PB.2 — present on the key's validity.** The daemon already validates
+  the key (the entitlement exchange: token = valid, 403 = refused); the read
+  now reaches LOCAL viewports as an additive `entitlement` message (after each
+  hello and on every change — boot, the 12-hourly refresh, a lapse): `valid`
+  → the QR as before; `invalid` → no QR, the backend's refusal quoted, the
+  `/pay` link, the manage link kept; `unreachable` → no claim either way: the
+  QR stays only while a cached unexpired token still carries the relay (with
+  a dim "couldn't re-check" line), otherwise "couldn't reach mirafold.com",
+  no sales link; `checking` → the first second after launch. Remote
+  viewports never receive it (`entitlement.itest`). Tests: `entitlement.test`
+  (read + listeners + cap), `ConnectDevice.test` (gate + card), `entitlement.itest`
+  (local gets it, phone doesn't, key never on the wire), `app.e2e` "PB.2: a
+  refused license key…" incl. axe; the CS e2e stub now answers the exchange
+  as a valid subscriber and asserts the QR. Done 2026-08-26.
+- [x] **PB.R — cold review of the branch (`/code-review next high`, 2026-08-26).**
+  Nine confirmed findings, all fixed with a test per class: a stale read
+  surviving a hello from a relaunched daemon without a key (kept only while
+  `billing: "license-key"`, and the daemon now re-sends the read after EVERY
+  hello); a non-string 403 `reason` throwing a refusal into `unreachable`;
+  the no-relay arm dropping a subscriber's only manage link (the link now
+  rides every resting arm — `PairCardBody`, pure); the at-rest tooltip
+  pitching Pro to an opted-out user (`pairTitle`); `unreachable.cached`
+  never flipping at token expiry (an expiry timer); presenting on the
+  exchange against an ungated self-hosted relay hid a working QR (reads sent
+  only where the exchange IS the gate: hosted default or an explicit
+  entitlement URL — `presentsOnEntitlement`); the backend's refusal quoted
+  mid-sentence above a payment link without bidi isolation
+  (`visibleControls` + `unicode-bidi: isolate`, the manage card's line too);
+  listener dispatch inside the exchange's try/catch; the R.4h turn still
+  pinning `turn[0]` while the grammar turn didn't (one helper, plus a
+  per-turn re-emit guard). Cleanups folded in: one `MAX_REASON_CHARS`, one
+  `EntitlementView`/`RelayOffReason` in protocol.ts, escaped regexes, stale
+  comments. Left as noted, not fixed: the fake billing server is hand-rolled
+  in four tests (a helper is a test-harness change, out of this pass); the
+  residual gap that the card presents on the exchange, not the relay dial —
+  a paired/refused relay state is a step of its own (PB.3, Kyle's call).
+  **Second cold review of the fixes** found five more, all fixed: the
+  stale-read keep-rule was keyed to `billing`, which the self-host rule had
+  just decoupled from the read → the read now rides ON the hello (additive
+  `agents.entitlement`) and nothing carries over between hellos; a 403 with
+  a non-object body (`null`) still threw into `unreachable`; the expiry timer
+  overflowed past ~24.8 days (chained hops, clock re-checked); the bidi rule
+  sat on `<div>`s (already isolated) instead of the inline `<q>` — now
+  `.pair-quote`, asserted by computed style in the e2e.
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 

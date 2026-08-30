@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -54,7 +55,7 @@ async function sendShortTurn(
 async function sendPlanTurn(page: Page): Promise<void> {
   const inputsBefore = await page.locator(".input-nav-stop").count();
   const prompt = page.locator(".prompt-box textarea");
-  await prompt.fill("plan it step by step");
+  await prompt.fill(MOCK_PROMPTS["checklist"]);
   await prompt.press("Enter");
   await page.waitForFunction(
     (count) => document.querySelectorAll(".input-nav-stop").length > count,
@@ -108,7 +109,7 @@ test("desktop command strips expose direct chronological arrows and keyboard nav
         "the destination input did not receive keyboard focus",
       );
       const aligned = await page.evaluate(() => {
-        const zone = document.querySelector(".render-zone")!.getBoundingClientRect();
+        const zone = document.querySelector(".output-zone")!.getBoundingClientRect();
         const current = document.querySelector(".is-input-nav-current")!.getBoundingClientRect();
         return Math.round(current.top - zone.top);
       });
@@ -148,12 +149,12 @@ test("desktop command strips expose direct chronological arrows and keyboard nav
       // must continue to the shell's page-wide interrupt while a turn works.
       await prompt.fill("do something dangerous");
       await prompt.press("Enter");
-      await page.locator(".perm-bar").waitFor({ timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ timeout: 15_000 });
       await inputs.nth(2).locator(".input-nav-older").focus();
       assert.equal(await page.locator(".is-input-nav-current").count(), 0);
       await page.keyboard.press("Escape");
       await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 15_000 });
-      await page.locator(".perm-bar").waitFor({ state: "detached", timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ state: "detached", timeout: 15_000 });
 
       // The existing terminal-style provider picker captures the same key in
       // the capture phase and therefore remains authoritative.
@@ -232,7 +233,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
 
-      const atJump = await page.locator(".render-zone").evaluate((element) => ({
+      const atJump = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -243,11 +244,11 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
 
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         atJump.height,
         { timeout: 5_000 },
       );
-      const afterGrowth = await page.locator(".render-zone").evaluate((element) => ({
+      const afterGrowth = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
       }));
@@ -270,7 +271,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
-      const beforeEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const beforeEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -279,11 +280,11 @@ test("explicit input jumps stay detached until End returns to the live tail", as
 
       await page.keyboard.press("End");
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         beforeEnd.height,
         { timeout: 5_000 },
       );
-      const afterEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const afterEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
       }));
@@ -304,7 +305,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
-      const beforeScrollerEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const beforeScrollerEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -313,14 +314,14 @@ test("explicit input jumps stay detached until End returns to the live tail", as
         beforeScrollerEnd.bottom <= 24,
         `scroller End premise was not at bottom: ${JSON.stringify(beforeScrollerEnd)}`,
       );
-      await page.locator(".render-zone").focus();
+      await page.locator(".output-zone").focus();
       await page.keyboard.press("End");
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         beforeScrollerEnd.height,
         { timeout: 5_000 },
       );
-      const afterScrollerEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const afterScrollerEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
       }));
@@ -354,7 +355,7 @@ test("phone disclosure selects the input governing a non-tail response", async (
       // and not within the tail's 24px bottom slack. The expected row comes
       // from the real rendered coordinates, independently of the hook.
       const expectedIndex = await page.evaluate(() => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         const inputs = [...document.querySelectorAll(".input-nav-stop")];
         const readingEdge = scroller.getBoundingClientRect().top + 1;
         const maximumScrollTop = scroller.scrollHeight - scroller.clientHeight;
@@ -372,11 +373,11 @@ test("phone disclosure selects the input governing a non-tail response", async (
       });
       assert.notEqual(expectedIndex, -1, "fixture could not expose an earlier response at the reading edge");
       await page.waitForFunction(() => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 24;
       });
       const premise = await page.evaluate((index) => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         const inputs = [...document.querySelectorAll(".input-nav-stop")];
         const readingEdge = scroller.getBoundingClientRect().top + 1;
         const current = inputs[index].getBoundingClientRect();
@@ -503,7 +504,7 @@ test("full transcript replay recovers navigation focus without summoning the pho
     assert.equal(await page.locator(".is-input-nav-current").count(), 0);
     assert.equal(await page.locator(".input-nav-phone-card").count(), 0);
     assert.equal(
-      await page.evaluate(() => document.activeElement?.matches(".render-zone")),
+      await page.evaluate(() => document.activeElement?.matches(".output-zone")),
       true,
       "phone replay summoned the prompt instead of recovering to the transcript",
     );
@@ -663,7 +664,7 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
       await assertAxeClean(page, "phone submitted-input navigation");
       await noSideScroll(page);
 
-      await page.locator(".render-zone").tap({ position: { x: 4, y: 4 } });
+      await page.locator(".output-zone").tap({ position: { x: 4, y: 4 } });
       await card.waitFor({ state: "detached" });
       assert.equal(await prompt.inputValue(), "phone draft stays here");
       assert.equal(
@@ -716,16 +717,16 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
       // priority; navigation returns as soon as the request resolves.
       await prompt.fill("do something dangerous");
       await page.locator(".prompt-send").tap();
-      await page.locator(".perm-bar").waitFor({ timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ timeout: 15_000 });
       assert.equal(await page.locator(".input-nav-phone-toggle").count(), 0);
-      await page.locator(".perm-deny").tap();
-      await page.locator(".perm-bar").waitFor({ state: "detached", timeout: 15_000 });
+      await page.locator(".permission-deny").tap();
+      await page.locator(".permission-bar").waitFor({ state: "detached", timeout: 15_000 });
       await page.locator(".input-nav-phone-toggle").waitFor();
 
       // Reaching an endpoint during a live turn can leave BODY focused when
       // the tapped button disables itself. Turn completion must not treat that
       // as permission to focus the phone prompt and close navigation.
-      await prompt.fill("plan it step by step");
+      await prompt.fill(MOCK_PROMPTS["checklist"]);
       await page.locator(".prompt-send").tap();
       await page.locator(".activity-line").waitFor({ timeout: 15_000 });
       await toggle.tap();

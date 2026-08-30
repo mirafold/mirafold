@@ -1,31 +1,40 @@
-import { memo, useState } from "react";
+import { memo } from "react";
 import { diffLines } from "../diff";
+import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 
 /**
  * Transcript record of one tool call: a dim monospace row, collapsed by
- * default — click to expand. The expansion shows the FULL input (T2.2) —
+ * default — click to expand. The expansion shows the FULL input —
  * Edit/MultiEdit as a red/green line diff, Write as the new file's content,
  * everything else as pretty JSON — followed by the result. Errors arrive
- * expanded. While the result is pending the row pulses.
+ * expanded. While the result is pending the row pulses. Disclosure is
+ * CONTROLLED (`toggled` + `onToggle`, owned by the output zone): a row that
+ * finishes and moves into a live fold remounts, and a user's expand must
+ * survive that move.
  */
 export const ToolBlock = memo(function ToolBlock({
+  id,
   name,
   detail,
   input,
   output,
   truncatedBytes,
   isError,
+  toggled,
+  onToggle,
 }: {
+  id: number;
   name: string;
   detail?: string;
   input?: Record<string, unknown>;
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  /** null = user hasn't touched it; errors then default to open. */
+  toggled: boolean | null;
+  onToggle: (id: number, expanded: boolean) => void;
 }) {
-  // null = user hasn't touched it; errors then default to open.
-  const [toggled, setToggled] = useState<boolean | null>(null);
   const running = output === undefined;
   const expanded = toggled ?? (!running && isError === true);
 
@@ -35,12 +44,12 @@ export const ToolBlock = memo(function ToolBlock({
     >
       <button
         className="tool-head"
-        onClick={() => setToggled(!expanded)}
+        onClick={() => onToggle(id, !expanded)}
         title={expanded ? "Collapse" : "Expand"}
       >
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>
         <span className="tool-name">{name}</span>
-        {detail && <span className="tool-detail">{detail}</span>}
+        {detail && <span className="tool-detail">{visibleControls(detail)}</span>}
       </button>
       {expanded && (
         <div className="tool-body">
@@ -75,9 +84,13 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
     // MultiEdit: a sequence of {old_string, new_string} edits.
     return (
       <div className="tool-input">
-        {(input["edits"] as Record<string, unknown>[]).map((e, i) => (
-          <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
-        ))}
+        {(input["edits"] as unknown[]).map((raw, i) => {
+          // Engine-authored input: each element is checked, not assumed.
+          const e = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+          return (
+            <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
+          );
+        })}
       </div>
     );
   }

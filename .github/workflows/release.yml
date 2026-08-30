@@ -8,8 +8,8 @@ name: Release
 # Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com is configured to accept
 # `mirafold` publishes only from this workflow — identity-federated, NO npm
 # token stored anywhere, so the repo's no-secrets-in-CI bound (PLAN C.1)
-# holds and a stolen npm password can't publish. Until Kyle completes the
-# npmjs.com trusted-publisher form, a real publish from here fails auth —
+# holds and a stolen npm password can't publish. If npmjs.com's trusted-
+# publisher binding is ever removed, a real publish from here fails auth —
 # that's the fail-closed direction.
 #
 # Launch morning (R.7): Kyle pushes the SIGNED release tag (tarball SHA-256
@@ -22,18 +22,23 @@ on:
     tags: ["v*"]
   workflow_dispatch: # rehearsal — dry-run only, never a real publish
 
-# id-token: write is what mints the OIDC token npm's trusted publishing
-# exchanges for a one-shot publish credential. contents stays read-only —
-# this job never writes to the repo; the GitHub Release (notes carry the
+# Two jobs, deliberately (audit 2026-08-26): `verify` builds, tests and packs
+# with NO publish credential in scope — `yarn install` runs two dependencies'
+# install scripts (esbuild, @parcel/watcher), and a compromised one must not
+# find an OIDC token to mint. `publish` holds `id-token: write`, installs
+# nothing from the lockfile, and publishes the exact tarball `verify` packed.
+# contents stays read-only everywhere — the GitHub Release (notes carry the
 # tarball SHA-256 from the job summary) is Kyle's hand-made step.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
-    name: verify + publish with provenance
+  verify:
+    name: verify + pack
     runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha: ${{ steps.pack.outputs.sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -58,9 +63,6 @@ jobs:
         with:
           node-version: 22
           cache: yarn
-          registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles an older npm.
-      - run: npm install -g npm@latest && npm --version
       - run: yarn install --frozen-lockfile
 
       # A tag that doesn't match package.json is a mis-cut release — refuse
@@ -86,16 +88,28 @@ jobs:
       # full config on every PR, so drift is caught there.
       - run: yarn tsc -p tsconfig.ci.json --noEmit
       - run: yarn test
+      # The bundled-license notices must match what the build inlines; a stale
+      # file is a compliance gap (MIT/BSD require the text to travel with
+      # copies). Regenerate and refuse if anything changed.
+      - name: Third-party notices are current
+        run: node scripts/third-party-notices.mjs && git diff --exit-code THIRD-PARTY-NOTICES.md
 
-      # Pack once (prepack builds), record the tarball's SHA-256 in the job
-      # summary — Kyle pastes it into the GitHub Release notes to match the
-      # signed tag message.
+      # Pack ONCE (prepack builds) and publish that exact file below — a bare
+      # `npm publish` would pack a second tarball, and the SHA-256 recorded
+      # here would only be the published bytes if the build happened to be
+      # deterministic. The SHA goes to the job summary for the GitHub Release
+      # notes.
       - name: Pack + SHA-256
+        id: pack
         run: |
           TARBALL="$(npm pack 2>/dev/null | tail -1)"
           SHA="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
           echo "tarball: $TARBALL"
           echo "sha256:  $SHA"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          echo "TARBALL_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           {
             echo "### $TARBALL"
             echo ""
@@ -104,10 +118,83 @@ jobs:
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish (tag push — provenance over trusted publishing)
+      # The SIGNED tag message carries the SHA-256 of the tarball Kyle packed
+      # on his machine (docs/RELEASING.md step 5). First the signature: a
+      # release is authorized by the release-signing key in
+      # .github/allowed_signers, not by whoever can push a tag (a stolen
+      # GitHub credential could push an unsigned tag with a matching SHA —
+      # audit 2026-08-26). Then the SHA must equal this pack's, or the signed
+      # attestation would describe bytes other than the ones about to ship:
+      # a non-deterministic build, or a tag cut from a different tree, is a
+      # red run here instead of a silent mismatch.
+      - name: Tag signature ↔ allowed signers, message SHA-256 ↔ packed tarball
         if: github.event_name == 'push'
-        run: npm publish --provenance --access public
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git -c gpg.ssh.allowedSignersFile=.github/allowed_signers verify-tag "$GITHUB_REF_NAME" \
+            || { echo "tag $GITHUB_REF_NAME is not signed by a key in .github/allowed_signers — refusing to publish" >&2; exit 1; }
+          MSG="$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)')"
+          TAG_SHA="$(printf '%s' "$MSG" | sed -n 's/^sha256 \([0-9a-f]\{64\}\).*/\1/p')"
+          if [ -z "$TAG_SHA" ]; then
+            echo "tag $GITHUB_REF_NAME carries no 'sha256 <hex>' message (unsigned or lightweight tag?) — refusing to publish" >&2
+            exit 1
+          fi
+          if [ "$TAG_SHA" != "$TARBALL_SHA" ]; then
+            echo "tag message sha256 $TAG_SHA != packed tarball $TARBALL_SHA — refusing to publish" >&2
+            exit 1
+          fi
+          echo "tag message matches the packed tarball ($TARBALL_SHA)"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tarball
+          path: ${{ env.TARBALL }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: publish with provenance
+    needs: verify
+    runs-on: ubuntu-latest
+    # id-token: write is what mints the OIDC token npm's trusted publishing
+    # exchanges for a one-shot publish credential — scoped to THIS job, which
+    # runs no install scripts and touches nothing but the verified tarball.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles an older npm.
+      # Pinned like the actions: this is the tool that holds the OIDC publish
+      # credential, so "whatever `latest` resolves to this morning" is not an
+      # acceptable supply-chain posture (npm 12 needs Node ≥ 22.22.2, which
+      # `node-version: 22` does not guarantee — bump deliberately, with the
+      # Node pin).
+      - run: npm install -g npm@11.19.0 && npm --version
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tarball
+      # Job outputs reach the scripts as environment variables, never as
+      # `${{ }}` interpolation into a shell line (expression-injection class).
+      - name: The downloaded tarball is the one verify packed
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.sha }}
+        run: |
+          SHA="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
+          [ "$SHA" = "$VERIFIED_SHA" ] || { echo "artifact sha256 $SHA != verified $VERIFIED_SHA" >&2; exit 1; }
+
+      - name: Publish the packed tarball (tag push — provenance over trusted publishing)
+        if: github.event_name == 'push'
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+        run: npm publish "./$TARBALL" --provenance --access public
 
       - name: Dry-run publish (rehearsal)
         if: github.event_name == 'workflow_dispatch'
-        run: npm publish --dry-run --access public
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+        run: npm publish "./$TARBALL" --dry-run --access public

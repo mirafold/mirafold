@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from "react";
 
 /**
- * Modal focus management (A.3) — the companion to `useEscapeKey`, and the
+ * Modal focus management — the companion to `useEscapeKey`, and the
  * same idiom: pass `active: false` while the overlay is closed and the
  * listener doesn't exist.
  *

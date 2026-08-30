@@ -142,7 +142,7 @@ test("shell rows are soft interruptions outside documents without resetting resp
   const shells: OutputZoneRow[] = [
     { kind: "thinking", id: 2, text: "thinking", done: false },
     { kind: "tool", id: 3, toolId: "tool-3", name: "Read", startedAt: 0 },
-    { kind: "tool-fold", id: 4, items: [], actionCount: 2, summary: "Read ×2" },
+    { kind: "tool-fold", id: 4, items: [], actionCount: 2, summary: "Read ×2", live: false },
     { kind: "notice", id: 5, text: "retrying", noticeKind: "retry" },
     deck,
     {

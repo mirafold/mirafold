@@ -1,39 +1,39 @@
 import path from "node:path";
 import { createLogger, verbose } from "../log";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
-import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
-import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { type AgentSession, capOutput, emitPromptOptions, envWithout, errText, toolDetail } from "./types";
+import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
+import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
 
-// Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
+// Same generative-UI stdio MCP server the Codex adapter injects. Gemini
 // loads MCP servers from settings.json, so we write a per-session project
 // `.gemini/settings.json` naming it (merged over the user's global config).
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
-// How much of a failed turn's stderr rides into the surfaced error (F.4).
+// How much of a failed turn's stderr rides into the surfaced error.
 const STDERR_TAIL_CAP = 4000;
-// How long the folder-trust ask waits for an answer before denying (P.6b) —
+// How long the folder-trust ask waits for an answer before denying —
 // the same posture as Claude's permission prompt: an unanswered ask must not
 // pin a turn open forever.
 const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
 // Gemini CLI's ExitCodes.FATAL_INPUT_ERROR — the exit for an unusable
 // `--resume`/`--session-id` id, thrown in resolveSessionId() before any
-// stdout event (verified against v0.51.0, 2026-07-23).
+// stdout event (verified against v0.51.0).
 const GEMINI_FATAL_INPUT_ERROR = 42;
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
-  const m = String(output ?? "").match(RENDER_ID_RE);
-  return m ? m[1] : randomUUID();
+  return renderIdFor({ ackText: output });
 }
 
 /**
@@ -42,51 +42,52 @@ export function parseRenderId(output: unknown): string {
  * interface). One `gemini -p … -o stream-json` process runs per turn; a stable
  * session id keeps the conversation warm (`--session-id` the first turn,
  * `--resume` after — Gemini's analog of the Codex thread). Events normalize into
- * the shared `WireMsg` union — no protocol change (P.5 spike).
+ * the shared `WireMsg` union — no protocol change.
  *
  * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
  * concerns — the session cwd and model when set. Auth is API-key (the free
  * Google-login path stopped serving individual accounts in 2026); the key stays in the
  * server env, injected into the child, never on the wire. Approval for the
- * user's own tools is inherited; only our `genui` MCP server is auto-trusted
+ * user's own tools is inherited; only our `mirafold` MCP server is auto-trusted
  * (the analog of Codex's per-server `approve`), since headless can't prompt.
  */
 export class GeminiCliSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private closed = false;
   private child?: ChildProcessWithoutNullStreams;
   private sessionId: string;
   private started: boolean; // first turn creates the session, later turns resume
   private resumeIdState: ResumeIdState;
-  // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
+  // RENDER_GUIDANCE rides ahead of the first NON-slash turn: headless
   // Gemini only recognizes a slash command at position 0 of the prompt, so
-  // prepending to a slash turn would silently turn it into chat (observed
-  // live 2026-07-19). Tracked apart from `started` for exactly that case.
-  private guidanceInjected = false;
+  // prepending to a slash turn would silently turn it into chat; the
+  // guidance waits for the first prose turn.
+  private guidance = new RenderGuidanceOnce(RENDER_GUIDANCE);
   private modelLabel: string | undefined;
   private model?: string;
   private workspaceDir: string;
   private listModels: () => Promise<GeminiModelCatalog>;
-  // Non-genui tool ids we announced, and buffered genui render calls awaiting
+  // Non-render tool ids we announced, and buffered Mirafold render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
-  // The folder-trust ask (P.6b), keyed by wire id → resolver. At most one is
+  // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
   // yes is remembered on disk, so later turns never reach it.
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
   // Set once the user says yes IN THIS SESSION — the disk record is the
   // durable answer, this just avoids re-reading it every turn.
   private trusted = false;
-  // Whether the render-MCP entry has been merged into project settings yet
-  // (K.2): deferred until trust is confirmed, unlike the auth stub below.
+  // Whether the render-MCP entry and auth selection have been merged into
+  // project settings yet: both are deferred until Gemini-specific trust is
+  // confirmed.
   private mcpSettingsWritten = false;
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
-  // model — the UI shows nothing, never a stand-in that reads as a model name
-  // (2026-07-23, Kyle). "auto" is a genuine configured value (router mode);
-  // honestModel() refines it per turn. The fleet uses this label (F.3).
+  // model — the UI shows nothing, never a stand-in that reads as a model name.
+  // "auto" is a genuine configured value (router mode); honestModel()
+  // refines it per turn. The fleet uses this label.
   get modelName(): string | undefined {
     return this.modelLabel;
   }
@@ -113,12 +114,6 @@ export class GeminiCliSession implements AgentSession {
     this.started = Boolean(opts.resumeId);
     this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
-    // Only ever creates a settings.json that didn't already exist (K.2,
-    // 2026-08-06): a file that predates this session is the user's, and
-    // consent to modify it — same as the MCP entry below — doesn't exist
-    // yet at construction time. No read, no parse, no backup, no rewrite of
-    // anything pre-existing until ensureTrusted() actually resolves true.
-    this.writeAuthSettingsIfAbsent();
     void this.worker();
   }
 
@@ -144,6 +139,69 @@ export class GeminiCliSession implements AgentSession {
     return path.join(this.workspaceDir, ".gemini", "settings.json");
   }
 
+  /**
+   * Every file this adapter writes in the project is opened with O_NOFOLLOW
+   * (and the backup exclusively): the consented write is to THIS folder's
+   * own files, and a repository must not get to choose where a write lands.
+   * A checkout can ship `.gemini/settings.json` — or the backup's name
+   * beside it — as a symlink (dangling ones pass `existsSync`) pointing at
+   * `~/.ssh/authorized_keys` or any user-owned path; a path check alone
+   * missed the backup write on the first cut (cold review, 2026-08-26), so
+   * the rule lives at open time, for every write, not in a list of paths.
+   * A hardlink — which git cannot deliver — is the accepted residual, as
+   * for the daemon's `.env` guard.
+   */
+  private writeOwnFile(file: string, data: string, exclusive = false) {
+    const { O_WRONLY, O_CREAT, O_TRUNC, O_EXCL, O_NOFOLLOW } = constants;
+    const flags = O_WRONLY | O_CREAT | (O_NOFOLLOW ?? 0) | (exclusive ? O_EXCL : O_TRUNC);
+    let fd: number;
+    try {
+      fd = openSync(file, flags, 0o644);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ELOOP" || code === "EMLINK") {
+        throw new Error(
+          `${file} is a symlink — Mirafold only writes this folder's own .gemini files; ` +
+            `replace it with a real file or remove it`,
+        );
+      }
+      throw err;
+    }
+    try {
+      writeFileSync(fd, data);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /**
+   * The directory half of the same rule: O_NOFOLLOW guards only the last
+   * path component, so `.gemini` itself being a symlink (to `~/.gemini`, or
+   * anywhere) is refused here, and a FIFO/device at `settings.json` is
+   * refused before a read could block the daemon. The turn fails with a
+   * sentence the user can act on; nothing is written (audit 2026-08-26).
+   */
+  private assertSettingsPathIsOurs() {
+    const file = this.settingsFile();
+    const check = (p: string, want: "directory" | "file") => {
+      let st;
+      try {
+        st = lstatSync(p);
+      } catch {
+        return; // absent: we would create it, which is fine
+      }
+      const ok = want === "directory" ? st.isDirectory() : st.isFile();
+      if (!ok) {
+        throw new Error(
+          `${p} is ${st.isSymbolicLink() ? "a symlink" : `not a ${want}`} — Mirafold only writes ` +
+            `this folder's own .gemini/settings.json; replace it with a real ${want} or remove it`,
+        );
+      }
+    };
+    check(path.dirname(file), "directory");
+    check(file, "file");
+  }
+
   // Only called once consent exists (writeMcpSettings, post-trust): existing
   // content is preserved and merged over; an unparseable file is rewritten
   // rather than failing the session, but it's the user's file, so their
@@ -155,8 +213,17 @@ export class GeminiCliSession implements AgentSession {
     try {
       return JSON.parse(raw);
     } catch {
-      const backup = `${file}.mirafold-backup`;
-      writeFileSync(backup, raw);
+      // Exclusive create: never through a link a checkout planted under the
+      // backup's name, never over an earlier backup — a taken name gets a
+      // timestamped sibling instead.
+      let backup = `${file}.mirafold-backup`;
+      try {
+        this.writeOwnFile(backup, raw, true);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+        backup = `${file}.mirafold-backup.${Date.now()}`;
+        this.writeOwnFile(backup, raw, true);
+      }
       createLogger("gemini-cli").warn(
         `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
       );
@@ -166,16 +233,7 @@ export class GeminiCliSession implements AgentSession {
 
   private writeSettings(cfg: Record<string, any>) {
     mkdirSync(path.dirname(this.settingsFile()), { recursive: true });
-    writeFileSync(this.settingsFile(), JSON.stringify(cfg, null, 2));
-  }
-
-  // Runs at construction, before any trust decision. Declares which auth type
-  // to use — but ONLY by creating a brand-new file: that's Mirafold's own
-  // bookkeeping, nothing pre-existing touched. A file that's already there,
-  // valid or not, is left completely alone until writeMcpSettings runs.
-  private writeAuthSettingsIfAbsent() {
-    if (existsSync(this.settingsFile())) return;
-    this.writeSettings({ security: { auth: { selectedType: "gemini-api-key" } } });
+    this.writeOwnFile(this.settingsFile(), JSON.stringify(cfg, null, 2));
   }
 
   // Runs only once ensureTrusted() has actually resolved true: the one place
@@ -183,6 +241,7 @@ export class GeminiCliSession implements AgentSession {
   // Sets the auth stub too (not just the MCP entry) — a file that predated
   // this session and was left untouched at construction may not have it yet.
   private writeMcpSettings() {
+    this.assertSettingsPathIsOurs();
     const cfg = this.readSettings();
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
@@ -196,25 +255,20 @@ export class GeminiCliSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
   interrupt() {
     this.child?.kill("SIGTERM"); // ends the in-flight turn; session stays warm
-    this.denyAllPending(); // an unanswered trust ask would pin the turn open
-  }
-
-  /** Deny every in-flight ask — the interrupt/close teardown. */
-  private denyAllPending() {
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
+    this.permissions.denyAll(); // an unanswered trust ask would pin the turn open
   }
 
   // Headless Gemini has no interactive-approval channel for its OWN tool calls
-  // (like Codex exec). The one thing it does ask is folder trust (P.6b), and
+  // (like Codex exec). The one thing it does ask is folder trust, and
   // that ask is shell-owned — the browser's answer lands here.
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   /**
@@ -226,46 +280,45 @@ export class GeminiCliSession implements AgentSession {
    * Resolves to whether this turn may run.
    */
   private ensureTrusted(): Promise<boolean> {
-    if (this.trusted || isWorkspaceTrusted(this.workspaceDir)) {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "gemini-cli")) {
       this.trusted = true;
       return Promise.resolve(true);
     }
     if (this.closed) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const id = randomUUID();
-      const finish = (allow: boolean) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Announced on EVERY resolution path (answer, timeout, teardown), so
-        // other viewports drop their bar instead of holding a stale ask —
-        // protocol.ts's rule for permission_request.
-        this.emit({ type: "permission_resolved", id, allow });
+    // The ask says what a yes DOES, not just what it's called: besides
+    // letting Gemini run here, it merges Mirafold's render-tool MCP entry and
+    // the API-key auth selection into this folder's `.gemini/settings.json`
+    // — a file terminal Gemini reads too. A user answering "trust" deserves
+    // to know that a project file changes as a result.
+    return this.permissions.ask(
+      {
+        tool: "Gemini",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets Gemini run here, adds Mirafold's render tools to this folder's ` +
+          `.gemini/settings.json, and sets its auth type to API key (replacing any other choice). ` +
+          `Other settings are merged; if that file is not valid JSON, its original bytes are saved ` +
+          `beside it before Mirafold replaces it. Terminal Gemini reads this file too.`,
+      },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
         if (allow) {
           this.trusted = true;
-          trustWorkspace(this.workspaceDir); // remembered: asked once, ever
+          trustWorkspace(this.workspaceDir, "gemini-cli"); // remembered for this disclosed effect
         }
-        resolve(allow);
-      };
-      const timer = setTimeout(() => finish(false), TRUST_PROMPT_TIMEOUT_MS);
-      this.pendingAsks.set(id, finish);
-      this.emit({
-        type: "permission_request",
-        tool: "Gemini",
-        detail: `trust this folder — ${this.workspaceDir}`,
-        id,
-      });
-    });
+      },
+    );
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
     this.child?.kill("SIGTERM");
-    this.denyAllPending();
+    this.permissions.denyAll();
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -278,7 +331,12 @@ export class GeminiCliSession implements AgentSession {
       try {
         const trimmed = item.trim();
         if (trimmed === "/model" || trimmed.startsWith("/model ")) {
-          await this.runModelCommand(trimmed.slice("/model".length).trim());
+          // The catalog is read by spawning Gemini IN this folder
+          // (gemini-model-list.ts), so it sits behind the same trust gate as
+          // a turn: only Gemini's own untrusted-folder rule stood between a
+          // checkout's `.gemini/settings.json` and that spawn (2026-08-26).
+          if (!(await this.ensureTrusted())) this.refuseUntrusted();
+          else await this.runModelCommand(trimmed.slice("/model".length).trim());
         } else {
           await this.runTurn(item);
         }
@@ -295,23 +353,22 @@ export class GeminiCliSession implements AgentSession {
   }
 
   /**
-   * V.2 /model parity, Gemini half. Terminal Gemini's /model opens a picker
-   * dialog — TUI chrome headless can't reach (a headless bare /model is a
-   * fatal "dialog not supported" exit that surfaces here as a silent empty
-   * turn; observed live 2026-07-19). So the shell re-skins it: the LIST is
-   * Gemini's own catalog (gemini-model-list.ts — the same access-gated rows
-   * the terminal dialog builds), rendered as a `question` component whose
-   * click sends `/model set <id>` back through this same path — Gemini's own
-   * switch syntax. A switch changes the `-m` the next spawn passes; the
+   * Terminal Gemini's /model opens a picker dialog — TUI chrome headless
+   * can't reach (a headless bare /model is a fatal "dialog not supported"
+   * exit that surfaces here as a silent empty turn). So the shell re-skins
+   * it: the LIST is Gemini's own catalog (gemini-model-list.ts — the same
+   * access-gated rows the terminal dialog builds), shown as the shell-owned
+   * `picker` message (model-picker.ts) whose chosen row sends
+   * `/model set <id>` back through this same path — Gemini's own switch
+   * syntax. A switch changes the `-m` the next spawn passes; the
    * resumed session keeps its history, exactly what the terminal dialog does.
    *
    * Terminal fidelity on the verbs: `/model set <name> [--persist]` switches,
    * anything else (`/model`, `/model manage`, stray args — the terminal
    * ignores args and opens the dialog) shows the picker.
    */
-  private async runModelCommand(arg: string) {
-    this.emit({ type: "status", state: "thinking" });
-    try {
+  private runModelCommand(arg: string): Promise<void> {
+    return runSlashTurn((msg) => this.emit(msg), async () => {
       if (arg !== "set" && !arg.startsWith("set ")) {
         let catalog: GeminiModelCatalog;
         try {
@@ -350,9 +407,7 @@ export class GeminiCliSession implements AgentSession {
         ? " (--persist writes the terminal's own settings file — here the switch lasts this session)"
         : "";
       this.emit({ type: "text_delta", text: `Model set to ${name}.${persistNote}` });
-    } finally {
-      this.emit({ type: "turn_end" });
-    }
+    });
   }
 
   private async runTurn(text: string): Promise<void> {
@@ -361,16 +416,10 @@ export class GeminiCliSession implements AgentSession {
     // leave the session usable (say why, end the turn) rather than spawn a
     // child that exits 55 with a stderr the user can't act on.
     if (!(await this.ensureTrusted())) {
-      this.emit({
-        type: "notice",
-        text:
-          `Gemini won't run in a folder you haven't trusted. Nothing ran. ` +
-          `Send another prompt to be asked again, or switch agents.`,
-      });
-      this.emit({ type: "turn_end" });
+      this.refuseUntrusted();
       return;
     }
-    // The consequential half of settings.json (K.2): only merged in once the
+    // The consequential half of settings.json: only merged in once the
     // trust gate above has actually passed, and only once per session.
     if (!this.mcpSettingsWritten) {
       this.writeMcpSettings();
@@ -379,22 +428,31 @@ export class GeminiCliSession implements AgentSession {
     return this.spawnTurn(text);
   }
 
+  /** A denied (or timed-out) trust ask: say why, end the turn, spawn nothing. */
+  private refuseUntrusted() {
+    this.emit({
+      type: "notice",
+      text:
+        `Gemini won't run in a folder you haven't trusted. Nothing ran. ` +
+        `Send another prompt to be asked again, or switch agents.`,
+    });
+    this.emit({ type: "turn_end" });
+  }
+
   private spawnTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
-      // V.2: the headless stream-json surface has no system-prompt/instructions
+      // The headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
       // ahead of the first turn instead — the only injection point this engine
       // has. Slash-leading turns are skipped: headless Gemini only recognizes
       // a slash command at position 0, so the prepend would demote the user's
       // command to chat; the guidance waits for the first prose turn.
-      const inject = !this.guidanceInjected && !text.trimStart().startsWith("/");
+      const inject = this.guidance.pending && !text.trimStart().startsWith("/");
+      const prompt = inject ? this.guidance.carry(text) : text;
       // Optimistic — REVERTED below if the child dies without ever reading
       // the prompt (no stdout event: the exit-42 id-mode collision, a spawn
-      // failure, bad auth). Leaving it consumed there ran every later turn
-      // bare, so the model never saw the render tools for the session's
-      // whole life (2026-07-29 bughunt).
-      if (inject) this.guidanceInjected = true;
-      const prompt = inject ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
+      // failure, bad auth).
+      if (inject) this.guidance.delivered();
       const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
       // `resumed` is THIS turn's mode; `started` is optimistic (set before the
@@ -407,12 +465,12 @@ export class GeminiCliSession implements AgentSession {
       const child = spawn(geminiBin(), args, {
         cwd: this.workspaceDir,
         env: {
-          ...process.env, // GEMINI_API_KEY lives here; never serialized to the wire
+          ...envWithout(), // GEMINI_API_KEY lives here (never the daemon's own secrets); never serialized to the wire
           // Only reached once ensureTrusted() holds the user's yes. This is
           // ALSO what makes auth work, which is not obvious: 0.53.0 does not
           // load a project's `.gemini/settings.json` for an UNTRUSTED folder,
-          // so the `selectedType: "gemini-api-key"` we write there was being
-          // ignored and the CLI fell back to the user-scope selection — an
+          // so the `selectedType: "gemini-api-key"` we write there is
+          // ignored and the CLI falls back to the user-scope selection — an
           // `oauth-personal` login dies on IneligibleTierError (the free-tier
           // client Google retired) while a perfectly good API key sits unused.
           // One cause, two symptoms.
@@ -432,7 +490,7 @@ export class GeminiCliSession implements AgentSession {
       // Whether any stdout event parsed this turn, and a capped stderr
       // tail — so a stderr-only non-zero exit (the trust-folder trap: Gemini
       // writes the error to stderr, exits 55, and emits NOTHING on stdout)
-      // surfaces as an error instead of a silent "thinking…" then nothing (F.4).
+      // surfaces as an error instead of a silent "thinking…" then nothing.
       let sawEvent = false;
       let stderrTail = "";
       const end = () => {
@@ -462,9 +520,9 @@ export class GeminiCliSession implements AgentSession {
           buf = buf.slice(nl + 1);
         }
       });
-      // Usually diagnostics, but sometimes the ONLY signal (F.4). Keep a
+      // Usually diagnostics, but sometimes the ONLY signal. Keep a
       // capped tail for the stderr-only-failure path; MIRAFOLD_DEBUG=1 also
-      // streams it live (R.4g).
+      // streams it live.
       child.stderr.on("data", (d: Buffer) => {
         stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_CAP);
         if (verbose) createLogger("gemini-cli").debug(`stderr — ${d}`);
@@ -474,11 +532,11 @@ export class GeminiCliSession implements AgentSession {
         if (this.child === child) this.child = undefined;
         // A non-zero exit that produced no stdout events, with something
         // on stderr, is a silent failure — surface it (code null = a signal
-        // kill/interrupt, not this case) (F.4).
+        // kill/interrupt, not this case).
         if (!this.closed && !sawEvent && code != null && code !== 0 && stderrTail.trim()) {
           this.emit({ type: "error", message: `gemini exited ${code}: ${stderrTail.trim()}` });
         }
-        // Self-heal a wrong id mode (2026-07-23). Gemini treats both id-mode
+        // Self-heal a wrong id mode. Gemini treats both id-mode
         // mistakes as FATAL_INPUT_ERROR (42) and exits before emitting any
         // event: `--resume` with an id it never persisted (a first turn that
         // failed before the session file was written — bad auth, missing
@@ -492,12 +550,12 @@ export class GeminiCliSession implements AgentSession {
         }
         // No stdout event ⇒ the prompt was never read — give the guidance
         // back to the next prose turn (see the inject note above).
-        if (!sawEvent && inject) this.guidanceInjected = false;
+        if (!sawEvent && inject) this.guidance.reset();
         end(); // covers the case where no `result` event arrived (crash/kill)
       });
       child.on("error", (err) => {
         if (!this.closed) this.emit({ type: "error", message: `gemini spawn failed: ${err.message}` });
-        if (inject) this.guidanceInjected = false; // spawn failed — nothing was read
+        if (inject) this.guidance.reset(); // spawn failed — nothing was read
         end();
       });
     });
@@ -506,7 +564,7 @@ export class GeminiCliSession implements AgentSession {
   // init.model can be the literal "auto" (router mode) while the real
   // model(s) the router actually used show up only in result.stats.models.
   // Prefer those concrete names when the init label is a placeholder — the
-  // status bar should name what ran, like the terminal's own status line (F.3).
+  // status bar should name what ran, like the terminal's own status line.
   private honestModel(models: unknown): string | undefined {
     const vague = !this.modelLabel || this.modelLabel === "auto";
     if (!vague) return this.modelLabel;
@@ -518,7 +576,7 @@ export class GeminiCliSession implements AgentSession {
     return names.length ? names.join(", ") : this.modelLabel;
   }
 
-  /** Normalize one JSONL event into WireMsg. */
+  /** Normalize one JSONL event into SessionMsg. */
   private handleEvent(ev: Record<string, unknown>) {
     // A session-bearing event proves the CLI accepted/created this id. An
     // error event alone does not: persisting after bad auth/input could make a
@@ -547,7 +605,7 @@ export class GeminiCliSession implements AgentSession {
       }
       case "tool_use": {
         const name = String(ev["tool_name"] ?? "");
-        const id = String(ev["tool_id"] ?? randomUUID());
+        const id = String(ev["tool_id"] ?? "") || randomUUID();
         const params = (ev["parameters"] ?? {}) as Record<string, unknown>;
         if (name.startsWith(MCP_PREFIX)) {
           // Our generative-UI tools: buffer until the result carries the id.
@@ -590,9 +648,9 @@ export class GeminiCliSession implements AgentSession {
         const stats = (ev["stats"] ?? {}) as Record<string, unknown>;
         const model = this.honestModel(stats["models"]);
         // The refinement must land on modelLabel too — modelName is what the
-        // fleet and status bar read (F.3), and it stayed "auto" forever while
-        // only the usage line got the concrete names (2026-07-28 fix). Router
-        // mode re-vagues at the next turn's init, so each turn re-refines.
+        // fleet and status bar read; otherwise it stays "auto" forever while
+        // only the usage line gets the concrete names. Router mode re-vagues
+        // at the next turn's init, so each turn re-refines.
         if (model) this.modelLabel = model;
         this.emit({
           type: "usage",
@@ -605,9 +663,9 @@ export class GeminiCliSession implements AgentSession {
     }
   }
 
-  /** A buffered genui tool call → the render/artifact WireMsg it stands for. */
+  /** A buffered Mirafold render tool call → the render/artifact SessionMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
-    const id = typeof pending.params["id"] === "string" ? (pending.params["id"] as string) : parseRenderId(output);
+    const id = renderIdFor({ ackText: output, argId: pending.params["id"] });
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);
     if (msg) this.emit(msg);
   }

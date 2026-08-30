@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { listCodexModels } from "./codex-model-list";
+import { configArgs } from "./codex-model-list";
 import { listCodexSkills } from "./codex-skills-list";
 import { jsonRpcOneShot } from "./jsonrpc-oneshot";
 
@@ -227,4 +228,16 @@ test("silent binary times out", async () => {
   } finally {
     delete process.env.MIRAFOLD_CODEX_BIN;
   }
+});
+
+test("configArgs: tables flatten to dotted keys, arrays stay whole (the binary rejects args.0=)", () => {
+  assert.deepEqual(
+    configArgs({ mcp_servers: { mirafold: { command: "/bin/node", args: ["/x/render-mcp.js", "--flag"], default_tools_approval_mode: "approve" } }, model_provider: "openai" }),
+    [
+      "-c", 'mcp_servers.mirafold.command="/bin/node"',
+      "-c", 'mcp_servers.mirafold.args=["/x/render-mcp.js","--flag"]',
+      "-c", 'mcp_servers.mirafold.default_tools_approval_mode="approve"',
+      "-c", 'model_provider="openai"',
+    ],
+  );
 });

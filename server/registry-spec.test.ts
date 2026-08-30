@@ -237,3 +237,15 @@ test("link-group rejects non-http(s) hrefs", () => {
     true,
   );
 });
+
+// AUDIT 2026-08-26: a relative href threw out of the refine instead of failing
+// validation — in the pin dock (no boundary then) that throw took the shell.
+test("link-group: a relative or malformed href fails validation, never throws", () => {
+  for (const href of ["docs/README.md", "", "not a url", "//host/path", "javascript:alert(1)"]) {
+    let result: { success: boolean } | undefined;
+    assert.doesNotThrow(() => {
+      result = registrySchemas["link-group"].safeParse({ links: [{ label: "x", href }] });
+    }, href);
+    assert.equal(result?.success, false, href);
+  }
+});

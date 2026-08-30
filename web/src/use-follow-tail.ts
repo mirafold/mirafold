@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 /**
  * Follow-the-tail for a scrolling transcript, CONDITIONAL the way a terminal's
@@ -11,24 +11,27 @@ import { useRef } from "react";
  * Then call `followTail()` from an effect keyed on whatever changes the
  * content, `armFollow()` when the reader is conceptually back at the bottom
  * (they sent a message), and `resetTail()` when the content is replaced
- * wholesale.
+ * wholesale. `detached` is the same fact as render state — true while the
+ * reader is up in scrollback — so the shell can offer a way back
+ * (`jumpToTail()`); the ref stays the source of truth for the handlers,
+ * which run between renders.
  *
- * Two decisions here were bought with a bug (2026-07-20, traced in a real
- * browser — don't undo either without re-reading that trace):
+ * Two decisions here, each guarding a real browser failure — don't undo
+ * either:
  *
  *  1. **Following scrolls INSTANTLY, never smoothly.** A smooth scroll is an
  *     animation, and during streaming `followTail` fires every ~35ms, so the
- *     animation was permanently in flight. While it runs it owns `scrollTop`:
- *     the reader's wheel deltas were overwritten by the next animation frame
- *     and never became scroll events at all — the wheel was inert. It also
- *     could never catch a tail growing faster than it animates, leaving a
- *     "following" reader ~5000px behind the live output.
+ *     animation would be permanently in flight. While it runs it owns
+ *     `scrollTop`: the reader's wheel deltas are overwritten by the next
+ *     animation frame and never become scroll events at all — the wheel is
+ *     inert. It also can never catch a tail growing faster than it animates,
+ *     leaving a "following" reader ~5000px behind the live output.
  *  2. **The reader's INPUT is what detaches, not a position delta.** A wheel
  *     or touch drag says "the reader is steering" whether or not the viewport
  *     ends up moving, so it can't be suppressed the way a delta can. The
  *     position test stays as a backstop for the scrolls that have no input
  *     event of their own — a scrollbar drag, find-in-page, a keyboard scroll
- *     — and is trustworthy now that our own scrolls are single downward jumps
+ *     — and is trustworthy because our own scrolls are single downward jumps
  *     rather than an easing curve.
  */
 
@@ -77,6 +80,11 @@ export function touchIntentReachesBottom(
 export function useFollowTail() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
+  const [detached, setDetached] = useState(false);
+  const setFollowing = (next: boolean) => {
+    following.current = next;
+    setDetached(!next);
+  };
   const lastTop = useRef(0);
   // A navigation-owned scroll can legitimately land at the current bottom.
   // Remember its settled position so that scroll event cannot masquerade as
@@ -97,8 +105,8 @@ export function useFollowTail() {
       navigationTop.current = null;
     }
     // The backstop: an upward move we got no input event for.
-    if (el.scrollTop < lastTop.current - 1) following.current = false;
-    if (atBottom(el)) following.current = true;
+    if (el.scrollTop < lastTop.current - 1) setFollowing(false);
+    if (atBottom(el)) setFollowing(true);
     lastTop.current = el.scrollTop;
   };
 
@@ -108,11 +116,11 @@ export function useFollowTail() {
   const onWheel = (e: WheelIntent) => {
     navigationTop.current = null;
     if (e.deltaY < 0) {
-      following.current = false;
+      setFollowing(false);
       return;
     }
     const el = scrollerRef.current;
-    if (el && wheelIntentReachesBottom(el, e)) following.current = true;
+    if (el && wheelIntentReachesBottom(el, e)) setFollowing(true);
   };
 
   const onTouchStart = (e: TouchIntent) => {
@@ -122,10 +130,10 @@ export function useFollowTail() {
   // Dragging the content DOWN scrolls the transcript up — the touch equivalent
   // of a negative wheel delta.
   //
-  // Verified to fire and detach on a real emulated-touch swipe, but NOT proven
-  // necessary: touch already held correctly without these handlers, because a
+  // Fires and detaches on a real emulated-touch swipe, but NOT proven
+  // necessary: touch holds correctly without these handlers, because a
   // finger drag isn't suppressed by a programmatic smooth scroll the way the
-  // wheel was (Chrome/Linux, 2026-07-20). Kept as a guard for the platform
+  // wheel is (Chrome/Linux). Kept as a guard for the platform
   // that can't be tested here — iOS Safari, which the relay's phone viewport
   // actually targets, and whose momentum scrolling is a different animal.
   const onTouchMove = (e: TouchIntent) => {
@@ -133,11 +141,11 @@ export function useFollowTail() {
     if (y === undefined) return;
     const previousY = touchY.current;
     if (previousY !== null && y !== previousY) navigationTop.current = null;
-    if (previousY !== null && y > previousY) following.current = false;
+    if (previousY !== null && y > previousY) setFollowing(false);
     else {
       const el = scrollerRef.current;
       if (el && previousY !== null && touchIntentReachesBottom(el, previousY, y)) {
-        following.current = true;
+        setFollowing(true);
       }
     }
     touchY.current = y;
@@ -153,7 +161,13 @@ export function useFollowTail() {
 
   const armFollow = () => {
     navigationTop.current = null;
-    following.current = true;
+    setFollowing(true);
+  };
+
+  /** The reader asked to come back down (the jump-to-latest pill). */
+  const jumpToTail = () => {
+    armFollow();
+    followTail();
   };
 
   const isAtBottom = () => {
@@ -165,7 +179,7 @@ export function useFollowTail() {
   // wheel/touch gesture. Own the assignment here so following is disabled
   // before it and the browser-clamped destination is recorded synchronously.
   const scrollToDetached = (top: number) => {
-    following.current = false;
+    setFollowing(false);
     const el = scrollerRef.current;
     if (!el) {
       navigationTop.current = null;
@@ -182,7 +196,7 @@ export function useFollowTail() {
   // forgotten along with the content it described.
   const resetTail = () => {
     navigationTop.current = null;
-    following.current = true;
+    setFollowing(true);
     lastTop.current = 0;
   };
 
@@ -194,7 +208,9 @@ export function useFollowTail() {
     onTouchMove,
     followTail,
     armFollow,
+    jumpToTail,
     isAtBottom,
+    detached,
     scrollToDetached,
     resetTail,
   };

@@ -1,4 +1,4 @@
-/* ---- Status bar (T2.6) ---------------------------------------------------
+/* ---- Status bar ---------------------------------------------------
    The workbench strip: model · session · cwd · connection · usage. Slim,
    monospace, shell-owned; folds to a single connection dot. */
 
@@ -10,14 +10,14 @@
      negative left margin gives back the column's content air so the top
      border starts AT the bar's border line — a clean T-junction, not two
      lines crossing — while the left padding puts the controls back on the
-     prompt box's left edge. Vertically the same trade (2026-07-25, Kyle):
-     top margin −2 + top padding 12 keeps the controls exactly where they
-     were (offset sum 10px, as the old 6+4) but lifts the border line so the
+     prompt box's left edge. Vertically the same trade: top margin −2 + top
+     padding 12 keeps the controls in place (offset sum 10px) but lifts the
+     border line so the
      12px above the buttons matches the 12px below (4px padding + 8px
      margin) — the buttons sit centered between line and window bottom. */
   margin: -2px 0 8px calc(-1 * var(--content-air));
   padding: 12px 10px 4px var(--content-air);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.74em;
   color: var(--fg-dimmer);
   border-top: 1px solid var(--border-ghost);
@@ -102,13 +102,13 @@
   color: var(--fg-dim);
 }
 
-/* ---- Status bar: agent identity chip (P.4) ------------------------------ */
+/* ---- Status bar: agent identity chip ------------------------------ */
 .sb-agent {
   color: var(--accent);
   font-weight: 600;
 }
 
-/* The chip as a button (R.4l): opens the settings card's Session section —
+/* The chip as a button: opens the settings card's Session section —
    "what is this session?" — with the chip's exact text look preserved. */
 .sb-agent-btn {
   background: none;
@@ -124,7 +124,7 @@
 }
 
 /* The status bar's two word-pills — "new" (#new session, an <a> to the startup
-   screen) and "end" (#11, two-click end → end?). One shape, opposite hover
+   screen) and "end" (two-click end → end?). One shape, opposite hover
    intents: neutral for new, danger for end. */
 .sb-new,
 .sb-end {
@@ -162,11 +162,11 @@
   background: var(--err-bg);
 }
 
-/* #9: mission-control home — an <a> styled as an icon button, the status
-   bar's outermost far-LEFT control (moved from the far right 2026-07-16);
+/* Mission-control home — an <a> styled as an icon button, the status
+   bar's outermost far-LEFT control;
    the connection dot sits between it and the agent text. */
-/* .sb-workspace — the workspace drawer's phone toggle (2026-07-25, Kyle;
-   one button for Files + Changes since 2026-08-18) — only RENDERS on ≤640px
+/* .sb-workspace — the workspace drawer's phone toggle (one button for
+   Files + Changes) — only RENDERS on ≤640px
    (StatusBar gates on useIsPhone, keeping home the bar's first control on
    desktop); its styles live in the phone block. */
 
@@ -232,7 +232,7 @@
   cursor: default;
 }
 
-/* The "connect a device" pairing button (R.4) — the QR card it opens lives
+/* The "connect a device" pairing button — the QR card it opens lives
    with the dialogs below. */
 .sb-pair {
   display: inline-flex;
@@ -262,7 +262,7 @@
 .fleet-head .sb-pair {
   height: auto;
   padding: 5px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dimmer);
 }
@@ -274,7 +274,7 @@
   vertical-align: -0.14em;
 }
 
-/* The settings gear (S.4) — sits beside the theme pill; the card it opens
+/* The settings gear — sits beside the theme pill; the card it opens
    lives with the dialogs below. */
 .sb-settings {
   display: inline-flex;

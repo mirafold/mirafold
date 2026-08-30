@@ -1,4 +1,4 @@
-// #10 (viewport leak): a local viewport is detached only when its WebSocket
+// The viewport leak: a local viewport is detached only when its WebSocket
 // fires `close`. A half-open socket (tab navigated away, laptop slept, network
 // dropped) may never deliver `close`, so its viewport lingers attached — over-
 // counting viewports and keeping the session from ever reaching its idle
