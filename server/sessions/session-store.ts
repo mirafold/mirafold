@@ -47,6 +47,14 @@ export type StoredSession = {
   cwd: string;
   bangCwd: string;
   backend: Backend;
+  // The credential kind is a hello-time GUESS until the engine classifies it
+  // (registry.ts onBackendKind). A dormant record must keep that fact, or
+  // every relay verdict read from it (the cockpit tail) is answered from the
+  // guess while an attach to the same record is refused (audit 2026-08-30).
+  // Written explicitly for every classifying session; absent on older
+  // records and on agents that never classify — adapters/index.ts
+  // storedKindPending() decides what absent means.
+  kindPending?: boolean;
   resumeId?: string;
   promptOptions: PromptOption[];
   buffer: SessionMsg[];
@@ -399,6 +407,7 @@ const storedMetadataSchema = z.object({
   createdAt: finiteNonnegativeSchema,
   status: z.enum(["idle", "working", "permission"]),
   backend: storedBackendSchema,
+  kindPending: z.boolean().optional(),
   resumeId: z.string().min(1).max(512).optional(),
   model: z.string().optional(),
   usage: storedUsageSchema.optional(),
@@ -492,6 +501,7 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
     cwd: m.cwd,
     bangCwd: m.bangCwd,
     backend: m.backend,
+    ...(m.kindPending !== undefined ? { kindPending: m.kindPending } : {}),
     ...(m.resumeId !== undefined ? { resumeId: m.resumeId } : {}),
     promptOptions,
     buffer,

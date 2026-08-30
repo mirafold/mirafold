@@ -3643,6 +3643,34 @@ an existing panel.
   browser regression's fake socket is an anonymous object/Proxy so
   Playwright's serialized init callback does not depend on esbuild's
   module-scoped `__name` helper.
+- [x] **CP.A — post-feature security audit (2026-08-30).** One finding,
+  fixed with regressions and two cold reviews, nothing deferred: a
+  pending-kind session (OpenCode before its first turn) refused a remote
+  cockpit its tail while active, but its idle-unloaded checkpoint recorded
+  the hello-time guess as fact, so the dormant row sent the tail over the
+  relay while a remote attach to the same record was still refused. Root
+  cause: the checkpoint dropped the "credential unverified" fact. Fix:
+  `StoredSession.kindPending` (additive; written explicitly, true or false,
+  for every session that classifies at engine start), and the dormant row
+  asks the same `relayGateRefusal()` as the active row and the attach path —
+  one verdict per record. The first cold review found the sibling: records
+  written by daemons ≤ 0.6.1 carry no flag, so `storedKindPending()`
+  (adapters/index.ts, beside `restoreBackend`) reads a flagless record of a
+  classifying agent as unverified until its next checkpoint rewrites it —
+  which `open()` does immediately — the same verdict a remote attach reaches
+  by reviving it (so a verified OpenCode record that is revived and
+  idles out again without a turn reads pending until its next local turn —
+  exactly what a remote attach already saw). Revival now goes through the registry's `makeSession`
+  seam, so tests never construct a real engine session.
+  `dormant-relay-verdict.test.ts` pins active/dormant/restored-from-disk
+  through the real remote connection, the verified api-key (sends) and
+  subscription (refuses) siblings, and both legacy-record cases. Checked and
+  clean: tail content (plain text, inert labels for paintings, bidi controls
+  made visible, surrogate-safe 1,200-unit cap, ring-bounded walk), watcher
+  fan-out cost (≤10 snapshots/s, one serialization per watcher variant,
+  remote connections under `MAX_REMOTE_VIEWPORTS`), Esc in the `!` bar
+  (busy is never set by bang frames, so the whole-session Stop is not
+  installed during a plain `!`), no dependency/workflow/secret changes.
 
 **Files.** `server/protocol.ts`; `server/sessions/{registry,connection,
 transcript-tail}.ts`; `web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;

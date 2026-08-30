@@ -736,6 +736,21 @@ function configuredClaudeBackend(
 }
 
 /**
+ * Whether a checkpoint's credential kind is still the hello-time GUESS. A
+ * record written since 2026-08-30 says so explicitly (registry.ts snapshot)
+ * for every session that classifies at engine start; an older record of
+ * such an agent — OpenCode is the one adapter exposing `onBackendKind` —
+ * carries no flag and may hold the shallow hello-time reading, so it reads
+ * as unverified until its next checkpoint rewrites it. Fail-closed on
+ * purpose: this is the same verdict a remote attach reaches by reviving the
+ * record (activate() re-arms kindPending), so the two never disagree.
+ */
+export function storedKindPending(stored: Pick<StoredSession, "backend" | "kindPending">): boolean {
+  if (stored.kindPending !== undefined) return stored.kindPending;
+  return stored.backend.live && stored.backend.agent === "opencode";
+}
+
+/**
  * The backend a SAVED session may be revived on — the restore half of the
  * choice policy, beside resolveChosenBackend so credential-drift rules live
  * in one file. A discovered endpoint was an explicit user choice and is

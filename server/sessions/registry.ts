@@ -9,6 +9,7 @@ import {
   resolveBackend,
   resolveBackendFor,
   restoreBackend,
+  storedKindPending,
   type AgentName,
   type AgentSession,
   type Backend,
@@ -339,7 +340,7 @@ export class SessionRegistry {
     const cwd = resolveCwd(stored.cwd);
     const model = stored.model ?? backend.model;
     const restoredBackend = { ...backend, ...(model ? { model } : {}) };
-    const session = createSession(restoredBackend, { cwd, resumeId: stored.resumeId });
+    const session = this.makeSession(restoredBackend, { cwd, resumeId: stored.resumeId });
     const { buffer, nextSeq } = recoverStoredTranscript(stored);
     const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
     const entry: SessionEntry = {
@@ -430,6 +431,9 @@ export class SessionRegistry {
       cwd: entry.cwd,
       bangCwd: entry.bangCwd,
       backend: { ...entry.backend },
+      // Explicit for every classifying session, so an old flagless record
+      // is recognizably old (adapters/index.ts storedKindPending).
+      ...(entry.session.onBackendKind ? { kindPending: entry.kindPending === true } : {}),
       ...(entry.session.resumeId ? { resumeId: entry.session.resumeId } : {}),
       promptOptions: entry.promptOptions,
       buffer: entry.ring.buffer,
@@ -817,10 +821,13 @@ export class SessionRegistry {
   }
 
   private summarizeDormant(stored: StoredSession, options: SessionSummaryOptions): SessionMeta {
+    // The one relay verdict, pending-awareness included — the same call the
+    // active row and a remote attach make, so a record never answers
+    // "attach refused" and "tail sent" at once.
     const tail = transcriptTailForWatcher(
       stored.buffer,
       options,
-      () => allowedOverRelay(stored.backend.kind),
+      () => !relayGateRefusal({ kind: stored.backend.kind, kindPending: storedKindPending(stored) }),
     );
     return {
       sessionId: stored.id,
