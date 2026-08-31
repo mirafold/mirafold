@@ -3799,6 +3799,33 @@ demos paint every turn because they are scripted; real sessions were not.
   a product decision, it changes what the engine receives every turn) or
   TS.4. Measured facts, not a guess; re-run the replay before believing any
   future change.
+- [x] **TS.5 — Codex: the per-turn paint reminder — built and measured NO-OP** — 2026-08-30
+  (Kyle: "do it"). `CODEX_PAINT_REMINDER` (codex-prompt.ts, ~45 tokens)
+  rides inside the engine input of every turn after the first, skipped
+  right after a turn that painted (`todo-list` excluded; artifacts count);
+  only engine-run turns inform it (a prompt refused before turn/start is
+  not a prose turn); `/model` and `/effort` never carry it; engine-only —
+  the transcript's `user_prompt` is the registry's copy of what was typed.
+  Unit test pins all of that (`codex.test.ts`, TS.5). Cost: a 30-turn
+  session accumulates ~37k reminder tokens against millions — under 1%.
+  **Measured (condition C, same 16-turn replay): 5/16 turns painted (S 2/7,
+  P 1/6, – 2/3) vs 3/16 old note and 4/16 new note.** The gain is not the
+  reminder's: with the skip-after-a-painting rule it rode on ten turns
+  (6–14 and 16) and **none of those ten painted**; C's paintings came from
+  turns 1–4 (no reminder in play, the same early advisory cluster as A and
+  B) and turn 15. Across all three runs (48 turns) paintings cluster on the
+  first three or four advisory turns of a session and reappear only
+  sporadically; every "work" turn (the bug diagnosis, `fix it.`, the ctrl+
+  bug) stayed prose in all three. **Verdict: instructions — at thread start
+  or per turn — do not move this model's mid-session choice to paint.** The
+  reminder stays on the branch as its own commit so the experiment is in
+  history; recommendation is to drop that commit rather than ship a
+  measured no-op that costs tokens. What the replays do suggest: the model
+  paints when it is *advising* and not when it is *reporting work* — for
+  work turns Mirafold already shows the diffs, commands and results as the
+  engine's own tool rows, so the missing piece is the prose summary, not
+  the data. Any further lever is product design (what a work summary should
+  look like), not prompting.
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.
