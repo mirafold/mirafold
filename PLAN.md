@@ -3799,7 +3799,7 @@ demos paint every turn because they are scripted; real sessions were not.
   a product decision, it changes what the engine receives every turn) or
   TS.4. Measured facts, not a guess; re-run the replay before believing any
   future change.
-- [x] **TS.5 — Codex: the per-turn paint reminder — built and measured NO-OP** — 2026-08-30
+- [x] **TS.5 — Codex: the per-turn paint reminder — built, measured NO-OP, reverted** — 2026-08-30/31
   (Kyle: "do it"). `CODEX_PAINT_REMINDER` (codex-prompt.ts, ~45 tokens)
   rides inside the engine input of every turn after the first, skipped
   right after a turn that painted (`todo-list` excluded; artifacts count);
@@ -3818,9 +3818,9 @@ demos paint every turn because they are scripted; real sessions were not.
   sporadically; every "work" turn (the bug diagnosis, `fix it.`, the ctrl+
   bug) stayed prose in all three. **Verdict: instructions — at thread start
   or per turn — do not move this model's mid-session choice to paint.** The
-  reminder stays on the branch as its own commit so the experiment is in
-  history; recommendation is to drop that commit rather than ship a
-  measured no-op that costs tokens. What the replays do suggest: the model
+  reminder was committed as its own experiment commit and then **reverted
+  (86ffb21 — Kyle, 2026-08-31: "drop the reminder if it makes no
+  difference")**: the experiment stays in history, the code does not ship. What the replays do suggest: the model
   paints when it is *advising* and not when it is *reporting work* — for
   work turns Mirafold already shows the diffs, commands and results as the
   engine's own tool rows, so the missing piece is the prose summary, not
@@ -3890,6 +3890,25 @@ tap both read `a-added.ts` inside the 250 ms `readGate`. It passed in
 yesterday's CP.T run, so it is environment-sensitive like IH.F; recorded
 here, not chased on this branch.
 
+- [ ] **TS.13 — OpenCode 1.18 API drift (found 2026-08-31 the moment the
+  local install was repaired).** Against OpenCode 1.18.25: the OC.5 live
+  test times out after the first `permission_request` ("saw:
+  permission_request" and nothing else in 120 s) — the adapter's reply to
+  the legacy `permission.asked` no longer moves the turn, and the spec now
+  carries `permission.v2.asked/replied`, `question.*`/`question.v2.*`, and a
+  whole `session.next.*` per-session stream (text/reasoning/tool/step/
+  compaction/revert events) beside the legacy `message.*` events. Part
+  kinds the adapter does not map: **`patch`, `file`** (edits and files —
+  the OpenCode counterpart of the Codex diff bug), `agent`, `subtask`,
+  `compaction`, `retry`. Ledger classification for now: `session.next.*`
+  deliberately ignored (the legacy stream carries the same content today —
+  this step decides the migration); the v2 permission/question events and
+  the six parts are unmapped-with-a-step, so they surface as notices if
+  they arrive. Work: reproduce OC.5's stall with raw event logging, move
+  the permission reply to the endpoint 1.18 honors, map `patch`/`file`
+  parts to the same diff rows Codex edits now get, then re-run OC.5 and the
+  conformance test. Not started; Kyle's OpenCode sessions (08-13/08-18)
+  predate the version that broke this.
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.

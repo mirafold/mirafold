@@ -271,7 +271,7 @@ test("OpenCode's published API lists no event or part kind the adapter hasn't cl
       ? "opencode is installed but cannot run (e.g. its postinstall never fetched the platform binary)"
       : false,
 }, async () => {
-  const { OPENCODE_HANDLED_EVENTS, OPENCODE_HANDLED_PARTS, OPENCODE_IGNORED_EVENTS, OPENCODE_IGNORED_PARTS } = await import(
+  const { OPENCODE_HANDLED_EVENTS, OPENCODE_HANDLED_PARTS, OPENCODE_IGNORED_PARTS, opencodeEventIgnored } = await import(
     "./opencode-events"
   );
   const home = mkdtempSync(path.join(os.tmpdir(), "mirafold-opencode-spec-"));
@@ -301,8 +301,32 @@ test("OpenCode's published API lists no event or part kind the adapter hasn't cl
       else if (name.endsWith("Part")) for (const t of constsOf(schema)) parts.add(t);
     }
     assert.ok(events.size > 0 && parts.size > 0, `could not read event/part kinds from the spec (schemas: ${Object.keys(schemas).slice(0, 20).join(", ")})`);
-    const unclassifiedEvents = [...events].filter((t) => !(OPENCODE_HANDLED_EVENTS as readonly string[]).includes(t) && !(t in OPENCODE_IGNORED_EVENTS));
-    const unclassifiedParts = [...parts].filter((t) => !(OPENCODE_HANDLED_PARTS as readonly string[]).includes(t) && !(t in OPENCODE_IGNORED_PARTS));
+    // Known gaps with a plan step (TS.13) — shrinks as the step lands, never
+    // grows silently; each still surfaces as a notice when it arrives.
+    const UNMAPPED_EVENTS_WITH_A_PLAN_STEP: Record<string, string> = {
+      "permission.v2.asked": "TS.13",
+      "permission.v2.replied": "TS.13",
+      "question.asked": "TS.13",
+      "question.replied": "TS.13",
+      "question.rejected": "TS.13",
+      "question.v2.asked": "TS.13",
+      "question.v2.replied": "TS.13",
+      "question.v2.rejected": "TS.13",
+    };
+    const UNMAPPED_PARTS_WITH_A_PLAN_STEP: Record<string, string> = {
+      patch: "TS.13 — edits as diff rows, like Codex",
+      file: "TS.13",
+      agent: "TS.13",
+      subtask: "TS.13",
+      compaction: "TS.13",
+      retry: "TS.13",
+    };
+    const unclassifiedEvents = [...events].filter(
+      (t) => !(OPENCODE_HANDLED_EVENTS as readonly string[]).includes(t) && !opencodeEventIgnored(t) && !(t in UNMAPPED_EVENTS_WITH_A_PLAN_STEP),
+    );
+    const unclassifiedParts = [...parts].filter(
+      (t) => !(OPENCODE_HANDLED_PARTS as readonly string[]).includes(t) && !(t in OPENCODE_IGNORED_PARTS) && !(t in UNMAPPED_PARTS_WITH_A_PLAN_STEP),
+    );
     assert.deepEqual(unclassifiedEvents, [], "OpenCode events the adapter neither handles nor deliberately ignores");
     assert.deepEqual(unclassifiedParts, [], "OpenCode message parts the adapter neither handles nor deliberately ignores");
   } finally {

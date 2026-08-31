@@ -331,18 +331,11 @@ for a tool rarely paints (Phase TS, 2026-08-30):
   adapter's developer instructions therefore open with a where-are-the-tools
   note (`codex-prompt.ts`) that names all three paths with exact call shapes
   and makes loading the tool the first step of any structured reply.
-  A 16-turn replay of real prompts (PLAN TS.3) showed that note is not the
-  lever — Codex paints on early advisory turns and then answers in prose
-  for the rest of a working session — so the adapter also appends a terse
-  **per-turn paint reminder** (`CODEX_PAINT_REMINDER`) to the engine input
-  of every turn after the first, skipped right after a turn that painted
-  (Codex's own `todo-list` checklist does not count). Engine-only: the
-  registry emits `user_prompt` from what the user typed, so the transcript
-  never shows it; `/model` and `/effort` never carry it. ~45 tokens a turn,
-  well under 1% of a session's input. Measured on the same replay (PLAN
-  TS.5): the ten turns it rode on painted nothing — instructions at any
-  point do not move this model's mid-session choice to paint, so treat it
-  as an experiment on record, not a fix.
+  A 16-turn replay of real prompts (PLAN TS.3) measured that note — and a
+  per-turn paint reminder tried after it (TS.5, reverted) — as no-ops:
+  Codex paints on early advisory turns and then answers in prose for the
+  rest of a working session whatever the instructions say. Prompting is
+  not the lever; what the transcript shows of the engine's own work is.
 
 **Nothing the engine sends is dropped silently (TS.7).** Each adapter's
 dispatcher has a default branch: an item, event, or message kind with no
