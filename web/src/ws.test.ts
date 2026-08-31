@@ -62,6 +62,21 @@ test("closing a supplemental socket restores browser-error forwarding to the ses
     1,
     "the still-live session socket resumes error forwarding",
   );
+
+  // PR #77 review (P2): a supplemental socket that is refused or still
+  // reconnecting must not swallow reports into a queue its close() discards
+  // while the session socket sits open beside it — the newest READY socket
+  // carries them, not the newest socket.
+  const connecting = new SocketClient("ws://test/connecting");
+  const connectingSocket = FakeWS.instances[2]; // never opened
+  dom.error({ error: new Error("while the cockpit socket is down"), message: "down", filename: "x.tsx", lineno: 3 });
+  assert.equal(
+    primarySocket.parsedSent().filter((message) => message.type === "client_error").length,
+    2,
+    "the usable session socket carries the report",
+  );
+  assert.equal(connectingSocket.parsedSent().filter((message) => message.type === "client_error").length, 0);
+  connecting.close();
   primary.close();
 });
 

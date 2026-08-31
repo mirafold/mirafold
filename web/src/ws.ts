@@ -82,7 +82,12 @@ function installErrorForwarding() {
   if (errorForwardingInstalled) return;
   errorForwardingInstalled = true;
   const forward = (message: string) => {
-    const errorSocket = errorSockets[errorSockets.length - 1];
+    // The newest socket that can send NOW; a supplemental watcher that is
+    // refused or reconnecting must not swallow reports into a queue its
+    // close() will discard while the session socket sits open beside it.
+    const errorSocket =
+      [...errorSockets].reverse().find((client) => client.isReady()) ??
+      errorSockets[errorSockets.length - 1];
     if (!errorSocket || errorReports >= ERROR_REPORT_MAX) return;
     errorReports++;
     errorSocket.send({ type: "client_error", message: message.slice(0, ERROR_REPORT_CLIP) });
@@ -438,8 +443,13 @@ export class SocketClient {
       : msg;
   }
 
+  /** Open and (on the relay path) handshaken: a send goes out now, not to `pending`. */
+  isReady(): boolean {
+    return this.ready && this.ws?.readyState === WebSocket.OPEN;
+  }
+
   private transmitIfOpen(msg: ClientMsg): boolean {
-    if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return false;
+    if (!this.isReady()) return false;
     this.transmit(msg);
     return true;
   }
