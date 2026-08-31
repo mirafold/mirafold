@@ -736,18 +736,19 @@ function configuredClaudeBackend(
 }
 
 /**
- * Whether a checkpoint's credential kind is still the hello-time GUESS. A
- * record written since 2026-08-30 says so explicitly (registry.ts snapshot)
- * for every session that classifies at engine start; an older record of
- * such an agent — OpenCode is the one adapter exposing `onBackendKind` —
- * carries no flag and may hold the shallow hello-time reading, so it reads
- * as unverified until its next checkpoint rewrites it. Fail-closed on
- * purpose: this is the same verdict a remote attach reaches by reviving the
- * record (activate() re-arms kindPending), so the two never disagree.
+ * Whether a DORMANT record's credential kind is a verdict the relay gate may
+ * act on. An adapter that classifies at engine start — OpenCode is the one
+ * exposing `onBackendKind` — re-classifies on every revival (registry.ts
+ * activate() re-arms kindPending; the resumed engine may now back the
+ * session with a subscription or the Zen gateway even though the checkpoint
+ * last saw an API key), so a checkpoint of such an agent never holds a
+ * CURRENT verdict: it is pending until revived and classified, exactly what
+ * a remote attach to the same record is told. A non-classifying agent's kind
+ * was truthful at create and stays the record's own. (Audit 2026-08-30;
+ * tightened on the PR #77 review.)
  */
-export function storedKindPending(stored: Pick<StoredSession, "backend" | "kindPending">): boolean {
-  if (stored.kindPending !== undefined) return stored.kindPending;
-  return stored.backend.live && stored.backend.agent === "opencode";
+export function dormantKindPending(backend: Backend): boolean {
+  return backend.live && backend.agent === "opencode";
 }
 
 /**

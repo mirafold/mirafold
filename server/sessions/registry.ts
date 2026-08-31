@@ -9,7 +9,7 @@ import {
   resolveBackend,
   resolveBackendFor,
   restoreBackend,
-  storedKindPending,
+  dormantKindPending,
   type AgentName,
   type AgentSession,
   type Backend,
@@ -431,9 +431,6 @@ export class SessionRegistry {
       cwd: entry.cwd,
       bangCwd: entry.bangCwd,
       backend: { ...entry.backend },
-      // Explicit for every classifying session, so an old flagless record
-      // is recognizably old (adapters/index.ts storedKindPending).
-      ...(entry.session.onBackendKind ? { kindPending: entry.kindPending === true } : {}),
       ...(entry.session.resumeId ? { resumeId: entry.session.resumeId } : {}),
       promptOptions: entry.promptOptions,
       buffer: entry.ring.buffer,
@@ -827,7 +824,11 @@ export class SessionRegistry {
     const tail = transcriptTailForWatcher(
       stored.buffer,
       options,
-      () => !relayGateRefusal({ kind: stored.backend.kind, kindPending: storedKindPending(stored) }),
+      () =>
+        !relayGateRefusal({
+          kind: stored.backend.kind,
+          kindPending: dormantKindPending(stored.backend),
+        }),
     );
     return {
       sessionId: stored.id,

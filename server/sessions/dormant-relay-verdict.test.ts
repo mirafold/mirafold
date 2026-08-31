@@ -5,20 +5,23 @@ import os from "node:os";
 import path from "node:path";
 import type { Backend } from "../adapters";
 import type { CredentialKind } from "../provider-policy";
-
-type KindUpdate = { kind: CredentialKind; provider?: string };
 import type { WireMsg } from "../protocol";
 import { openConnection, type Connection } from "./connection";
 import { SessionRegistry } from "./registry";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
 
-// Audit 2026-08-30: a session whose credential kind is still a hello-time
-// GUESS (OpenCode before its first turn) refuses every remote act while it is
-// active, but its idle-unloaded checkpoint used to record the guess as fact —
-// so the relay verdict a dormant row gave the cockpit tail contradicted the
-// verdict the same record gave a remote attach. These tests pin ONE verdict
-// per record, active or dormant, in memory or restored from disk.
+// Audit 2026-08-30 (+ PR #77 review): a session whose credential kind is a
+// hello-time GUESS (OpenCode) refuses every remote act while active, but its
+// idle-unloaded checkpoint used to answer the cockpit-tail relay verdict from
+// the stored kind — so the dormant row sent text over the relay while a
+// remote attach to the same record was refused. Revival always re-classifies
+// such an agent, so its dormant record holds no current verdict at all: the
+// tail is pending until the session is warm and classified. These tests pin
+// ONE verdict per record — active, dormant, or restored from disk — through
+// the real remote connection, and that agents whose kind was truthful at
+// create are not over-blocked.
 
+type KindUpdate = { kind: CredentialKind; provider?: string };
 const OPTIMISTIC: Backend = { agent: "opencode", kind: "api-key", live: true };
 
 /** A classifying session: kind stays pending until the test publishes it. */
@@ -44,7 +47,6 @@ class ClassifyingSession {
 }
 
 const tmp = (prefix: string) => mkdtempSync(path.join(os.tmpdir(), prefix));
-const onDisk = (store: SessionCheckpointStore, id: string) => store.loadAll().sessions.get(id);
 const send = (c: Connection, msg: unknown) => c.handleMessage(JSON.stringify(msg));
 const waitUntil = async (done: () => boolean) => {
   for (let i = 0; i < 400 && !done(); i++) await new Promise((r) => setTimeout(r, 5));
@@ -80,8 +82,7 @@ const remoteWatchTail = (reg: SessionRegistry, id: string) => {
 };
 
 async function unload(reg: SessionRegistry, id: string) {
-  const entry = reg.get(id)!;
-  reg.releaseIfUnviewed(entry);
+  reg.releaseIfUnviewed(reg.get(id)!);
   await waitUntil(() => reg.get(id) === undefined);
 }
 
@@ -99,7 +100,6 @@ test("a pending-kind session gives a remote cockpit no tail — active, dormant,
   assert.equal(tailFor(reg, e.id, true), undefined, "dormant: still refused over the relay");
   assert.equal(remoteWatchTail(reg, e.id), undefined, "…through the real remote connection too");
 
-  // A daemon restart reads the record back from disk: the fact survives.
   const { reg: restarted } = rig(store);
   assert.equal(restarted.get(e.id), undefined, "restored dormant, not warm");
   assert.equal(tailFor(restarted, e.id, false), "unverified transcript");
@@ -108,9 +108,9 @@ test("a pending-kind session gives a remote cockpit no tail — active, dormant,
   assert.equal(restarted.end(e.id), true);
 });
 
-test("once the kind is verified, the dormant verdict is the kind's own: api-key sends, subscription refuses", async () => {
-  for (const [kind, expected] of [
-    ["api-key", `${"api-key"} transcript`],
+test("a classifying agent's verified kind is a WARM verdict only: api-key sends while active, nothing sends once dormant", async () => {
+  for (const [kind, activeExpected] of [
+    ["api-key", "api-key transcript"],
     ["subscription", undefined],
   ] as const) {
     const { reg, sessions, store } = rig();
@@ -118,33 +118,20 @@ test("once the kind is verified, the dormant verdict is the kind's own: api-key 
     reg.broadcast(e, { type: "text_delta", text: `${kind} transcript` });
     sessions[0].publish({ kind });
     assert.equal(e.kindPending, false);
-    assert.equal(tailFor(reg, e.id, true), expected, `active ${kind}`);
+    assert.equal(tailFor(reg, e.id, true), activeExpected, `active ${kind}`);
 
     await unload(reg, e.id);
-    assert.equal(tailFor(reg, e.id, true), expected, `dormant ${kind}`);
-    assert.equal(remoteWatchTail(reg, e.id), expected, `dormant ${kind} over the real connection`);
+    assert.equal(tailFor(reg, e.id, false), `${kind} transcript`, `dormant ${kind}: local still sees it`);
+    assert.equal(tailFor(reg, e.id, true), undefined, `dormant ${kind}: revival re-classifies, so no current verdict`);
+    assert.equal(remoteWatchTail(reg, e.id), undefined, `dormant ${kind} over the real connection`);
 
     const { reg: restarted } = rig(store);
-    assert.equal(tailFor(restarted, e.id, true), expected, `restored ${kind}`);
-    assert.equal(onDisk(store, e.id)?.kindPending, false, "a verified classifying record says so explicitly");
+    assert.equal(tailFor(restarted, e.id, true), undefined, `restored ${kind}`);
     assert.equal(restarted.end(e.id), true);
   }
 });
 
-test("the checkpoint records the pending fact and clears it when the kind is published", () => {
-  const { reg, sessions, store } = rig();
-  const e = reg.create({ cwd: tmp("mf-verdict-root-") });
-  assert.equal(onDisk(store, e.id)?.kindPending, true, "written at create, while pending");
-  sessions[0].publish({ kind: "api-key" });
-  assert.equal(onDisk(store, e.id)?.kindPending, false, "cleared by the verdict's own checkpoint");
-  reg.end(e.id);
-});
-
-// Records written before the flag existed (any daemon ≤ 0.6.1) carry none.
-// For an agent that classifies at engine start that record may hold the
-// hello-time guess, so it reads as unverified until rewritten; an agent whose
-// kind was truthful at create reads as its kind says.
-function legacyRecord(id: string, backend: Backend, text: string): StoredSession {
+function record(id: string, backend: Backend, text: string): StoredSession {
   const root = tmp("mf-verdict-root-");
   return {
     version: 1,
@@ -162,32 +149,20 @@ function legacyRecord(id: string, backend: Backend, text: string): StoredSession
   };
 }
 
-test("a flagless (pre-2026-08-30) record of a classifying agent reads as unverified; a non-classifying one reads as its kind", () => {
+test("agents whose kind was truthful at create keep the record's own verdict; the mock stand-in is never gated", () => {
   const store = new SessionCheckpointStore(tmp("mf-verdict-store-"));
-  const opencode = legacyRecord("legacyoc", { agent: "opencode", kind: "api-key", live: true }, "legacy opencode text");
-  const claude = legacyRecord("legacycc", { agent: "claude-code", kind: "api-key", live: false }, "legacy claude text");
-  store.write(opencode);
-  store.write(claude);
+  store.write(record("liveoc", { agent: "opencode", kind: "api-key", live: true }, "live opencode text"));
+  store.write(record("mockoc", { agent: "opencode", kind: "none", live: false }, "mock opencode text"));
+  store.write(record("cc-api", { agent: "claude-code", kind: "api-key", live: true }, "claude api text"));
+  store.write(record("cc-sub", { agent: "claude-code", kind: "subscription", live: true }, "claude sub text"));
   const { reg } = rig(store);
-  assert.equal(reg.get("legacyoc"), undefined, "loaded dormant");
-  assert.equal(tailFor(reg, "legacyoc", false), "legacy opencode text", "local cockpit still sees it");
-  assert.equal(tailFor(reg, "legacyoc", true), undefined, "remote: fail-closed until rewritten");
-  assert.equal(remoteWatchTail(reg, "legacyoc"), undefined);
-  assert.equal(tailFor(reg, "legacycc", true), "legacy claude text", "a truthful api-key record is not over-blocked");
-  assert.equal(reg.end("legacyoc"), true);
-  assert.equal(reg.end("legacycc"), true);
-});
+  for (const id of ["liveoc", "mockoc", "cc-api", "cc-sub"]) assert.equal(reg.get(id), undefined, `${id} loaded dormant`);
 
-test("opening a flagless classifying record rewrites it explicitly: pending on revive, verified after the kind publishes", async () => {
-  const store = new SessionCheckpointStore(tmp("mf-verdict-store-"));
-  store.write(legacyRecord("legacyoc2", { agent: "opencode", kind: "api-key", live: true }, "legacy opencode text"));
-  const { reg, sessions } = rig(store);
-  const revived = reg.open("legacyoc2")!;
-  assert.equal(revived.kindPending, true);
-  assert.equal(onDisk(store, "legacyoc2")?.kindPending, true, "the revive checkpoint says pending explicitly");
-  sessions[0].publish({ kind: "api-key" });
-  assert.equal(onDisk(store, "legacyoc2")?.kindPending, false);
-  await unload(reg, "legacyoc2");
-  assert.equal(tailFor(reg, "legacyoc2", true), "legacy opencode text", "verified: the remote cockpit gets it");
-  assert.equal(reg.end("legacyoc2"), true);
+  assert.equal(tailFor(reg, "liveoc", false), "live opencode text", "local cockpit sees it");
+  assert.equal(tailFor(reg, "liveoc", true), undefined, "a live classifying record: pending until revived");
+  assert.equal(remoteWatchTail(reg, "liveoc"), undefined);
+  assert.equal(tailFor(reg, "mockoc", true), "mock opencode text", "the API-free MockSession never classifies");
+  assert.equal(tailFor(reg, "cc-api", true), "claude api text", "a truthful api-key record is not over-blocked");
+  assert.equal(tailFor(reg, "cc-sub", true), undefined, "a truthful subscription record is refused as its kind says");
+  for (const id of ["liveoc", "mockoc", "cc-api", "cc-sub"]) assert.equal(reg.end(id), true);
 });
