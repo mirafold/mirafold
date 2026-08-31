@@ -3876,6 +3876,20 @@ command output not streamed; a dozen notification kinds unhandled.
   server's API description and asserts event/part variants against the
   handled set; Gemini: the Tier-4 run fails on any unclassified kind.
 
+**Completion evidence (2026-08-31).** `yarn typecheck`; Tier 1
+**1,069/1,069**; Tier 2 **161/161**; Tier 3 **126/127**; visual gate
+**11/11**; Tier 4: the Codex protocol digest matches the installed Codex,
+the OpenCode conformance test skips (broken local install, above). Live
+checks against the real engine: edits as diffs, phases on real prose,
+streamed ticks a second apart. The one Tier-3 failure — `diff-panel.e2e.ts`
+"CR.2 phone: full-screen one-file review…" — is **pre-existing**: it fails
+identically on unmodified `next` (72ef7b8) in a fresh worktree, in isolation,
+with the Files view showing the daemon's own `fs_read` throttle refusal
+("requests are arriving too fast") after the reopened drawer and the test's
+tap both read `a-added.ts` inside the 250 ms `readGate`. It passed in
+yesterday's CP.T run, so it is environment-sensitive like IH.F; recorded
+here, not chased on this branch.
+
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.
