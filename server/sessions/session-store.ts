@@ -94,6 +94,18 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("text_delta"),
       text: z.string(),
       parentId: idSchema.optional(),
+      phase: z.enum(["commentary", "final"]).optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  // Streamed output of a running call (TS.11): kept so a reload mid-command
+  // still shows what had arrived.
+  z
+    .object({
+      type: z.literal("tool_output_delta"),
+      id: idSchema,
+      text: z.string(),
+      parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -141,6 +153,15 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       id: idSchema,
       input: jsonRecordSchema.optional(),
       parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("tool_update"),
+      id: idSchema,
+      detail: z.string().optional(),
+      input: jsonRecordSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -207,7 +228,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("notice"),
       text: z.string(),
-      kind: z.enum(["retry", "compaction", "rate_limit", "refusal", "warning"]).optional(),
+      kind: z.enum(["retry", "compaction", "rate_limit", "refusal", "warning", "info"]).optional(),
       source: z.string().max(120).optional(),
       seq: sequenceSchema,
     })
@@ -287,7 +308,11 @@ export function admitForCheckpoint(msg: SessionMsg): SessionMsg | undefined {
       const { costUsd, ...rest } = m;
       m = { ...rest, inputTokens, outputTokens, ...(costOk && costUsd !== undefined ? { costUsd } : {}) };
     }
-  } else if (m.type === "tool_use" && m.input !== undefined && !isObject(m.input)) {
+  } else if (
+    (m.type === "tool_use" || m.type === "tool_update") &&
+    m.input !== undefined &&
+    !isObject(m.input)
+  ) {
     const { input: _input, ...rest } = m;
     m = rest;
   } else if (m.type === "picker" && m.rows.length > PICKER_ROW_CAP) {

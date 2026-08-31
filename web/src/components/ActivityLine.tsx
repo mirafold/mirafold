@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { visibleControls } from "../visible-controls";
 
 // The terminal agents' liveness cue, faithfully: an asterisk breathing
 // through thin→fat glyph frames beside a ticking elapsed count. Real frame
@@ -48,7 +49,7 @@ export function ActivityLine({ busy, label }: { busy: boolean; label: string }) 
     // a line whose text changes every second would drown a screen reader.
     <div className="activity-line" aria-hidden="true">
       <span className="activity-glyph">{FRAMES[frame]}</span>
-      <span className="activity-label">{label}</span>
+      <span className="activity-label">{visibleControls(label)}</span>
       <span className="activity-elapsed">({elapsed}s)</span>
     </div>
   );

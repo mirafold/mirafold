@@ -1,5 +1,6 @@
 import path from "node:path";
 import { createLogger, verbose } from "../log";
+import { UnknownKindReporter } from "./wire-helpers";
 import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -71,6 +72,7 @@ export class GeminiCliSession implements AgentSession {
   // Non-render tool ids we announced, and buffered Mirafold render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
+  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Gemini CLI", (m) => createLogger("gemini-cli").warn(m));
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
   // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
@@ -627,7 +629,25 @@ export class GeminiCliSession implements AgentSession {
         const pending = this.pendingRenders.get(id);
         if (pending) {
           this.pendingRenders.delete(id);
-          if (ev["status"] !== "error") this.emitGenerativeUI(pending, ev["output"]);
+          if (ev["status"] !== "error" && this.emitGenerativeUI(pending, ev["output"])) break;
+          // A successful render call is represented by its painting. A failed
+          // or unsynthesizable one is still a real engine action: show the
+          // ordinary call/result pair instead of erasing it.
+          this.emit({
+            type: "tool_use",
+            name: `${MCP_PREFIX}${pending.tool}`,
+            detail: toolDetail(pending.params),
+            id,
+            input: pending.params,
+          });
+          const capped = capOutput(String(ev["output"] ?? ""));
+          this.emit({
+            type: "tool_result",
+            output: capped.text,
+            truncatedBytes: capped.truncatedBytes,
+            isError: ev["status"] === "error",
+            id,
+          });
           break;
         }
         if (!this.announced.delete(id)) break;
@@ -660,13 +680,20 @@ export class GeminiCliSession implements AgentSession {
         });
         break;
       }
+      default:
+        if (typeof eventType === "string") this.unknown.report("event", eventType);
     }
   }
 
   /** A buffered Mirafold render tool call → the render/artifact SessionMsg it stands for. */
-  private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
+  private emitGenerativeUI(
+    pending: { tool: string; params: Record<string, unknown> },
+    output: unknown,
+  ): boolean {
     const id = renderIdFor({ ackText: output, argId: pending.params["id"] });
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);
-    if (msg) this.emit(msg);
+    if (!msg) return false;
+    this.emit(msg);
+    return true;
   }
 }

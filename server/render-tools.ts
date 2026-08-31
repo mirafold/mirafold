@@ -171,6 +171,13 @@ export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: 
   return createSdkMcpServer({
     name: "ui",
     version: "1.0.0",
+    // Claude Code defers MCP tool definitions behind ToolSearch by default
+    // (Agent SDK tool search), so the model has to go looking for render_*
+    // before it can paint — and it mostly answers in prose instead. This
+    // marks only Mirafold's own server always-loaded (`_meta
+    // anthropic/alwaysLoad` on each tool); the user's other MCP servers keep
+    // the deferral their terminal Claude Code applies (faithful skin).
+    alwaysLoad: true,
     tools: [
       // Handler args collapse to a union across shapes; the id is all the
       // shared handler reads, and the engine validates props per schema.

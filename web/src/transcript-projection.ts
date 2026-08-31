@@ -18,6 +18,9 @@ export type TextRow = {
   role: "user" | "assistant";
   text: string;
   done: boolean;
+  /** The engine's own classification (text_delta.phase): commentary is
+   *  narration, final is the answer. Unset → the length heuristic decides. */
+  phase?: "commentary" | "final";
 };
 
 export type RenderRow = {
@@ -51,6 +54,9 @@ export type ToolRow = {
   isError?: boolean;
   startedAt: number;
   replayed?: boolean;
+  /** Output streamed while the call runs (tool_output_delta); `output` is
+   *  still the engine's authoritative text once the call completes. */
+  streamed?: string;
 };
 
 export type SubagentProseRow = {
@@ -118,6 +124,10 @@ export const NARRATION_MAX_LINES = 2;
 export const NARRATION_MAX_CHARS = 160;
 export function isShortNarration(row: TextRow): boolean {
   if (row.role !== "assistant") return false;
+  // An engine that declares the phase settles it: commentary is narration
+  // whatever its length; the answer never folds.
+  if (row.phase === "commentary") return row.text.trim().length > 0;
+  if (row.phase === "final") return false;
   const text = row.text.trim();
   if (!text) return false;
   const lines = text.split("\n").filter((line) => line.trim()).length;
@@ -389,6 +399,9 @@ function buildSnapshot(
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
   let streamingId: number | null = null;
+  // The phase the open prose row was started with (text_delta.phase); a
+  // delta declaring a different phase closes the row and opens a new one.
+  let streamingPhase: "commentary" | "final" | undefined;
   let thinkingId: number | null = null;
   const subtextIds = new Map<string, number>();
   let openToolBatches: number[] = [];
@@ -482,6 +495,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "text_delta": {
+        // A phase change (commentary → final answer) starts a new row so the
+        // narration and the answer never share one block.
+        if (streamingId !== null && msg.phase !== undefined && msg.phase !== streamingPhase) {
+          const closing = streamingId;
+          entries = entries.map((entry) => (entry.id === closing ? { ...entry, done: true } : entry));
+          streamingId = null;
+        }
         if (streamingId !== null) {
           const id = streamingId;
           entries = entries.map((entry) =>
@@ -492,9 +512,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         } else {
           const id = nextTranscriptId++;
           streamingId = id;
+          streamingPhase = msg.phase;
           entries = [
             ...entries,
-            { kind: "text", id, role: "assistant", text: msg.text, done: false },
+            { kind: "text", id, role: "assistant", text: msg.text, done: false, ...(msg.phase ? { phase: msg.phase } : {}) },
           ];
         }
         return true;
@@ -599,12 +620,35 @@ export function createTranscriptProjection(): TranscriptProjection {
         ];
         return true;
       }
+      case "tool_update": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? {
+                ...entry,
+                ...(msg.detail !== undefined ? { detail: msg.detail } : {}),
+                ...(msg.input !== undefined ? { input: msg.input } : {}),
+              }
+            : entry,
+        );
+        return true;
+      }
+      case "tool_output_delta": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? { ...entry, streamed: (entry.streamed ?? "") + msg.text }
+            : entry,
+        );
+        return true;
+      }
       case "tool_result": {
         entries = entries.map((entry) =>
           entry.kind === "tool" && entry.toolId === msg.id
             ? {
                 ...entry,
                 output: msg.output,
+                // The authoritative output subsumes the streamed copy —
+                // release it (PR #80 review).
+                streamed: undefined,
                 truncatedBytes: msg.truncatedBytes,
                 isError: msg.isError,
               }
@@ -624,10 +668,18 @@ export function createTranscriptProjection(): TranscriptProjection {
               ...entry,
               settled: true,
               // A pending call at turn end was interrupted. Keep it expanded
-              // and explicit instead of folding it as successful activity.
+              // and explicit instead of folding it as successful activity —
+              // and keep the output observed before the stop; the streamed
+              // copy is released either way (PR #80 review).
               ...(entry.output === undefined
-                ? { output: "(interrupted — no result)", isError: true }
+                ? {
+                    output: entry.streamed
+                      ? `${entry.streamed}\n(interrupted — no result)`
+                      : "(interrupted — no result)",
+                    isError: true,
+                  }
                 : {}),
+              streamed: undefined,
             };
           }
           return entry;

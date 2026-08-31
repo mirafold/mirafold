@@ -51,6 +51,7 @@ const toolBlockProps = (call: {
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  streamed?: string;
 }) => ({
   name: call.name,
   detail: call.detail,
@@ -58,6 +59,7 @@ const toolBlockProps = (call: {
   output: call.output,
   truncatedBytes: call.truncatedBytes,
   isError: call.isError,
+  streamed: call.streamed,
 });
 
 // Memoized on the entry's text: a settled block's markdown tree is reused
@@ -67,12 +69,16 @@ type AssistantMarkdown = ReturnType<typeof workspaceMarkdown>;
 const AssistantTurn = memo(function AssistantTurn({
   text,
   markdown,
+  narration,
 }: {
   text: string;
   markdown: AssistantMarkdown;
+  /** Engine-declared commentary that did not fold into an activity record
+   *  (nothing followed it): shown as narration, dim, so the answer stands out. */
+  narration?: boolean;
 }) {
   return (
-    <div className="turn turn-assistant markdown">
+    <div className={narration ? "turn turn-assistant turn-narration markdown" : "turn turn-assistant markdown"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
@@ -648,7 +654,9 @@ function ZoneEntry({
         ? "↻"
         : entry.noticeKind === "compaction"
           ? "⊙"
-          : "⚠"; // rate_limit / refusal / unknown
+          : entry.noticeKind === "info"
+            ? "ℹ"
+            : "⚠"; // rate_limit / refusal / unknown
     // An engine's own words are BADGED and set apart: unbadged,
     // this dim line is Mirafold speaking, and text
     // chosen by a model — or by whatever a model just read — must
@@ -805,6 +813,6 @@ function ZoneEntry({
       <span className="turn-user-text">{entry.text}</span>
     </InputNavigationStop>
   ) : (
-    <AssistantTurn text={entry.text} markdown={assistantMarkdown} />
+    <AssistantTurn text={entry.text} markdown={assistantMarkdown} narration={entry.phase === "commentary"} />
   );
 }

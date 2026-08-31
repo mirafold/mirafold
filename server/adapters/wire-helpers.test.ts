@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { SessionMsg } from "../protocol";
 import type { WireMsg } from "../protocol";
-import { ChecklistPainter, PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
+import { UnknownKindReporter, UNKNOWN_KIND_REPORT_CAP, ChecklistPainter, PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 
 const recorder = () => {
   const msgs: WireMsg[] = [];
@@ -102,4 +103,46 @@ test("PermissionLedger: an ask resolved from inside another ask's resolution hoo
   assert.deepEqual(hows, ["answer"], "one resolution, not answer-then-teardown");
   assert.equal(resolvedFor(msgs, secondId).length, 1);
   assert.equal(ledger.size, 0);
+});
+
+
+test("UnknownKindReporter logs and notices once per kind per session", () => {
+  const emitted: SessionMsg[] = [];
+  const warned: string[] = [];
+  const r = new UnknownKindReporter((m) => emitted.push(m), "Codex", (m) => warned.push(m));
+  r.report("item", "imageView");
+  r.report("item", "imageView");
+  r.report("event", "imageView"); // same kind, different category — distinct
+  assert.equal(warned.length, 2);
+  assert.deepEqual(
+    emitted.map((m) => (m.type === "notice" ? [m.text, m.kind, m.source] : m.type)),
+    [
+      ["Mirafold doesn't display this Codex item yet: imageView", "warning", undefined],
+      ["Mirafold doesn't display this Codex event yet: imageView", "warning", undefined],
+    ],
+  );
+});
+
+test("UnknownKindReporter clamps a hostile kind and stops at its cap", () => {
+  const emitted: SessionMsg[] = [];
+  const warned: string[] = [];
+  const r = new UnknownKindReporter((m) => emitted.push(m), "Codex", (m) => warned.push(m));
+  // Variations of one family: oversized, bidi override, C0 control + newline.
+  r.report("item", `${"x".repeat(10_000)}\u202epng.sh`);
+  r.report("item", "a\u202eb");
+  r.report("item", "a\u0007b\nnext-line");
+  r.report("item", "safe\u{e0068}\u{e0069}dden"); // Unicode tag characters: invisible ASCII smuggling
+  r.report("item", "😀".repeat(200)); // clamp must not split a surrogate pair
+  const texts = emitted.map((m) => (m.type === "notice" ? m.text : ""));
+  assert.ok(texts[0].length < 200, "an oversized kind cannot become the message");
+  assert.ok(!texts[0].includes("\u202e"));
+  assert.ok(texts[1].includes("‹U+202E›") && !texts[1].includes("\u202e"));
+  assert.ok(texts[2].includes("‹U+0007›") && texts[2].includes("‹U+000A›") && !texts[2].includes("\n"));
+  assert.ok(warned.every((w) => !w.includes("\u202e") && !w.includes("\n")), "log lines stay single-line and control-free");
+  assert.ok(texts[3].includes("‹U+E0068›") && !texts[3].includes("\u{e0068}"), "tag characters are marked");
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(texts[4]), "no lone surrogate after the clamp");
+  for (let i = 0; i < UNKNOWN_KIND_REPORT_CAP + 10; i++) r.report("item", `kind-${i}`);
+  const notices = emitted.filter((m) => m.type === "notice");
+  assert.equal(notices.length, UNKNOWN_KIND_REPORT_CAP + 1, "cap reports plus exactly one overflow marker");
+  assert.ok(notices.at(-1)!.type === "notice" && (notices.at(-1) as { text: string }).text.includes("stopped listing"));
 });

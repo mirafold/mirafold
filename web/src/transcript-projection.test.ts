@@ -4,7 +4,9 @@ import { test } from "node:test";
 import type { ZoneMsg } from "./session-bus";
 import {
   createTranscriptProjection,
+  type TextRow,
   type OutputZoneRow,
+  type ToolRow,
   type ToolFoldItem,
   type TranscriptProjection,
   type TranscriptSnapshot,
@@ -460,4 +462,139 @@ test("unchanged rows retain identity; unmatched updates still publish like the e
   assert.equal(unmatched.revision, after.revision + 1);
   assert.strictEqual(unmatched.rows, after.rows);
   assert.strictEqual(unmatched.paintingsById, after.paintingsById);
+});
+
+
+test("engine-declared commentary is narration and the final answer never folds (TS.8)", () => {
+  const projection = createTranscriptProjection();
+  const long = "A long piece of narration. ".repeat(40); // far past the length heuristic
+  const tool = (id: string) => [
+    { type: "tool_use", name: "Shell", detail: "ls", id, input: {} },
+    { type: "tool_result", output: "ok", id },
+  ] as const;
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      ...tool("t1"),
+      { type: "text_delta", text: long, phase: "commentary" },
+      ...tool("t2"),
+      { type: "text_delta", text: "Short.", phase: "final" },
+      ...tool("t3"),
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const rows = result.snapshot.rows;
+  // The long commentary between tools folded into the activity record …
+  const fold = rows.find((r) => r.kind === "tool-fold");
+  assert.ok(fold, "an activity record exists");
+  assert.ok(fold!.items.some((i) => i.kind === "text" && i.text.text === long), "commentary folded regardless of length");
+  // … and the short final answer stayed out of it even though tools surround it.
+  const finalRow = rows.find((r): r is TextRow => r.kind === "text" && r.role === "assistant" && r.text === "Short.");
+  assert.ok(finalRow, "the final answer is its own visible row");
+  assert.equal(finalRow.phase, "final");
+});
+
+test("a phase change starts a new prose row; trailing commentary keeps its phase for the narration style (TS.8)", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "text_delta", text: "Looking… ", phase: "commentary" },
+      { type: "text_delta", text: "Here it is.", phase: "final" },
+      { type: "text_delta", text: " More.", phase: "final" },
+      { type: "text_delta", text: "One more check.", phase: "commentary" },
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const texts = result.snapshot.rows.filter((r): r is TextRow => r.kind === "text" && r.role === "assistant");
+  assert.deepEqual(
+    texts.map((r) => [r.text, r.phase]),
+    [
+      ["Looking… ", "commentary"],
+      ["Here it is. More.", "final"],
+      ["One more check.", "commentary"],
+    ],
+  );
+});
+
+
+test("streamed tool output accumulates on the running row and the result closes it (TS.11)", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "yarn test", id: "c1", input: {} },
+      { type: "tool_output_delta", id: "c1", text: "running 1\n" },
+      { type: "tool_output_delta", id: "c1", text: "running 2\n" },
+      { type: "tool_output_delta", id: "nope", text: "orphan" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const running = result.snapshot.rows.find((r) => r.kind === "tool");
+  assert.ok(running && running.kind === "tool");
+  assert.equal(running.output, undefined);
+  assert.equal(running.streamed, "running 1\nrunning 2\n");
+  const done = projection.apply([{ type: "tool_result", id: "c1", output: "running 1\nrunning 2\nok\n" }] as ZoneMsg[], () => 0);
+  const closed = done.snapshot.rows.find((r) => r.kind === "tool");
+  assert.ok(closed && closed.kind === "tool");
+  assert.equal(closed.output, "running 1\nrunning 2\nok\n");
+});
+
+test("a tool update refreshes structured input in place without reopening a completed row", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "apply_patch", id: "p1", input: { changes: [] } },
+      {
+        type: "tool_update",
+        id: "p1",
+        detail: "Updated a.ts",
+        input: { changes: [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }] },
+      },
+      { type: "tool_result", id: "p1", output: "Updated a.ts" },
+      { type: "tool_update", id: "p1", detail: "must not replace settled input", input: { changes: [] } },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const rows = result.snapshot.rows.filter((row): row is ToolRow => row.kind === "tool");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].detail, "Updated a.ts");
+  assert.deepEqual(rows[0].input, {
+    changes: [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }],
+  });
+  assert.equal(rows[0].output, "Updated a.ts");
+});
+
+test("streamed output survives an interruption and the settled row releases the copy (PR #80 review)", () => {
+  const interrupted = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "sleep 99", id: "c1", input: {} },
+      { type: "tool_output_delta", id: "c1", text: "tick 1\ntick 2\n" },
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const row = interrupted.snapshot.rows.find((r): r is ToolRow => r.kind === "tool");
+  assert.ok(row, "the interrupted call stays a visible row");
+  assert.equal(row.output, "tick 1\ntick 2\n\n(interrupted — no result)");
+  assert.equal(row.isError, true);
+  assert.equal(row.streamed, undefined, "the copy is released");
+
+  const settled = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "ls", id: "c2", input: {} },
+      { type: "tool_output_delta", id: "c2", text: "a\n" },
+      { type: "tool_result", id: "c2", output: "a\nok\n" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const done = settled.snapshot.rows.find((r): r is ToolRow => r.kind === "tool");
+  assert.ok(done);
+  assert.equal(done.output, "a\nok\n");
+  assert.equal(done.streamed, undefined, "the authoritative result releases the streamed copy");
 });

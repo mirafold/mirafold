@@ -55,10 +55,12 @@ const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
 // worker cannot stay wedged forever.
 const DEFAULT_INTERRUPT_GRACE_MS = envInt("MIRAFOLD_CODEX_INTERRUPT_GRACE_MS", 5_000);
 
-/** What Mirafold tells Codex at thread start — the render guidance plus the
- *  deferred-tools note — through app-server's `developerInstructions`, a
- *  real instructions hook (the exec path had none and rode the first turn). */
-export const CODEX_DEVELOPER_INSTRUCTIONS = `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}`;
+/** What Mirafold tells Codex at thread start — the where-are-the-tools note
+ *  FIRST (codex-prompt.ts: Codex hides MCP tools behind tool_search or inside
+ *  the exec runtime, and a model that has to hunt for a tool rarely does),
+ *  then the render guidance — through app-server's `developerInstructions`,
+ *  a real instructions hook (the exec path had none and rode the first turn). */
+export const CODEX_DEVELOPER_INSTRUCTIONS = `${CODEX_DEFERRED_TOOLS_ADDENDUM}\n${RENDER_GUIDANCE}`;
 
 // The folder-trust ask waits this long before denying — the same window
 // Gemini's folder gate uses. A person reads the ask, not a machine.

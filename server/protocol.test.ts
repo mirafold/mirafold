@@ -56,6 +56,7 @@ type ClientByType = { [T in ClientMsg["type"]]: Extract<ClientMsg, { type: T }> 
 // fixture = compile error (see tooth #1).
 const WIRE: WireByType = {
   text_delta: { type: "text_delta", text: "hello world" },
+  tool_output_delta: { type: "tool_output_delta", id: "t1", text: "partial output\n" },
   prompt_options: {
     type: "prompt_options",
     options: [
@@ -87,6 +88,12 @@ const WIRE: WireByType = {
     id: "t1",
     input: { command: "ls -la" },
     parentId: "task1",
+  },
+  tool_update: {
+    type: "tool_update",
+    id: "t1",
+    detail: "src/a.ts",
+    input: { changes: [{ path: "src/a.ts", kind: "update" }] },
   },
   tool_result: {
     type: "tool_result",

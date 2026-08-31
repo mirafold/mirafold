@@ -71,7 +71,13 @@ export type SessionMsgBody =
   // it, never parses or dereferences it (for Claude Code it happens to be
   // the spawn tool_use id; the protocol does not promise that). Old clients
   // ignore the field and render the prose inline.
-  | { type: "text_delta"; text: string; parentId?: string }
+  // `phase` (optional/additive, TS.8): the engine's own classification of
+  // this prose — "commentary" is interim narration ("I'm going to check the
+  // watcher…"), "final" is the answer. Codex declares it per message
+  // (7 of 8 Codex messages are commentary); engines that don't leave it
+  // unset and the browser falls back to its length heuristic. Old clients
+  // ignore the field and render everything as prose.
+  | { type: "text_delta"; text: string; parentId?: string; phase?: "commentary" | "final" }
   // The selected provider's live prompt-completion catalog. This is shell
   // data, not agent-authored UI: the browser opens it as soon as the trigger
   // is typed, before anything is sent to the provider. A new message
@@ -120,6 +126,18 @@ export type SessionMsgBody =
       input?: Record<string, unknown>;
       parentId?: string;
     }
+  // An in-place refresh of an announced tool row. Some engines publish a
+  // running call's structured input as successive authoritative snapshots
+  // (Codex fileChange/patchUpdated), so a single tool_use cannot faithfully
+  // carry the final patch. Fields that are absent stay unchanged; fields
+  // that are present replace the row's value. Old clients ignore this
+  // additive message and still receive the eventual tool_result.
+  | {
+      type: "tool_update";
+      id: string;
+      detail?: string;
+      input?: Record<string, unknown>;
+    }
   // `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting
   // silently. Optional/additive. `parentId` rides here too, exactly as on
@@ -132,6 +150,12 @@ export type SessionMsgBody =
       truncatedBytes?: number;
       parentId?: string;
     }
+  // Streamed output of a RUNNING tool call (optional/additive, TS.11): the
+  // terminal prints command output as it arrives; this carries those bytes
+  // for the row `id` that tool_use announced. The later tool_result still
+  // closes the row with the engine's authoritative, capped output. Old
+  // clients ignore it. `parentId` rides exactly as on tool_use.
+  | { type: "tool_output_delta"; id: string; text: string; parentId?: string }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`
   // (optional/additive): set when the ASKER is a subagent — the same opaque
@@ -194,7 +218,7 @@ export type SessionMsgBody =
   | {
       type: "notice";
       text: string;
-      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
+      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning" | "info";
       source?: string;
     }
   // The `!` bash passthrough, run in a real PTY (interactive

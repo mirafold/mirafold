@@ -3,6 +3,13 @@ import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./typ
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter } from "./wire-helpers";
 import type { OpenCodeEvent } from "./opencode-client";
+import { UnknownKindReporter } from "./wire-helpers";
+import { OPENCODE_IGNORED_PARTS, opencodeEventIgnored } from "./opencode-ledger";
+import { createLogger } from "../log";
+import { displayPath } from "./codex-patch";
+
+const log = createLogger("opencode-events");
+
 
 // OpenCode advertises MCP tools as `<server>_<tool>` (live capture:
 // `mirafold_render_card`), so this prefix is the recognition test.
@@ -33,6 +40,7 @@ type TurnTokens = { input: number; output: number; cost: number };
  * the owning OpenCodeSession supplies turn lifecycle and permission plumbing.
  */
 export class OpenCodeEventMapper {
+  private readonly unknown: UnknownKindReporter;
   private parts = new Map<string, PartTrack>();
   // messageID → role. The stream echoes the USER message's parts exactly like
   // assistant ones (observed live); without this the user's own
@@ -88,6 +96,7 @@ export class OpenCodeEventMapper {
       endTurn: () => void;
     },
   ) {
+    this.unknown = new UnknownKindReporter(options.emit, "OpenCode", (m) => log.warn(m));
     this.checklist = new ChecklistPainter(options.emit);
   }
 
@@ -200,6 +209,8 @@ export class OpenCodeEventMapper {
         // the fleet status "working").
         this.options.onEngineIdle();
         break;
+      default:
+        if (!opencodeEventIgnored(event.type)) this.unknown.report("event", event.type);
     }
   }
 
@@ -320,6 +331,8 @@ export class OpenCodeEventMapper {
       case "tool":
         this.onToolPart(partID, part, parentId);
         break;
+      default:
+        if (!fromUser && !(type in OPENCODE_IGNORED_PARTS)) this.unknown.report("message part", type);
     }
   }
 
@@ -393,8 +406,9 @@ export class OpenCodeEventMapper {
         return;
       }
     }
+    const presented = presentOpenCodeTool(tool, input, this.options.workspaceDir);
     if (status === "running" || status === "completed" || status === "error")
-      this.announceTool(track, partID, tool, input, parentId);
+      this.announceTool(track, partID, presented.tool, presented.input, parentId);
     if (track.finished) return;
     if (status === "completed") {
       track.finished = true;
@@ -500,6 +514,39 @@ export class OpenCodeEventMapper {
     });
     this.checklist.paint(items);
   }
+}
+
+/** OpenCode's built-in edit tools use lowercase names and camelCase fields,
+ *  while the shared transcript painter consumes the canonical Claude-style
+ *  Write/Edit shapes. Normalize the real 1.18.25 write call plus the edit
+ *  schema that engine advertised; every other tool/input stays native. */
+function presentOpenCodeTool(
+  tool: string,
+  input: Record<string, unknown>,
+  workspaceDir: string,
+): { tool: string; input: Record<string, unknown> } {
+  if (tool !== "write" && tool !== "edit") return { tool, input };
+
+  const normalized = { ...input };
+  if (typeof input["filePath"] === "string") {
+    delete normalized["filePath"];
+    normalized["file_path"] = displayPath(input["filePath"], workspaceDir);
+  }
+  if (tool === "write") return { tool: "Write", input: normalized };
+
+  if (typeof input["oldString"] === "string") {
+    delete normalized["oldString"];
+    normalized["old_string"] = input["oldString"];
+  }
+  if (typeof input["newString"] === "string") {
+    delete normalized["newString"];
+    normalized["new_string"] = input["newString"];
+  }
+  if (typeof input["replaceAll"] === "boolean") {
+    delete normalized["replaceAll"];
+    normalized["replace_all"] = input["replaceAll"];
+  }
+  return { tool: "Edit", input: normalized };
 }
 
 function num(value: unknown): number {

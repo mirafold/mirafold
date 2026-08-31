@@ -1,0 +1,87 @@
+// OpenCode event kinds and part kinds the mapper deliberately does not show;
+// anything else it does not handle is reported once per session (TS.7).
+export const OPENCODE_IGNORED_EVENTS: Record<string, string> = {
+  "server.connected": "transport bookkeeping",
+  "server.heartbeat": "transport bookkeeping",
+  "installation.updated": "OpenCode self-update bookkeeping",
+  "installation.update-available": "OpenCode self-update bookkeeping",
+  "session.updated": "metadata the registry derives itself",
+  "session.deleted": "lifecycle the session owns",
+  "session.diff": "the Changes panel watches the tree itself",
+  "message.removed": "editing bookkeeping",
+  "message.part.removed": "editing bookkeeping",
+  "file.edited": "the Changes panel watches the tree itself",
+  "file.watcher.updated": "the Changes panel watches the tree itself",
+  "storage.write": "OpenCode's own persistence",
+  "lsp.client.diagnostics": "editor diagnostics not shown in the terminal transcript either",
+  "ide.installed": "IDE plumbing",
+  "pty.created": "OpenCode's own terminal panes",
+  "pty.updated": "OpenCode's own terminal panes",
+  "pty.exited": "OpenCode's own terminal panes",
+  "pty.deleted": "OpenCode's own terminal panes",
+  "vcs.branch.updated": "the status bar reads git itself",
+  "command.executed": "slash-command bookkeeping",
+  "todo.updated": "handled",
+  // OpenCode 1.18's own TUI, catalog, integration, and workspace plumbing —
+  // nothing the terminal transcript shows either.
+  "tui.prompt.append": "OpenCode's own TUI",
+  "tui.command.execute": "OpenCode's own TUI",
+  "tui.toast.show": "OpenCode's own TUI",
+  "tui.session.select": "OpenCode's own TUI",
+  "server.instance.disposed": "transport bookkeeping",
+  "global.disposed": "transport bookkeeping",
+  "models-dev.refreshed": "model catalog bookkeeping; the picker re-reads the catalog",
+  "catalog.updated": "model catalog bookkeeping; the picker re-reads the catalog",
+  "integration.updated": "integrations administration",
+  "integration.connection.updated": "integrations administration",
+  "reference.updated": "reference bookkeeping for OpenCode's own UI",
+  "plugin.added": "plugin administration",
+  "project.updated": "project bookkeeping",
+  "project.directories.updated": "project bookkeeping",
+  "lsp.updated": "editor diagnostics not shown in the terminal transcript either",
+  "mcp.tools.changed": "MCP administration; the render server is the only MCP Mirafold adds",
+  "mcp.browser.open.failed": "MCP administration",
+  "workspace.ready": "workspace/worktree plumbing for OpenCode's own UI",
+  "workspace.failed": "workspace/worktree plumbing for OpenCode's own UI",
+  "workspace.status": "workspace/worktree plumbing for OpenCode's own UI",
+  "worktree.ready": "workspace/worktree plumbing for OpenCode's own UI",
+  "worktree.failed": "workspace/worktree plumbing for OpenCode's own UI",
+  // OpenCode 1.18.25 advertises a parallel v2 permission API, but the
+  // production global `/event` feed emitted only these legacy events in the
+  // root and child live probes: `permission.asked` / `permission.replied`.
+  // The legacy reply endpoint completed both asks. Ignore the unused mirror;
+  // OC.5 fails if a future engine actually moves the driven path to v2.
+  "permission.v2.asked": "alternate permission API; the driven /event path emits permission.asked",
+  "permission.v2.replied": "alternate permission API; the driven /event path emits permission.replied",
+};
+// OpenCode 1.18's newer per-session stream. The legacy `message.*` events
+// the adapter consumes still carry the same content on the same /event
+// feed (confirmed through render, bash, write, and child-session turns on
+// 1.18.25). Ignored as a family so a session does not raise duplicate notices
+// for the alternate surface; OC.5 guards the production global feed.
+export const OPENCODE_IGNORED_EVENT_PREFIXES = ["session.next."] as const;
+export const opencodeEventIgnored = (type: string): boolean =>
+  type in OPENCODE_IGNORED_EVENTS || OPENCODE_IGNORED_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix));
+export const OPENCODE_HANDLED_EVENTS = [
+  "message.updated",
+  "message.part.updated",
+  "message.part.delta",
+  "session.status",
+  "todo.updated",
+  "session.created",
+  "permission.asked",
+  "permission.replied",
+  "session.error",
+  "session.idle",
+] as const;
+export const OPENCODE_HANDLED_PARTS = ["step-start", "text", "reasoning", "tool"] as const;
+export const OPENCODE_IGNORED_PARTS: Record<string, string> = {
+  "step-finish": "a step boundary; usage arrives on session.idle",
+  snapshot: "OpenCode's own undo snapshots",
+  patch: "undo snapshot metadata (hash + file names), with no diff bytes to paint",
+  file: "prompt attachment/reference input, not a file edit",
+  agent: "an @-mention input marker, not a model-initiated subagent spawn",
+  subtask: "a command input marker; model-initiated spawns arrive as task tool parts",
+  compaction: "OpenCode's synthetic user prompt for context summarization",
+  "step-start": "handled",
+};

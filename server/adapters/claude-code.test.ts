@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { ClaudeCodeSession } from "./claude-code";
-import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE, makeRenderServer } from "../render-tools";
 
 // The Claude Code SDK-message→WireMsg mapping and the turn grammar, on
 // synthetic SDKMessages — no CLI, no network. The session is real; only the
@@ -170,6 +170,41 @@ test("happy stream: full SDKMessage→WireMsg mapping, exactly one turn_end", as
 
   assert.equal(turnEnds(), 1);
   assert.equal(msgs[msgs.length - 1].type, "turn_end");
+  s.close();
+});
+
+test("a failed Mirafold render call falls back to an honest error row", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([
+      {
+        type: "tool_use",
+        id: "bad-render",
+        name: "mcp__ui__render_card",
+        input: { title: "missing body" },
+      },
+    ]),
+    user([
+      {
+        type: "tool_result",
+        tool_use_id: "bad-render",
+        content: "body is required",
+        is_error: true,
+      },
+    ]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_use").map((m) => [m.id, m.name, m.input]),
+    [["bad-render", "mcp__ui__render_card", { title: "missing body" }]],
+  );
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_result").map((m) => [m.id, m.output, m.isError]),
+    [["bad-render", "body is required", true]],
+  );
+  assert.equal(msgs.some((m) => m.type === "render"), false);
   s.close();
 });
 
@@ -958,4 +993,37 @@ test("a synchronous engine failure on the first trusted prompt errors the turn, 
     process.off("unhandledRejection", onRejection);
     s.close();
   }
+});
+
+test("the ui render server exempts every tool from Claude Code's tool-search deferral (alwaysLoad)", () => {
+  // Claude Code defers MCP tool definitions behind ToolSearch by default, and
+  // a model that has to search before it can paint mostly answers in prose.
+  // The SDK expresses the exemption as `_meta["anthropic/alwaysLoad"]` on
+  // each registered tool; the McpServer instance keeps them under
+  // `_registeredTools` (an internal map, the only place the flag surfaces
+  // without running a session).
+  const server = makeRenderServer(() => {}, tmp);
+  const registered = (server.instance as unknown as { _registeredTools: Record<string, { _meta?: Record<string, unknown> }> })
+    ._registeredTools;
+  const names = Object.keys(registered);
+  assert.ok(names.includes("render_table") && names.includes("emit_artifact"), `tools: ${names.join(", ")}`);
+  for (const name of names) {
+    assert.equal(registered[name]._meta?.["anthropic/alwaysLoad"], true, `${name} must be always-loaded`);
+  }
+});
+
+test("TS.12: an SDK message kind the ledger leaves unmapped is reported once, never dropped silently", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    { type: "task_started", task_id: "t1" }, // ledger: unmapped
+    { type: "task_started", task_id: "t2" }, // once per kind
+    { type: "auth_status", status: "ok" }, // ledger: deliberately ignored — no notice
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]),
+    [["Mirafold doesn't display this Claude Code message yet: task_started", undefined]],
+  );
+  s.close();
 });

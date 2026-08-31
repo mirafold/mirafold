@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { SessionMsg } from "../protocol";
-import { type TodoItem, capOutput, joinTextBlocks } from "./types";
+import { type TodoItem, capOutput, joinTextBlocks, OUTPUT_CAP_BYTES, SubagentProseBudget } from "./types";
+import { resolveImageProps } from "../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
-import { ChecklistPainter } from "./wire-helpers";
+import { ChecklistPainter, UnknownKindReporter, inertToken } from "./wire-helpers";
+import { CODEX_IGNORED_ITEMS, CODEX_IGNORED_METHODS } from "./codex-ledger";
+import { describePatchChange, displayPath, normalizePatchChanges } from "./codex-patch";
+import { createLogger } from "../log";
 import { convertMermaidCharts } from "./mermaid-chart";
+
+const log = createLogger("codex-events");
 
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
 // `thread/*`) normalized into SessionMsg. Shapes come from the binary's own
@@ -19,12 +25,30 @@ export type CodexItem = {
   type: string;
   id: string;
   text?: string;
+  phase?: unknown;
   summary?: unknown;
   command?: string;
   aggregatedOutput?: string | null;
   exitCode?: number | null;
   status?: string;
   changes?: unknown;
+  // collabAgentToolCall / subAgentActivity / imageView / imageGeneration /
+  // dynamicToolCall / sleep (TS.9–TS.10)
+  prompt?: unknown;
+  receiverThreadIds?: unknown;
+  agentsStates?: unknown;
+  agentThreadId?: unknown;
+  agentPath?: unknown;
+  kind?: unknown;
+  path?: unknown;
+  savedPath?: unknown;
+  revisedPrompt?: unknown;
+  namespace?: unknown;
+  contentItems?: unknown;
+  success?: unknown;
+  durationMs?: unknown;
+  failure?: unknown;
+  model?: unknown;
   server?: string;
   tool?: string;
   arguments?: unknown;
@@ -34,6 +58,11 @@ export type CodexItem = {
 };
 
 export type CodexMcpToolCall = Pick<CodexItem, "result" | "arguments">;
+
+function firstLine(text: string, max: number): string {
+  const line = text.split("\n").find((l) => l.trim()) ?? "";
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
@@ -78,6 +107,27 @@ export class CodexEventMapper {
   // as deltas, whether we are holding the rest for the item to finish, and a
   // one/two-backtick suffix that may be the start of a split code fence.
   private prose = new Map<string, { streamed: number; holding: boolean; pending: string }>();
+  // agentMessage.phase per item id, learned at item/started (verified live
+  // 2026-08-30: started carries it), so every delta is tagged as it streams.
+  private phaseOf = new Map<string, "commentary" | "final">();
+  // Subagent lane (TS.9): the collab call that first named a child thread is
+  // its anchor row; the child's activity groups under it via parentId.
+  private subagentAnchor = new Map<string, string>();
+  // Anchors persist across turns so a long-running child keeps grouping, so
+  // the map is bounded here instead: past the cap a new thread's activity
+  // falls to the budgeted unanchored lane rather than growing memory.
+  private static readonly MAX_SUBAGENT_ANCHORS = 5_000;
+  // Streamed tool output (TS.11): UTF-8 bytes forwarded per running item, capped
+  // like the final output so a chatty command cannot flood the ring.
+  private streamed = new Map<string, number>();
+  // Latest normalized fileChange snapshot per running item. Codex publishes
+  // full structured snapshots, not textual patch deltas; the signature keeps
+  // duplicate completion snapshots from repainting the same row.
+  private fileChangeSnapshots = new Map<string, string>();
+  // Subagent activity lines ride the wire as parented narration, so they get
+  // the same per-subagent byte budget as the other engines' lanes
+  // (SECURITY.md: a looping engine cannot grow the wire without bound).
+  private subagentProse = new SubagentProseBudget();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -99,7 +149,10 @@ export class CodexEventMapper {
     },
   ) {
     this.checklist = new ChecklistPainter(options.emit);
+    this.unknown = new UnknownKindReporter(options.emit, "Codex", (message) => log.warn(message));
   }
+
+  private readonly unknown: UnknownKindReporter;
 
   /** A turn is starting: usage is measured from here, paintings re-anchor. */
   beginTurn() {
@@ -127,6 +180,10 @@ export class CodexEventMapper {
     this.turnLast = undefined;
     this.checklist.reset();
     this.prose.clear();
+    this.phaseOf.clear();
+    this.streamed.clear();
+    this.fileChangeSnapshots.clear();
+    this.subagentProse.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
   }
@@ -161,6 +218,42 @@ export class CodexEventMapper {
       case "item/agentMessage/delta":
         this.onProseDelta(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
         break;
+      case "item/commandExecution/outputDelta":
+        this.streamToolOutput(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
+        break;
+      // Retained for version skew. Current Codex marks this notification
+      // deprecated and no longer emits it; patchUpdated below is authoritative.
+      case "item/fileChange/outputDelta":
+        this.streamToolOutput(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
+        break;
+      case "item/fileChange/patchUpdated":
+        this.publishFileChange(String(p["itemId"] ?? ""), p["changes"]);
+        break;
+      case "item/plan/delta": {
+        // The model's written plan streams like prose and is narration by
+        // nature — never the answer.
+        const itemId = String(p["itemId"] ?? "");
+        this.phaseOf.set(itemId, "commentary");
+        this.onProseDelta(itemId, String(p["delta"] ?? ""));
+        break;
+      }
+      case "deprecationNotice":
+      case "configWarning":
+      case "guardianWarning":
+        if (typeof p["message"] === "string" && p["message"]) {
+          this.options.emit({ type: "notice", text: this.options.providerDiagnostic(p["message"]), kind: "warning", source: "codex" });
+        }
+        break;
+      case "model/rerouted": {
+        const to = typeof p["toModel"] === "string" ? p["toModel"] : typeof p["model"] === "string" ? p["model"] : "";
+        const from = typeof p["fromModel"] === "string" ? p["fromModel"] : "";
+        this.options.emit({
+          type: "notice",
+          text: `Codex rerouted the model${from ? ` from ${inertToken(from)}` : ""}${to ? ` to ${inertToken(to)}` : ""}.`,
+          kind: "info",
+        });
+        break;
+      }
       case "item/reasoning/summaryTextDelta":
       case "item/reasoning/textDelta": {
         const delta = String(p["delta"] ?? "");
@@ -212,6 +305,8 @@ export class CodexEventMapper {
           });
         }
         break;
+      default:
+        if (!(method in CODEX_IGNORED_METHODS)) this.unknown.report("event", method);
     }
   }
 
@@ -237,7 +332,7 @@ export class CodexEventMapper {
       const prefix = combined.slice(0, fenceAt);
       if (prefix) {
         state.streamed += prefix.length;
-        this.options.emit({ type: "text_delta", text: prefix });
+        this.options.emit(this.proseMsg(itemId, prefix));
       }
       state.holding = true;
       return;
@@ -247,7 +342,7 @@ export class CodexEventMapper {
     state.pending = pendingLength ? combined.slice(-pendingLength) : "";
     if (!ready) return;
     state.streamed += ready.length;
-    this.options.emit({ type: "text_delta", text: ready });
+    this.options.emit(this.proseMsg(itemId, ready));
   }
 
   /** Normalize one thread item. `phase` distinguishes start vs. finish. */
@@ -275,10 +370,49 @@ export class CodexEventMapper {
       case "contextCompaction":
         this.onContextCompaction(phase);
         break;
+      case "plan":
+        // A completed plan item carries the whole text; deltas may have
+        // streamed part of it already (same remainder rule as prose).
+        this.phaseOf.set(item.id, "commentary");
+        this.onAgentMessage(item, phase);
+        break;
+      case "collabAgentToolCall":
+        this.onCollabCall(item, phase);
+        break;
+      case "subAgentActivity":
+        if (phase === "completed") this.onSubagentActivity(item);
+        break;
+      case "imageView":
+        if (phase === "completed") this.onImageView(item);
+        break;
+      case "imageGeneration":
+        if (phase === "completed") this.onImageGeneration(item);
+        break;
+      case "dynamicToolCall":
+        this.onDynamicToolCall(item, phase);
+        break;
+      case "sleep":
+        if (phase === "completed") this.onSleep(item);
+        break;
+      case "enteredReviewMode":
+        if (phase === "completed") this.options.emit({ type: "notice", text: "Codex entered review mode.", kind: "info" });
+        break;
+      case "exitedReviewMode":
+        if (phase === "completed") this.options.emit({ type: "notice", text: "Codex left review mode.", kind: "info" });
+        break;
+      default:
+        if (phase === "completed" && !(item.type in CODEX_IGNORED_ITEMS)) this.unknown.report("item", item.type);
     }
   }
 
+  private proseMsg(itemId: string, text: string): SessionMsg {
+    const phase = this.phaseOf.get(itemId);
+    return phase ? { type: "text_delta", text, phase } : { type: "text_delta", text };
+  }
+
   private onAgentMessage(item: CodexItem, phase: ItemPhase) {
+    const declared = item.phase === "commentary" ? "commentary" : item.phase === "final_answer" ? "final" : undefined;
+    if (declared) this.phaseOf.set(item.id, declared);
     if (phase !== "completed") return;
     const text = typeof item.text === "string" ? item.text : "";
     const streamed = this.prose.get(item.id)?.streamed ?? 0;
@@ -289,7 +423,7 @@ export class CodexEventMapper {
     // component; all other text passes through verbatim.
     for (const segment of convertMermaidCharts(rest)) {
       if ("text" in segment) {
-        this.options.emit({ type: "text_delta", text: segment.text });
+        this.options.emit(this.proseMsg(item.id, segment.text));
       } else {
         this.options.emit({
           type: "render",
@@ -349,18 +483,166 @@ export class CodexEventMapper {
   }
 
   private onFileChange(item: CodexItem, phase: ItemPhase) {
-    if (phase !== "completed") return;
-    const changes = Array.isArray(item.changes)
-      ? (item.changes as { kind?: unknown; path?: unknown }[])
-      : [];
-    const paths = changes
-      .map((change) => `${String(change.kind ?? "update")} ${String(change.path ?? "")}`.trim())
-      .join(", ");
-    this.announceTool(item.id, "apply_patch", paths, { changes });
+    const summary = this.publishFileChange(item.id, item.changes);
+    if (phase === "started") return;
     const declined = item.status === "declined";
     this.finishTool(item.id, {
-      output: declined ? "(declined)" : paths || "(no changes)",
+      output: declined ? "(declined)" : summary || "(no changes)",
       isError: item.status === "failed" || declined,
+    });
+  }
+
+  /** Paint the latest full patch snapshot onto one stable running row. */
+  private publishFileChange(id: string, rawChanges: unknown): string {
+    if (!id) return "";
+    const changes = normalizePatchChanges(rawChanges, this.options.workspaceDir);
+    const summary = changes.map(describePatchChange).join(", ");
+    const signature = JSON.stringify(changes);
+    if (!this.announced.has(id)) {
+      this.fileChangeSnapshots.set(id, signature);
+      this.announceTool(id, "apply_patch", summary, { changes });
+    } else if (this.fileChangeSnapshots.get(id) !== signature) {
+      this.fileChangeSnapshots.set(id, signature);
+      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes } });
+    }
+    return summary;
+  }
+
+  /** Streamed bytes of a running command (plus legacy patch output): forwarded only
+   *  for a row already announced, capped at the same size as final output. */
+  private streamToolOutput(itemId: string, delta: string) {
+    if (!delta || !this.announced.has(itemId)) return;
+    const sent = this.streamed.get(itemId) ?? 0;
+    if (sent >= OUTPUT_CAP_BYTES) return;
+    const room = OUTPUT_CAP_BYTES - sent;
+    const bytes = Buffer.from(delta, "utf8");
+    const truncated = bytes.length > room;
+    const text = truncated ? utf8Prefix(bytes, room) : delta;
+    this.streamed.set(itemId, truncated ? OUTPUT_CAP_BYTES : sent + bytes.length);
+    if (!text) return;
+    this.options.emit({ type: "tool_output_delta", id: itemId, text });
+  }
+
+  /** A collab call (spawn / wait / send…) is a tool row named by the engine's
+   *  own tool name; the first call naming a child thread anchors that
+   *  thread's later activity (TS.9). Inner child content still needs
+   *  per-thread subscriptions the adapter does not open — recorded. */
+  private onCollabCall(item: CodexItem, phase: ItemPhase) {
+    const name = typeof item.tool === "string" && item.tool ? inertToken(item.tool, 64) : "collab";
+    const receivers = Array.isArray(item.receiverThreadIds)
+      ? item.receiverThreadIds.filter((t): t is string => typeof t === "string")
+      : [];
+    const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+    const detail = prompt ? firstLine(prompt, 96) : receivers.join(", ");
+    const input = {
+      ...(prompt ? { prompt } : {}),
+      ...(receivers.length ? { receiverThreadIds: receivers } : {}),
+      ...(typeof item.model === "string" ? { model: item.model } : {}),
+    };
+    for (const thread of receivers) {
+      if (!this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS)
+        this.subagentAnchor.set(thread, item.id);
+    }
+    if (phase === "started") {
+      this.announceTool(item.id, name, detail, input);
+      return;
+    }
+    this.ensureAnnounced(item.id, name, detail, input);
+    const states =
+      typeof item.agentsStates === "object" && item.agentsStates !== null
+        ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
+        : [];
+    const lines = states.map(([thread, st]) => {
+      const status = typeof st?.status === "string" ? st.status : "?";
+      const message = typeof st?.message === "string" && st.message ? ` — ${firstLine(st.message, 160)}` : "";
+      return `${thread}: ${status}${message}`;
+    });
+    const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
+    // The state fan-out is engine-sized: capped like every other result.
+    const capped = capOutput(lines.join("\n"));
+    this.finishTool(item.id, {
+      output: item.status === "declined" ? "(declined)" : capped.text || "(done)",
+      truncatedBytes: capped.truncatedBytes,
+      isError: item.status === "failed" || item.status === "declined" || failed,
+    });
+  }
+
+  /** A child agent's lifecycle, narrated under its spawn row when the anchor
+   *  is known, otherwise as commentary in the transcript. */
+  private onSubagentActivity(item: CodexItem) {
+    const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
+    // Engine-chosen identifiers on a narration line: clamped, single-line,
+    // controls visible — never raw engine bytes at engine-chosen length.
+    const kind = typeof item.kind === "string" && item.kind ? inertToken(item.kind, 48) : "activity";
+    const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
+    const parentId = this.subagentAnchor.get(thread);
+    const text = `${who} ${kind}`;
+    if (parentId) {
+      const forwarded = this.subagentProse.take(parentId, `${text}\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
+    } else {
+      // The same budget for a thread no collab call anchored: N stray events
+      // must never mean N wire messages without bound (SECURITY.md).
+      const forwarded = this.subagentProse.take(thread || "unanchored", `Subagent ${text}.\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, phase: "commentary" });
+    }
+  }
+
+  /** The model looked at an image: a row, plus the image itself painted
+   *  inline when it is a workspace file the image tool would accept (TS.10). */
+  private onImageView(item: CodexItem) {
+    const path = typeof item.path === "string" ? item.path : "";
+    const shown = path ? displayPath(path, this.options.workspaceDir) : "";
+    this.announceTool(item.id, "view_image", shown, { path: shown });
+    this.finishTool(item.id, { output: shown ? "(viewed)" : "(no path)" });
+    if (shown) this.paintWorkspaceImage(shown, "viewed by the agent");
+  }
+
+  private onImageGeneration(item: CodexItem) {
+    const saved = typeof item.savedPath === "string" ? displayPath(item.savedPath, this.options.workspaceDir) : "";
+    const prompt = typeof item.revisedPrompt === "string" ? item.revisedPrompt : "";
+    const failed = item.status === "failed" || Boolean(item.failure);
+    this.announceTool(item.id, "image_generation", firstLine(prompt, 96), { ...(prompt ? { prompt } : {}), ...(saved ? { savedPath: saved } : {}) });
+    const failure = capOutput(String(item.failure ?? "failed"));
+    this.finishTool(item.id, {
+      output: failed ? failure.text : saved || "(no file saved)",
+      ...(failed && failure.truncatedBytes !== undefined ? { truncatedBytes: failure.truncatedBytes } : {}),
+      isError: failed,
+    });
+    if (saved && !failed) this.paintWorkspaceImage(saved, prompt || "generated image");
+  }
+
+  private paintWorkspaceImage(path: string, alt: string) {
+    const props = resolveImageProps(this.options.workspaceDir, { path, alt });
+    if (typeof props["error"] === "string") return; // outside the workspace, not an image, too big: the row stands alone
+    this.options.emit({ type: "render", component: "image", props, id: randomUUID() });
+  }
+
+  private onSleep(item: CodexItem) {
+    const ms = typeof item.durationMs === "number" ? item.durationMs : undefined;
+    const detail = ms === undefined ? "" : ms >= 1000 ? `${Math.round(ms / 100) / 10} s` : `${ms} ms`;
+    this.announceTool(item.id, "sleep", detail, { durationMs: ms });
+    this.finishTool(item.id, { output: "(done)" });
+  }
+
+  /** Codex apps / dynamic tools: a tool row named the way the engine names it. */
+  private onDynamicToolCall(item: CodexItem, phase: ItemPhase) {
+    const tool = typeof item.tool === "string" ? item.tool : "tool";
+    // Rides the wire as tool_use.name and the activity label: an app-chosen
+    // string, so clamped and control-visible.
+    const name = inertToken(typeof item.namespace === "string" && item.namespace ? `${item.namespace}.${tool}` : tool, 120);
+    const args = typeof item.arguments === "object" && item.arguments !== null ? (item.arguments as Record<string, unknown>) : {};
+    const detail = firstLine(Object.values(args).find((v) => typeof v === "string") as string | undefined ?? "", 96);
+    if (phase === "started") {
+      this.announceTool(item.id, name, detail, args);
+      return;
+    }
+    this.ensureAnnounced(item.id, name, detail, args);
+    const capped = capOutput(mcpText(item.contentItems));
+    this.finishTool(item.id, {
+      output: capped.text,
+      truncatedBytes: capped.truncatedBytes,
+      isError: item.status === "failed" || item.success === false,
     });
   }
 
@@ -368,19 +650,28 @@ export class CodexEventMapper {
     const server = typeof item.server === "string" ? item.server : "";
     const tool = typeof item.tool === "string" ? item.tool : "";
     // Mirafold's generative-UI server becomes the render/artifact message
-    // represented by the call rather than a raw tool row.
+    // represented by the call rather than a raw tool row. If it did not
+    // produce a painting, fall back to the honest call/result record.
     if (server === MIRAFOLD_MCP) {
       if (phase === "completed" && item.status !== "failed" && !item.error) {
-        this.emitGenerativeUI(tool, item);
+        const message = this.generativeUIMessage(tool, item);
+        if (message) {
+          this.options.emit(message);
+          return;
+        }
       }
-      return;
+      if (phase === "started") return;
     }
-    const label = `${server}.${tool}`;
+    // Engine-chosen strings riding the wire as tool_use.name / detail and
+    // the activity label: clamped and control-visible like every other
+    // name producer in this mapper.
+    const label = inertToken(`${server}.${tool}`, 120);
+    const detail = inertToken(tool, 96);
     if (phase === "started") {
-      this.announceTool(item.id, label, tool, item.arguments);
+      this.announceTool(item.id, label, detail, item.arguments);
       return;
     }
-    this.ensureAnnounced(item.id, label, tool, item.arguments);
+    this.ensureAnnounced(item.id, label, detail, item.arguments);
     const capped = capOutput(
       item.error ? String(item.error.message ?? "") : mcpText(item.result?.content),
     );
@@ -429,16 +720,16 @@ export class CodexEventMapper {
     result: { output: string; isError?: boolean; truncatedBytes?: number },
   ) {
     this.announced.delete(id);
+    this.fileChangeSnapshots.delete(id);
     this.options.emit({ type: "tool_result", ...result, id });
   }
 
-  private emitGenerativeUI(tool: string, item: CodexItem) {
+  private generativeUIMessage(tool: string, item: CodexItem): SessionMsg | null {
     const args =
       item.arguments && typeof item.arguments === "object"
         ? (item.arguments as Record<string, unknown>)
         : {};
-    const message = generativeUIMsg(tool, args, extractRenderId(item), this.options.workspaceDir);
-    if (message) this.options.emit(message);
+    return generativeUIMsg(tool, args, extractRenderId(item), this.options.workspaceDir);
   }
 
   private emitChecklist(steps: unknown[]) {
@@ -451,4 +742,18 @@ export class CodexEventMapper {
     });
     this.checklist.paint(todos);
   }
+}
+
+/** Decode the longest complete UTF-8 prefix within a byte budget. A stream
+ *  slice must not split a character or grow back over the cap as U+FFFD. */
+function utf8Prefix(bytes: Buffer, maxBytes: number): string {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (let end = Math.min(bytes.length, maxBytes); end >= Math.max(0, maxBytes - 3); end--) {
+    try {
+      return decoder.decode(bytes.subarray(0, end));
+    } catch {
+      // A UTF-8 scalar is at most four bytes; back up to its leading byte.
+    }
+  }
+  return "";
 }

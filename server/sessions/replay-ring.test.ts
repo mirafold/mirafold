@@ -68,6 +68,32 @@ test("offer merges same-lane deltas inside the window; anything else flushes fir
   assert.deepEqual(delivered.map((m) => m.seq), [1, 2, 3, 4, 5]);
 });
 
+test("coalescing preserves prose phase and never merges commentary into the final answer", () => {
+  const { r, delivered } = ring({ coalesceMs: 50 });
+  r.offer({ type: "text_delta", text: "check", phase: "commentary" });
+  r.offer({ type: "text_delta", text: "ing", phase: "commentary" });
+  r.offer({ type: "text_delta", text: "answer", phase: "final" });
+  r.flush();
+
+  assert.deepEqual(delivered, [
+    { type: "text_delta", text: "checking", phase: "commentary", seq: 1 },
+    { type: "text_delta", text: "answer", phase: "final", seq: 2 },
+  ]);
+});
+
+test("tool output coalesces only within the same call and parent lane", () => {
+  const { r, delivered } = ring({ coalesceMs: 50 });
+  r.offer({ type: "tool_output_delta", id: "one", text: "a", parentId: "task" });
+  r.offer({ type: "tool_output_delta", id: "one", text: "b", parentId: "task" });
+  r.offer({ type: "tool_output_delta", id: "two", text: "c", parentId: "task" });
+  r.flush();
+
+  assert.deepEqual(delivered, [
+    { type: "tool_output_delta", id: "one", text: "ab", parentId: "task", seq: 1 },
+    { type: "tool_output_delta", id: "two", text: "c", parentId: "task", seq: 2 },
+  ]);
+});
+
 test("review 2026-08-29: a cursor canResume accepts is one the replay can actually honor at a cap", () => {
   // A delta still coalescing at the count cap: the flush inside replayAfter()
   // pushes it and evicts the oldest retained message. The verdict must be
