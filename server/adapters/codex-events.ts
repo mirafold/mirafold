@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { SessionMsg } from "../protocol";
 import { type TodoItem, capOutput, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
@@ -34,6 +35,66 @@ export type CodexItem = {
 };
 
 export type CodexMcpToolCall = Pick<CodexItem, "result" | "arguments">;
+
+/** One file change on an apply_patch row, as the browser renders it. */
+export type PatchChange = {
+  path: string;
+  kind: "add" | "delete" | "update";
+  /** A unified diff for `update`; the whole file's content for `add`/`delete`. */
+  diff: string;
+  movePath?: string;
+};
+
+/**
+ * app-server v2 delivers `fileChange.changes` as `[{ path, kind: { type,
+ * move_path }, diff }]` — `kind` is an OBJECT (read from the wire 2026-08-30;
+ * the earlier fixture guessed a string and every edit row was titled
+ * "[object Object]" for a month). The persisted rollout form is a map keyed
+ * by path with `unified_diff`/`content`; both are accepted so a fixture from
+ * either source normalizes the same way. Paths inside the workspace are
+ * shown relative to it, as the terminal prints them.
+ */
+export function normalizePatchChanges(raw: unknown, workspaceDir: string): PatchChange[] {
+  const entries: { path: string; change: Record<string, unknown> }[] = [];
+  if (Array.isArray(raw)) {
+    for (const c of raw) {
+      if (typeof c === "object" && c !== null && typeof (c as { path?: unknown }).path === "string") {
+        entries.push({ path: (c as { path: string }).path, change: c as Record<string, unknown> });
+      }
+    }
+  } else if (typeof raw === "object" && raw !== null) {
+    for (const [path, c] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof c === "object" && c !== null) entries.push({ path, change: c as Record<string, unknown> });
+    }
+  }
+  return entries.map(({ path, change }) => {
+    const kindRaw = change.kind ?? change.type;
+    const kindObj = typeof kindRaw === "object" && kindRaw !== null ? (kindRaw as Record<string, unknown>) : undefined;
+    const kindName = String(kindObj ? kindObj.type : kindRaw ?? "update");
+    const kind: PatchChange["kind"] = kindName === "add" || kindName === "delete" ? kindName : "update";
+    const diffRaw = change.diff ?? change.unified_diff ?? change.content;
+    const moveRaw = kindObj?.move_path ?? change.move_path;
+    const out: PatchChange = {
+      path: displayPath(path, workspaceDir),
+      kind,
+      diff: typeof diffRaw === "string" ? diffRaw : "",
+    };
+    if (typeof moveRaw === "string" && moveRaw) out.movePath = displayPath(moveRaw, workspaceDir);
+    return out;
+  });
+}
+
+function displayPath(p: string, workspaceDir: string): string {
+  if (!path.isAbsolute(p)) return p;
+  const rel = path.relative(workspaceDir, p);
+  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : p;
+}
+
+/** "Updated server/x.ts", "Added NOTES.md", "Deleted a.md", "Moved a → b". */
+export function describePatchChange(c: PatchChange): string {
+  if (c.movePath) return `Moved ${c.path} → ${c.movePath}`;
+  return `${c.kind === "add" ? "Added" : c.kind === "delete" ? "Deleted" : "Updated"} ${c.path}`;
+}
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
@@ -350,16 +411,15 @@ export class CodexEventMapper {
 
   private onFileChange(item: CodexItem, phase: ItemPhase) {
     if (phase !== "completed") return;
-    const changes = Array.isArray(item.changes)
-      ? (item.changes as { kind?: unknown; path?: unknown }[])
-      : [];
-    const paths = changes
-      .map((change) => `${String(change.kind ?? "update")} ${String(change.path ?? "")}`.trim())
-      .join(", ");
-    this.announceTool(item.id, "apply_patch", paths, { changes });
+    const changes = normalizePatchChanges(item.changes, this.options.workspaceDir);
+    const summary = changes.map(describePatchChange).join(", ");
+    // The row carries the normalized changes — path, kind, and the unified
+    // diff (full content for add/delete) — so the browser draws the patch
+    // the way the terminal prints it.
+    this.announceTool(item.id, "apply_patch", summary, { changes });
     const declined = item.status === "declined";
     this.finishTool(item.id, {
-      output: declined ? "(declined)" : paths || "(no changes)",
+      output: declined ? "(declined)" : summary || "(no changes)",
       isError: item.status === "failed" || declined,
     });
   }

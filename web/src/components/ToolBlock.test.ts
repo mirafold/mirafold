@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { diffLines } from "../diff";
+import { diffLines, unifiedDiffLines, wholeFileLines } from "../diff";
 import { ToolBlock, formatBytes } from "./ToolBlock";
 
 test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {
@@ -71,4 +71,44 @@ test("formatBytes scales units", () => {
   assert.equal(formatBytes(512), "512 B");
   assert.equal(formatBytes(2048), "2.0 KB");
   assert.equal(formatBytes(3 * 1024 * 1024), "3.0 MB");
+});
+
+
+test("an apply_patch row draws each file's patch as diff rows (TS.6)", () => {
+  const html = renderToStaticMarkup(
+    createElement(ToolBlock, {
+      id: 2,
+      toggled: true,
+      onToggle: () => {},
+      name: "apply_patch",
+      input: {
+        changes: [
+          { path: "server/a.ts", kind: "update", diff: "@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n" },
+          { path: "NOTES.md", kind: "add", diff: "alpha probe\n" },
+          { path: "gone.md", kind: "delete", diff: "bye" },
+        ],
+      },
+      output: "Updated server/a.ts, Added NOTES.md, Deleted gone.md",
+    }),
+  );
+  assert.match(html, /Updated server\/a\.ts/);
+  assert.match(html, /diff-del[^>]*>- old line/);
+  assert.match(html, /diff-add[^>]*>\+ new line/);
+  assert.match(html, /diff-ctx[^>]*>\s+context/);
+  assert.match(html, /Added NOTES\.md/);
+  assert.match(html, /diff-add[^>]*>\+ alpha probe/);
+  assert.match(html, /Deleted gone\.md/);
+  assert.match(html, /diff-del[^>]*>- bye/);
+  assert.match(html, /No newline at end of file/); // "bye" has no trailing newline
+  assert.doesNotMatch(html, /\[object Object\]/);
+});
+
+test("unifiedDiffLines and wholeFileLines produce the shared DiffLine rows", () => {
+  assert.deepEqual(unifiedDiffLines("--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n\\ No newline at end of file\n"), [
+    { sign: " ", text: "@@ -1 +1 @@" },
+    { sign: "-", text: "x" },
+    { sign: "+", text: "y", noNewline: true },
+  ]);
+  assert.deepEqual(wholeFileLines("a\nb", "+"), [{ sign: "+", text: "a" }, { sign: "+", text: "b", noNewline: true }]);
+  assert.deepEqual(wholeFileLines("", "-"), []);
 });

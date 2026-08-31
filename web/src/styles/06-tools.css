@@ -108,6 +108,19 @@
   border-color: var(--diff-add-border);
 }
 
+/* One block per file on an apply_patch row: "Updated server/x.ts" then the
+   patch as diff rows. */
+.tool-patch + .tool-patch {
+  margin-top: 6px;
+}
+
+.tool-patch-path {
+  margin: 0 0 3px 2px;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--fg-dim);
+}
+
 .tool-diff > div,
 .rc-diff-body > div {
   white-space: pre-wrap;

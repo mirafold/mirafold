@@ -104,3 +104,32 @@ function markNoNewline(
   }
   return out;
 }
+
+/**
+ * Lines of a unified diff (what Codex reports per edited file) as DiffLine
+ * rows, so an apply_patch row reads exactly like an Edit row. Hunk headers
+ * (`@@ … @@`) become context rows; `\ No newline at end of file` marks the
+ * preceding row. Anything else — a stray line without a sign — is shown as
+ * context rather than dropped.
+ */
+export function unifiedDiffLines(diff: string): DiffLine[] {
+  const out: DiffLine[] = [];
+  for (const raw of splitTextLines(diff).lines) {
+    if (raw.startsWith("\\ No newline")) {
+      if (out.length) out[out.length - 1].noNewline = true;
+      continue;
+    }
+    if (raw.startsWith("+++ ") || raw.startsWith("--- ")) continue;
+    const sign = raw[0];
+    if (sign === "+" || sign === "-") out.push({ sign, text: raw.slice(1) });
+    else if (sign === " ") out.push({ sign: " ", text: raw.slice(1) });
+    else out.push({ sign: " ", text: raw });
+  }
+  return out;
+}
+
+/** A whole file as one-signed diff rows (an added or deleted file). */
+export function wholeFileLines(content: string, sign: "+" | "-"): DiffLine[] {
+  const { lines, endsWithNewline } = splitTextLines(content);
+  return lines.map((text, i) => ({ sign, text, ...(i === lines.length - 1 && !endsWithNewline ? { noNewline: true as const } : {}) }));
+}

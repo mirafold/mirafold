@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSy
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
 import { CODEX_PAINT_REMINDER, withPaintReminder } from "./codex-prompt";
+import { describePatchChange, normalizePatchChanges } from "./codex-events";
 import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
@@ -269,7 +270,19 @@ const HAPPY: Notification[] = [
     "item/completed",
     { item: { type: "commandExecution", id: "c1", command: "ls -la", aggregatedOutput: "file.txt", exitCode: 0, status: "completed" } },
   ],
-  ["item/completed", { item: { type: "fileChange", id: "f1", status: "completed", changes: [{ kind: "update", path: "src/a.ts", diff: "" }] } }],
+  // The REAL wire shape (captured from app-server 2026-08-30): `kind` is an
+  // object, `diff` a unified diff, paths absolute.
+  [
+    "item/completed",
+    {
+      item: {
+        type: "fileChange",
+        id: "f1",
+        status: "completed",
+        changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }],
+      },
+    },
+  ],
   ["item/started", { item: { type: "mcpToolCall", id: "mc1", server: "docs", tool: "search", arguments: { q: "x" }, status: "inProgress" } }],
   [
     "item/completed",
@@ -305,7 +318,14 @@ test("happy stream: full notification→WireMsg mapping, exactly one turn_end", 
   const results = msgs.filter((m) => m.type === "tool_result");
   assert.deepEqual(results.map((r) => r.id), ["c1", "f1", "mc1", "w1"]);
   assert.equal(results[0].output, "file.txt");
-  assert.equal(results[1].output, "update src/a.ts");
+  assert.equal(results[1].output, "Updated src/a.ts");
+  // The row's input carries the normalized change so the browser draws the
+  // patch: workspace-relative path, kind as a plain string, the diff intact.
+  const patchRow = msgs.find((m) => m.type === "tool_use" && m.name === "apply_patch")!;
+  assert.equal(patchRow.detail, "Updated src/a.ts");
+  assert.deepEqual(patchRow.input, {
+    changes: [{ path: "src/a.ts", kind: "update", diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }],
+  });
   assert.equal(results[2].output, "3 hits");
   assert.equal(uses[0].detail, "ls -la");
   assert.deepEqual(uses[0].input, { command: "ls -la" });
@@ -792,7 +812,7 @@ test("a declined command (the user said no) is an error row that says so", async
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/started", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", status: "inProgress" } }],
     ["item/completed", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", aggregatedOutput: "", status: "declined" } }],
-    ["item/completed", { item: { type: "fileChange", id: "f2", status: "declined", changes: [{ kind: "add", path: "/etc/x", diff: "" }] } }],
+    ["item/completed", { item: { type: "fileChange", id: "f2", status: "declined", changes: [{ path: "/etc/x", kind: { type: "add" }, diff: "root:x\n" }] } }],
     DONE,
   ]);
   s.pushPrompt("go");
@@ -1715,4 +1735,40 @@ test("describePermissionProfile: the special kinds that carry a literal path or 
     }),
     "grant for this turn: write /etc/cron.d, read secrets inside each project root, read /var/x/y",
   );
+});
+
+
+test("apply_patch changes normalize from the wire shape and the rollout shape alike (TS.6)", () => {
+  const ws = "/home/u/proj";
+  const wire = normalizePatchChanges(
+    [
+      { path: `${ws}/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-a\n+b\n" },
+      { path: `${ws}/new.md`, kind: { type: "add" }, diff: "hello\n" },
+      { path: `${ws}/old.md`, kind: { type: "delete" }, diff: "bye\n" },
+      { path: `${ws}/x.ts`, kind: { type: "update", move_path: `${ws}/y.ts` }, diff: "" },
+      { path: "/etc/hosts", kind: { type: "update" }, diff: "" },
+    ],
+    ws,
+  );
+  assert.deepEqual(wire.map(describePatchChange), [
+    "Updated a.ts",
+    "Added new.md",
+    "Deleted old.md",
+    "Moved x.ts → y.ts",
+    "Updated /etc/hosts", // outside the workspace stays absolute
+  ]);
+  assert.deepEqual(wire[0], { path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" });
+  const rollout = normalizePatchChanges(
+    { [`${ws}/a.ts`]: { type: "update", unified_diff: "@@ -1 +1 @@\n-a\n+b\n", move_path: null }, [`${ws}/n.md`]: { type: "add", content: "hi\n" } },
+    ws,
+  );
+  assert.deepEqual(rollout, [
+    { path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" },
+    { path: "n.md", kind: "add", diff: "hi\n" },
+  ]);
+  // The guessed shape that hid a month of diffs must never come back:
+  // an object kind is never stringified.
+  assert.ok(!JSON.stringify(wire).includes("[object Object]"));
+  assert.deepEqual(normalizePatchChanges(undefined, ws), []);
+  assert.deepEqual(normalizePatchChanges("garbage", ws), []);
 });

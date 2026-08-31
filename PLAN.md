@@ -3826,6 +3826,56 @@ demos paint every turn because they are scripted; real sessions were not.
   engine's own tool rows, so the missing piece is the prose summary, not
   the data. Any further lever is product design (what a work summary should
   look like), not prompting.
+**Second half of the phase — event fidelity (Kyle, 2026-08-30: "let's do
+these fixes to ensure we are painting as often as we should be for every
+agent").** The deferral work above fixed the model's ACCESS to the render
+tools; the replays showed the rest of "just text" is what Mirafold drops of
+what the engine already did. Audit (`codex app-server
+generate-json-schema`, 19 thread-item kinds; the adapter mapped 7 with no
+default branch; Kyle's 86 August sessions): edits shown as
+`[object Object] /abs/path` with the diff never drawn (2,171); commentary
+vs. final answer indistinguishable (3,553 vs 513); subagent activity
+invisible (568 collab + 456 activity items); image views dropped (233);
+command output not streamed; a dozen notification kinds unhandled.
+
+- [x] **TS.6 — Codex edits as real diffs** — done 2026-08-30; live-checked: rows read "Added/Updated/Deleted NOTES.md" with the patch attached. `normalizePatchChanges` reads
+  the wire shape (`kind: { type, move_path }`, `diff`) and the rollout shape
+  (map by path, `unified_diff`/`content`) alike; rows read "Updated
+  server/x.ts" (workspace-relative, like the terminal); the row's input
+  carries `{path, kind, diff}` and the browser draws hunks for updates and
+  the whole file for adds/deletes with the same diff rows an Edit gets.
+  Fixtures use the REAL captured shape. Live-checked against the engine.
+- [ ] **TS.7 — Never silent + schema conformance.** Every adapter's item
+  dispatcher gets a default branch: log + one shell-voiced notice per
+  session per kind ("Codex sent something Mirafold doesn't display yet:
+  …"). Codex: a small protocol digest (variant names, notification methods,
+  the fields the adapter reads) generated from `generate-json-schema` and
+  vendored; Tier-1 asserts handled ∪ deliberately-ignored == digest; Tier-4
+  regenerates the digest from the installed Codex and fails on drift with
+  the diff. Live tests assert zero unknown-kind notices for their scripts.
+- [ ] **TS.8 — Commentary vs. final answer.** Additive `text_delta.phase`
+  ("commentary" | "final"); the browser renders commentary as narration
+  (dim, part of the turn's activity) and the final answer at full weight —
+  the terminal's distinction, which 7 of 8 Codex messages currently lose.
+- [ ] **TS.9 — Codex subagent lane.** `collabAgentToolCall` → tool rows
+  (spawn/wait/send with the prompt and agent ids); `subAgentActivity`
+  (started/interacted/interrupted/completed) → narration under the spawn
+  row via `parentId`, the Phase SA deck. Inner child content still needs
+  per-thread subscriptions — recorded, not attempted here.
+- [ ] **TS.10 — Image views.** `imageView` → a `view_image path` row plus
+  the image itself painted inline (workspace-jailed, byte-capped, the
+  existing render_image path) — faithful and better than the terminal.
+- [ ] **TS.11 — Streamed command output.** Additive wire
+  `tool_output_delta { id, text, parentId? }` from
+  `item/commandExecution/outputDelta`; the browser appends to the running
+  row; `tool_result` still closes it. Same for `item/fileChange/outputDelta`.
+- [ ] **TS.12 — The other engines' guards.** Claude: an exhaustive ledger
+  `satisfies Record<SDKMessage["type"], "handled" | "ignored">` (compile
+  error on an SDK bump that adds a kind) + `compact_boundary` surfaced as
+  the compaction notice Codex already gets; OpenCode: Tier-4 pulls the
+  server's API description and asserts event/part variants against the
+  handled set; Gemini: the Tier-4 run fails on any unclassified kind.
+
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.

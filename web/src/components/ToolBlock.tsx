@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { diffLines } from "../diff";
+import { diffLines, unifiedDiffLines, wholeFileLines, type DiffLine } from "../diff";
 import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 
@@ -98,6 +98,34 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
     return (
       <div className="tool-input">
         <EditDiff oldText={String(input["old_string"])} newText={String(input["new_string"] ?? "")} />
+      </div>
+    );
+  }
+  if (name === "apply_patch" && Array.isArray(input["changes"])) {
+    // Codex edits: one block per changed file, the patch drawn as diff rows
+    // (hunks for updates, the whole file for adds/deletes) — what the
+    // terminal prints for apply_patch.
+    return (
+      <div className="tool-input">
+        {(input["changes"] as unknown[]).map((raw, i) => {
+          const c = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+          const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
+          const diff = typeof c["diff"] === "string" ? c["diff"] : "";
+          const label = `${kind === "add" ? "Added" : kind === "delete" ? "Deleted" : "Updated"} ${String(c["path"] ?? "")}`;
+          const lines: DiffLine[] = kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-");
+          return (
+            <div className="tool-patch" key={i}>
+              <div className="tool-patch-path">{label}</div>
+              {lines.length > 0 ? (
+                <pre className="tool-diff">
+                  <DiffLines lines={lines} />
+                </pre>
+              ) : (
+                <pre className="tool-code">(no diff)</pre>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   }
