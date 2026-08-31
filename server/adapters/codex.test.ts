@@ -5,7 +5,7 @@ import os from "node:os";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
-import { describePatchChange, normalizePatchChanges } from "./codex-events";
+import { describePatchChange, normalizePatchChanges } from "./codex-patch";
 import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";

@@ -272,7 +272,7 @@ test("OpenCode's published API lists no event or part kind the adapter hasn't cl
       : false,
 }, async () => {
   const { OPENCODE_HANDLED_EVENTS, OPENCODE_HANDLED_PARTS, OPENCODE_IGNORED_PARTS, opencodeEventIgnored } = await import(
-    "./opencode-events"
+    "./opencode-ledger"
   );
   const home = mkdtempSync(path.join(os.tmpdir(), "mirafold-opencode-spec-"));
   const work = path.join(home, "work");

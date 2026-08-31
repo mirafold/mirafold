@@ -7,7 +7,7 @@ import {
   CODEX_HANDLED_METHODS,
   CODEX_IGNORED_ITEMS,
   CODEX_IGNORED_METHODS,
-} from "./codex-events";
+} from "./codex-ledger";
 
 // The vendored digest of Codex's app-server protocol (scripts/
 // codex-protocol-digest.mjs). The Tier-4 live test regenerates it from the

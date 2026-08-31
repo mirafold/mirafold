@@ -340,9 +340,11 @@ for a tool rarely paints (Phase TS, 2026-08-30):
 **Nothing the engine sends is dropped silently (TS.7).** Each adapter's
 dispatcher has a default branch: an item, event, or message kind with no
 mapping is logged and surfaced once per session as a shell-voiced notice
-("Mirafold doesn't display this Codex item yet: …"), never swallowed. For
-Codex the ledger is held to the engine's own protocol: `scripts/
-codex-protocol-digest.mjs` distills `codex app-server generate-json-schema`
+("Mirafold doesn't display this Codex item yet: …"), never swallowed. Each
+adapter's ledger — what it maps, what it deliberately ignores and why —
+lives beside it (`codex-ledger.ts`, `opencode-ledger.ts`; Claude's is
+`CLAUDE_MESSAGE_LEDGER` in its adapter). For Codex the ledger is held to the
+engine's own protocol: `scripts/codex-protocol-digest.mjs` distills `codex app-server generate-json-schema`
 into `server/adapters/codex-protocol.digest.json` (item kinds, notification
 methods, the field shapes the adapter reads); `codex-protocol.test.ts`
 asserts every kind is handled, deliberately ignored (with a reason), or

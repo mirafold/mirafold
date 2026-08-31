@@ -399,6 +399,9 @@ function buildSnapshot(
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
   let streamingId: number | null = null;
+  // The phase the open prose row was started with (text_delta.phase); a
+  // delta declaring a different phase closes the row and opens a new one.
+  let streamingPhase: "commentary" | "final" | undefined;
   let thinkingId: number | null = null;
   const subtextIds = new Map<string, number>();
   let openToolBatches: number[] = [];
@@ -494,9 +497,9 @@ export function createTranscriptProjection(): TranscriptProjection {
       case "text_delta": {
         // A phase change (commentary → final answer) starts a new row so the
         // narration and the answer never share one block.
-        const current = streamingId === null ? undefined : entries.find((e) => e.kind === "text" && e.id === streamingId);
-        if (current && current.kind === "text" && current.phase !== msg.phase && msg.phase !== undefined) {
-          entries = entries.map((entry) => (entry.id === current.id ? { ...entry, done: true } : entry));
+        if (streamingId !== null && msg.phase !== undefined && msg.phase !== streamingPhase) {
+          const closing = streamingId;
+          entries = entries.map((entry) => (entry.id === closing ? { ...entry, done: true } : entry));
           streamingId = null;
         }
         if (streamingId !== null) {
@@ -509,6 +512,7 @@ export function createTranscriptProjection(): TranscriptProjection {
         } else {
           const id = nextTranscriptId++;
           streamingId = id;
+          streamingPhase = msg.phase;
           entries = [
             ...entries,
             { kind: "text", id, role: "assistant", text: msg.text, done: false, ...(msg.phase ? { phase: msg.phase } : {}) },

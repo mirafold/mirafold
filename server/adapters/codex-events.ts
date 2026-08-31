@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import type { SessionMsg } from "../protocol";
-import { type TodoItem, capOutput, joinTextBlocks, toolDetail } from "./types";
+import { type TodoItem, capOutput, joinTextBlocks } from "./types";
 import { resolveImageProps } from "../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter, UnknownKindReporter } from "./wire-helpers";
+import { CODEX_IGNORED_ITEMS, CODEX_IGNORED_METHODS } from "./codex-ledger";
+import { describePatchChange, displayPath, normalizePatchChanges } from "./codex-patch";
 import { createLogger } from "../log";
+import { convertMermaidCharts } from "./mermaid-chart";
 
 const log = createLogger("codex-events");
-import { convertMermaidCharts } from "./mermaid-chart";
 
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
 // `thread/*`) normalized into SessionMsg. Shapes come from the binary's own
@@ -63,179 +64,6 @@ const STREAM_CAP_CHARS = 64_000;
 function firstLine(text: string, max: number): string {
   const line = text.split("\n").find((l) => l.trim()) ?? "";
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
-}
-
-// The adapter's ledger against Codex's protocol digest
-// (codex-protocol.digest.json, from `codex app-server generate-json-schema`;
-// codex-protocol.test.ts holds them equal). Every kind the engine can send is
-// either handled below, deliberately ignored here with its reason, or
-// reported by UnknownKindReporter the first time it arrives.
-export const CODEX_HANDLED_ITEMS = [
-  "agentMessage",
-  "reasoning",
-  "commandExecution",
-  "fileChange",
-  "mcpToolCall",
-  "webSearch",
-  "contextCompaction",
-  "plan",
-  "enteredReviewMode",
-  "exitedReviewMode",
-  "collabAgentToolCall",
-  "subAgentActivity",
-  "imageView",
-  "imageGeneration",
-  "dynamicToolCall",
-  "sleep",
-] as const;
-export const CODEX_IGNORED_ITEMS: Record<string, string> = {
-  userMessage: "the engine's echo of the prompt; the registry already emitted user_prompt",
-  functionCallOutput: "the raw output of a call already represented by its own item",
-  hookPrompt: "a hook's prompt fragments are the engine's input, not its output",
-};
-export const CODEX_HANDLED_METHODS = [
-  "turn/started",
-  "turn/completed",
-  "item/started",
-  "item/completed",
-  "item/agentMessage/delta",
-  "item/plan/delta",
-  "item/commandExecution/outputDelta",
-  "item/fileChange/outputDelta",
-  "item/reasoning/summaryTextDelta",
-  "item/reasoning/textDelta",
-  "turn/plan/updated",
-  "thread/tokenUsage/updated",
-  "error",
-  "warning",
-  "deprecationNotice",
-  "configWarning",
-  "guardianWarning",
-  "model/rerouted",
-] as const;
-export const CODEX_IGNORED_METHODS: Record<string, string> = {
-  "thread/started": "the session consumes it on thread/start",
-  "thread/status/changed": "the registry derives status from the stream itself",
-  "thread/name/updated": "Mirafold names sessions by folder",
-  "thread/goal/updated": "goal bookkeeping for Codex's own UI",
-  "thread/goal/cleared": "goal bookkeeping for Codex's own UI",
-  "thread/queue/changed": "Mirafold serializes prompts itself",
-  "thread/archived": "thread lifecycle for Codex's own UI",
-  "thread/unarchived": "thread lifecycle for Codex's own UI",
-  "thread/deleted": "thread lifecycle for Codex's own UI",
-  "thread/closed": "thread lifecycle for Codex's own UI",
-  "thread/reverted": "thread lifecycle for Codex's own UI",
-  "thread/project/updated": "project bookkeeping for Codex's own UI",
-  "thread/settings/updated": "settings echo; the adapter owns its /model and /effort state",
-  "thread/environment/connected": "remote-environment plumbing Mirafold does not use",
-  "thread/environment/disconnected": "remote-environment plumbing Mirafold does not use",
-  "project/changed": "project bookkeeping for Codex's own UI",
-  "skills/changed": "the prompt-option refresh re-lists skills per turn",
-  "hook/started": "Codex hooks run silently in the terminal too",
-  "hook/completed": "Codex hooks run silently in the terminal too",
-  "item/autoApprovalReview/started": "internal review of an auto-approval; the approval itself is surfaced",
-  "item/autoApprovalReview/completed": "internal review of an auto-approval; the approval itself is surfaced",
-  "autoApprovalReview/strictReviewRequired": "internal review of an auto-approval; the approval itself is surfaced",
-  "item/reasoning/summaryPartAdded": "a paragraph boundary inside reasoning already streamed as deltas",
-  "item/mcpToolCall/progress": "progress ticks of a call whose completion is shown",
-  "serverRequest/resolved": "the answer to an ask the session itself resolved",
-  "command/exec/outputDelta": "the exec runtime's own streaming; the item completion is shown",
-  "process/outputDelta": "background process plumbing not represented in the transcript",
-  "process/exited": "background process plumbing not represented in the transcript",
-  "item/commandExecution/terminalInteraction": "interactive-terminal plumbing not represented in the transcript",
-  "mcpServer/oauthLogin/completed": "MCP server administration",
-  "mcpServer/startupStatus/updated": "MCP server administration",
-  "mcpServer/event/stream/notification": "MCP server administration",
-  "account/updated": "account administration",
-  "account/login/completed": "account administration",
-  "app/list/updated": "Codex apps administration",
-  "remoteControl/status/changed": "remote-control administration",
-  "externalAgentConfig/import/progress": "config import administration",
-  "externalAgentConfig/import/completed": "config import administration",
-  "fs/changed": "the Changes panel watches the tree itself",
-  "fuzzyFileSearch/sessionUpdated": "Codex's own file picker",
-  "fuzzyFileSearch/sessionCompleted": "Codex's own file picker",
-  "thread/realtime/started": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/itemAdded": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/item/started": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/item/transcript/delta": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/item/completed": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/transcript/delta": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/transcript/done": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/outputAudio/delta": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/sdp": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/error": "voice/realtime mode Mirafold does not drive",
-  "thread/realtime/closed": "voice/realtime mode Mirafold does not drive",
-  "windows/worldWritableWarning": "Windows-only setup diagnostics",
-  "windowsSandbox/setupCompleted": "Windows-only setup diagnostics",
-  "turn/moderationMetadata": "moderation bookkeeping with no user-facing text",
-  "model/safetyBuffering/updated": "moderation bookkeeping with no user-facing text",
-  "model/verification": "model bookkeeping with no user-facing text",
-  "thread/compacted": "the contextCompaction item is the shown form of the same event",
-  "item/fileChange/patchUpdated": "the completed fileChange item carries the final changes (TS.6)",
-  "turn/diff/updated": "the Changes panel watches the working tree itself",
-  "account/rateLimits/updated":
-    "rate-limit bookkeeping on every turn; an 'approaching the limit' notice like Claude's needs the params shape recorded first",
-};
-
-/** One file change on an apply_patch row, as the browser renders it. */
-export type PatchChange = {
-  path: string;
-  kind: "add" | "delete" | "update";
-  /** A unified diff for `update`; the whole file's content for `add`/`delete`. */
-  diff: string;
-  movePath?: string;
-};
-
-/**
- * app-server v2 delivers `fileChange.changes` as `[{ path, kind: { type,
- * move_path }, diff }]` — `kind` is an OBJECT (read from the wire 2026-08-30;
- * the earlier fixture guessed a string and every edit row was titled
- * "[object Object]" for a month). The persisted rollout form is a map keyed
- * by path with `unified_diff`/`content`; both are accepted so a fixture from
- * either source normalizes the same way. Paths inside the workspace are
- * shown relative to it, as the terminal prints them.
- */
-export function normalizePatchChanges(raw: unknown, workspaceDir: string): PatchChange[] {
-  const entries: { path: string; change: Record<string, unknown> }[] = [];
-  if (Array.isArray(raw)) {
-    for (const c of raw) {
-      if (typeof c === "object" && c !== null && typeof (c as { path?: unknown }).path === "string") {
-        entries.push({ path: (c as { path: string }).path, change: c as Record<string, unknown> });
-      }
-    }
-  } else if (typeof raw === "object" && raw !== null) {
-    for (const [path, c] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof c === "object" && c !== null) entries.push({ path, change: c as Record<string, unknown> });
-    }
-  }
-  return entries.map(({ path, change }) => {
-    const kindRaw = change.kind ?? change.type;
-    const kindObj = typeof kindRaw === "object" && kindRaw !== null ? (kindRaw as Record<string, unknown>) : undefined;
-    const kindName = String(kindObj ? kindObj.type : kindRaw ?? "update");
-    const kind: PatchChange["kind"] = kindName === "add" || kindName === "delete" ? kindName : "update";
-    const diffRaw = change.diff ?? change.unified_diff ?? change.content;
-    const moveRaw = kindObj?.move_path ?? change.move_path;
-    const out: PatchChange = {
-      path: displayPath(path, workspaceDir),
-      kind,
-      diff: typeof diffRaw === "string" ? diffRaw : "",
-    };
-    if (typeof moveRaw === "string" && moveRaw) out.movePath = displayPath(moveRaw, workspaceDir);
-    return out;
-  });
-}
-
-function displayPath(p: string, workspaceDir: string): string {
-  if (!path.isAbsolute(p)) return p;
-  const rel = path.relative(workspaceDir, p);
-  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : p;
-}
-
-/** "Updated server/x.ts", "Added NOTES.md", "Deleted a.md", "Moved a → b". */
-export function describePatchChange(c: PatchChange): string {
-  if (c.movePath) return `Moved ${c.path} → ${c.movePath}`;
-  return `${c.kind === "add" ? "Added" : c.kind === "delete" ? "Deleted" : "Updated"} ${c.path}`;
 }
 
 export function mcpText(content: unknown): string {
@@ -545,12 +373,7 @@ export class CodexEventMapper {
         this.onDynamicToolCall(item, phase);
         break;
       case "sleep":
-        if (phase === "completed") {
-          const ms = typeof item.durationMs === "number" ? item.durationMs : undefined;
-          const detail = ms === undefined ? "" : ms >= 1000 ? `${Math.round(ms / 100) / 10} s` : `${ms} ms`;
-          this.announceTool(item.id, "sleep", detail, { durationMs: ms });
-          this.finishTool(item.id, { output: "(done)" });
-        }
+        if (phase === "completed") this.onSleep(item);
         break;
       case "enteredReviewMode":
         if (phase === "completed") this.options.emit({ type: "notice", text: "Codex entered review mode.", kind: "info" });
@@ -740,6 +563,13 @@ export class CodexEventMapper {
     const props = resolveImageProps(this.options.workspaceDir, { path, alt });
     if (typeof props["error"] === "string") return; // outside the workspace, not an image, too big: the row stands alone
     this.options.emit({ type: "render", component: "image", props, id: randomUUID() });
+  }
+
+  private onSleep(item: CodexItem) {
+    const ms = typeof item.durationMs === "number" ? item.durationMs : undefined;
+    const detail = ms === undefined ? "" : ms >= 1000 ? `${Math.round(ms / 100) / 10} s` : `${ms} ms`;
+    this.announceTool(item.id, "sleep", detail, { durationMs: ms });
+    this.finishTool(item.id, { output: "(done)" });
   }
 
   /** Codex apps / dynamic tools: a tool row named the way the engine names it. */
