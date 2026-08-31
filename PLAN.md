@@ -3776,20 +3776,29 @@ demos paint every turn because they are scripted; real sessions were not.
   core. `codex.test.ts` pins order and content. No Codex config opt-out
   exists (verified against the sample config's full `mcp_servers` key list).
 - [x] **TS.3 — Codex: measured live, honestly** — done 2026-08-30 (ChatGPT
-  login, real adapter, `gpt-5.6-sol` at Kyle's `max` effort). Single-turn
-  asks painted with the OLD note too (a table, a list). A scripted
-  three-turn work session (read a file and explain → compare two files →
-  summarize) painted **3/3 with the new note (key-value, table, list) and
-  3/3 with the old one (table, table, list)**. So short probes cannot
-  separate the two: the model DOES find the tools when a turn has an
-  obvious structured answer; what the August logs show is that it stops
-  bothering deep in long feature-building sessions. TS.2 stands on its
-  merits (it teaches the actual mechanism and leads with it) but is
-  **unproven by probe** — the proof is Kyle's next week of real sessions,
-  re-measured with the rollout recount. If the rate stays ~1%, the next
-  lever is Mirafold-side: a short per-turn paint reminder riding with each
-  prompt (a product decision — it changes what the engine receives every
-  turn), or TS.4.
+  login, real adapter, `gpt-5.6-sol` at Kyle's `max` effort). Short probes
+  were useless (single-turn asks and a three-turn read/compare/summarize
+  script painted every turn under the OLD note too). The test that counts:
+  a **16-turn replay of Kyle's own August prompts** (idea-listing, "analyze
+  this project", a four-bug report, "fixed all those?", alignment fix, "how
+  is this different?", "nothing left?", "what's next? ncja", the ctrl+ bug,
+  a bed-time handoff) in a throwaway worktree, Codex project config
+  `approval_policy = "never"` + `workspace-write`, ~55 min per condition,
+  7 turns hand-marked as having a structured core (S), 6 plausible (P), 3
+  prose (–); Codex's own `todo-list` checklists excluded. Result:
+  **old note 3/16 turns painted (S 1/7, P 1/6, – 1/3); new note 4/16
+  (S 2/7, P 2/6, – 0/3).** Both paint on the first three advisory turns
+  (ideas → card+table+list; estimate → table) and then go prose for the
+  rest of the session, including the quality analysis (turn 4, prose under
+  both), the four-bug diagnosis (turn 5), and every short follow-up. The new
+  note is not a lever: **one extra painting in 16 turns is noise.** What the
+  replay shows instead: the model paints when the turn is advisory and
+  fresh, and stops once the session has done real tool work; whether the
+  tools are one search away or listed makes no visible difference. The
+  remaining levers are per-turn (a paint reminder riding with each prompt —
+  a product decision, it changes what the engine receives every turn) or
+  TS.4. Measured facts, not a guess; re-run the replay before believing any
+  future change.
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.
