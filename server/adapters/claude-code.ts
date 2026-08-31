@@ -51,7 +51,7 @@ export const CLAUDE_MESSAGE_LEDGER = {
   hook_started: "ignored", // hooks run silently in the terminal too
   hook_response: "ignored",
   hook_progress: "ignored",
-  compact_boundary: "unmapped", // TS.12: surface as the compaction notice Codex gets
+  compact_boundary: "handled", // the compaction notice, via handleSystemMsg (it also arrives as a system subtype)
   tool_progress: "unmapped", // TS.11 sibling: streamed tool progress
   task_started: "unmapped", // background tasks
   task_progress: "unmapped",
@@ -629,6 +629,7 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "system":
+          case "compact_boundary":
             this.handleSystemMsg(msg);
             break;
           case "rate_limit_event":

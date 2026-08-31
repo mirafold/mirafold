@@ -262,3 +262,51 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     rmSync(work, { recursive: true, force: true });
   }
 });
+
+
+test("OpenCode's published API lists no event or part kind the adapter hasn't classified (TS.12)", {
+  skip: !BIN
+    ? "opencode not installed"
+    : spawnSync(BIN, ["--version"], { stdio: "ignore", timeout: 20_000 }).status !== 0
+      ? "opencode is installed but cannot run (e.g. its postinstall never fetched the platform binary)"
+      : false,
+}, async () => {
+  const { OPENCODE_HANDLED_EVENTS, OPENCODE_HANDLED_PARTS, OPENCODE_IGNORED_EVENTS, OPENCODE_IGNORED_PARTS } = await import(
+    "./opencode-events"
+  );
+  const home = mkdtempSync(path.join(os.tmpdir(), "mirafold-opencode-spec-"));
+  const work = path.join(home, "work");
+  mkdirSync(work, { recursive: true });
+  const transport = new OpenCodeServerProcess({
+    bin: BIN as string,
+    cwd: work,
+    configContent: {},
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, ".config"), XDG_DATA_HOME: path.join(home, ".local", "share"), XDG_CACHE_HOME: path.join(home, ".cache"), XDG_STATE_HOME: path.join(home, ".state") },
+  });
+  try {
+    await transport.start(() => {});
+    const doc = (await transport.openApiDocument()) as { components?: { schemas?: Record<string, unknown> } };
+    const schemas = doc.components?.schemas ?? {};
+    const constsOf = (schema: unknown): string[] => {
+      const t = (schema as { properties?: { type?: { const?: unknown; enum?: unknown[] } } }).properties?.type;
+      if (!t) return [];
+      if (typeof t.const === "string") return [t.const];
+      if (Array.isArray(t.enum)) return t.enum.filter((v): v is string => typeof v === "string");
+      return [];
+    };
+    const events = new Set<string>();
+    const parts = new Set<string>();
+    for (const [name, schema] of Object.entries(schemas)) {
+      if (name.startsWith("Event")) for (const t of constsOf(schema)) events.add(t);
+      else if (name.endsWith("Part")) for (const t of constsOf(schema)) parts.add(t);
+    }
+    assert.ok(events.size > 0 && parts.size > 0, `could not read event/part kinds from the spec (schemas: ${Object.keys(schemas).slice(0, 20).join(", ")})`);
+    const unclassifiedEvents = [...events].filter((t) => !(OPENCODE_HANDLED_EVENTS as readonly string[]).includes(t) && !(t in OPENCODE_IGNORED_EVENTS));
+    const unclassifiedParts = [...parts].filter((t) => !(OPENCODE_HANDLED_PARTS as readonly string[]).includes(t) && !(t in OPENCODE_IGNORED_PARTS));
+    assert.deepEqual(unclassifiedEvents, [], "OpenCode events the adapter neither handles nor deliberately ignores");
+    assert.deepEqual(unclassifiedParts, [], "OpenCode message parts the adapter neither handles nor deliberately ignores");
+  } finally {
+    transport.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});

@@ -63,6 +63,19 @@ export const OPENCODE_IGNORED_EVENTS: Record<string, string> = {
   "command.executed": "slash-command bookkeeping",
   "todo.updated": "handled",
 };
+export const OPENCODE_HANDLED_EVENTS = [
+  "message.updated",
+  "message.part.updated",
+  "message.part.delta",
+  "session.status",
+  "todo.updated",
+  "session.created",
+  "permission.asked",
+  "permission.replied",
+  "session.error",
+  "session.idle",
+] as const;
+export const OPENCODE_HANDLED_PARTS = ["step-start", "text", "reasoning", "tool"] as const;
 export const OPENCODE_IGNORED_PARTS: Record<string, string> = {
   "step-finish": "a step boundary; usage arrives on session.idle",
   snapshot: "OpenCode's own undo snapshots",

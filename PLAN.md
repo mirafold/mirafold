@@ -3869,7 +3869,7 @@ command output not streamed; a dozen notification kinds unhandled.
   `tool_output_delta { id, text, parentId? }` from
   `item/commandExecution/outputDelta`; the browser appends to the running
   row; `tool_result` still closes it. Same for `item/fileChange/outputDelta`.
-- [ ] **TS.12 — The other engines' guards.** Claude: an exhaustive ledger
+- [x] **TS.12 — The other engines' guards** — done 2026-08-31, with one honest gap: Claude's ledger is compile-time exhaustive (`compact_boundary` was already surfaced; `tool_progress` and `task_*` stay unmapped → reported when they arrive); OpenCode: the adapter exports its handled/ignored ledgers and a Tier-4 test pulls the server's own OpenAPI document (`/doc`) and fails on any unclassified event/part kind — **not runnable on this machine: the global `opencode` install is broken (its postinstall never fetched the platform binary), so the test skips with that reason; Kyle's OpenCode sessions on 08-13/08-18 predate the break**; Gemini: the runtime guard only (sunset, no live tier). Claude: an exhaustive ledger
   `satisfies Record<SDKMessage["type"], "handled" | "ignored">` (compile
   error on an SDK bump that adds a kind) + `compact_boundary` surfaced as
   the compaction notice Codex already gets; OpenCode: Tier-4 pulls the

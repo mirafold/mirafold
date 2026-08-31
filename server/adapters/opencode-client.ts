@@ -302,6 +302,20 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
+  /** The server's own OpenAPI document — the source of truth the Tier-4
+   *  conformance test holds the adapter's event/part ledger to (TS.12). */
+  async openApiDocument(): Promise<unknown> {
+    let lastError: unknown;
+    for (const pathname of ["/doc", "/openapi.json"]) {
+      try {
+        return await (await this.request(pathname)).json();
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("opencode: no OpenAPI document at /doc or /openapi.json");
+  }
+
   private async request(pathname: string, init?: RequestInit): Promise<Response> {
     const res = await fetch(`${this.base}${pathname}`, {
       ...init,
