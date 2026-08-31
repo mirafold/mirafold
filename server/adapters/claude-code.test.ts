@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { ClaudeCodeSession } from "./claude-code";
-import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE, makeRenderServer } from "../render-tools";
 
 // The Claude Code SDK-message→WireMsg mapping and the turn grammar, on
 // synthetic SDKMessages — no CLI, no network. The session is real; only the
@@ -957,5 +957,22 @@ test("a synchronous engine failure on the first trusted prompt errors the turn, 
   } finally {
     process.off("unhandledRejection", onRejection);
     s.close();
+  }
+});
+
+test("the ui render server exempts every tool from Claude Code's tool-search deferral (alwaysLoad)", () => {
+  // Claude Code defers MCP tool definitions behind ToolSearch by default, and
+  // a model that has to search before it can paint mostly answers in prose.
+  // The SDK expresses the exemption as `_meta["anthropic/alwaysLoad"]` on
+  // each registered tool; the McpServer instance keeps them under
+  // `_registeredTools` (an internal map, the only place the flag surfaces
+  // without running a session).
+  const server = makeRenderServer(() => {}, tmp);
+  const registered = (server.instance as unknown as { _registeredTools: Record<string, { _meta?: Record<string, unknown> }> })
+    ._registeredTools;
+  const names = Object.keys(registered);
+  assert.ok(names.includes("render_table") && names.includes("emit_artifact"), `tools: ${names.join(", ")}`);
+  for (const name of names) {
+    assert.equal(registered[name]._meta?.["anthropic/alwaysLoad"], true, `${name} must be always-loaded`);
   }
 });
