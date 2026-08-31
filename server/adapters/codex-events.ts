@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { SessionMsg } from "../protocol";
-import { type TodoItem, capOutput, joinTextBlocks, OUTPUT_CAP_BYTES } from "./types";
+import { type TodoItem, capOutput, joinTextBlocks, OUTPUT_CAP_BYTES, SubagentProseBudget } from "./types";
 import { resolveImageProps } from "../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
-import { ChecklistPainter, UnknownKindReporter } from "./wire-helpers";
+import { ChecklistPainter, UnknownKindReporter, inertToken } from "./wire-helpers";
 import { CODEX_IGNORED_ITEMS, CODEX_IGNORED_METHODS } from "./codex-ledger";
 import { describePatchChange, displayPath, normalizePatchChanges } from "./codex-patch";
 import { createLogger } from "../log";
@@ -113,6 +113,10 @@ export class CodexEventMapper {
   // Subagent lane (TS.9): the collab call that first named a child thread is
   // its anchor row; the child's activity groups under it via parentId.
   private subagentAnchor = new Map<string, string>();
+  // Anchors persist across turns so a long-running child keeps grouping, so
+  // the map is bounded here instead: past the cap a new thread's activity
+  // falls to the budgeted unanchored lane rather than growing memory.
+  private static readonly MAX_SUBAGENT_ANCHORS = 5_000;
   // Streamed tool output (TS.11): UTF-8 bytes forwarded per running item, capped
   // like the final output so a chatty command cannot flood the ring.
   private streamed = new Map<string, number>();
@@ -120,6 +124,10 @@ export class CodexEventMapper {
   // full structured snapshots, not textual patch deltas; the signature keeps
   // duplicate completion snapshots from repainting the same row.
   private fileChangeSnapshots = new Map<string, string>();
+  // Subagent activity lines ride the wire as parented narration, so they get
+  // the same per-subagent byte budget as the other engines' lanes
+  // (SECURITY.md: a looping engine cannot grow the wire without bound).
+  private subagentProse = new SubagentProseBudget();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -175,6 +183,7 @@ export class CodexEventMapper {
     this.phaseOf.clear();
     this.streamed.clear();
     this.fileChangeSnapshots.clear();
+    this.subagentProse.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
   }
@@ -240,7 +249,7 @@ export class CodexEventMapper {
         const from = typeof p["fromModel"] === "string" ? p["fromModel"] : "";
         this.options.emit({
           type: "notice",
-          text: `Codex rerouted the model${from ? ` from ${from}` : ""}${to ? ` to ${to}` : ""}.`,
+          text: `Codex rerouted the model${from ? ` from ${inertToken(from)}` : ""}${to ? ` to ${inertToken(to)}` : ""}.`,
           kind: "info",
         });
         break;
@@ -519,7 +528,7 @@ export class CodexEventMapper {
    *  thread's later activity (TS.9). Inner child content still needs
    *  per-thread subscriptions the adapter does not open — recorded. */
   private onCollabCall(item: CodexItem, phase: ItemPhase) {
-    const name = typeof item.tool === "string" && item.tool ? item.tool : "collab";
+    const name = typeof item.tool === "string" && item.tool ? inertToken(item.tool, 64) : "collab";
     const receivers = Array.isArray(item.receiverThreadIds)
       ? item.receiverThreadIds.filter((t): t is string => typeof t === "string")
       : [];
@@ -530,7 +539,10 @@ export class CodexEventMapper {
       ...(receivers.length ? { receiverThreadIds: receivers } : {}),
       ...(typeof item.model === "string" ? { model: item.model } : {}),
     };
-    for (const thread of receivers) if (!this.subagentAnchor.has(thread)) this.subagentAnchor.set(thread, item.id);
+    for (const thread of receivers) {
+      if (!this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS)
+        this.subagentAnchor.set(thread, item.id);
+    }
     if (phase === "started") {
       this.announceTool(item.id, name, detail, input);
       return;
@@ -556,12 +568,21 @@ export class CodexEventMapper {
    *  is known, otherwise as commentary in the transcript. */
   private onSubagentActivity(item: CodexItem) {
     const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
-    const kind = typeof item.kind === "string" ? item.kind : "activity";
-    const who = typeof item.agentPath === "string" && item.agentPath ? item.agentPath : "subagent";
+    // Engine-chosen identifiers on a narration line: clamped, single-line,
+    // controls visible — never raw engine bytes at engine-chosen length.
+    const kind = typeof item.kind === "string" && item.kind ? inertToken(item.kind, 48) : "activity";
+    const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
     const parentId = this.subagentAnchor.get(thread);
     const text = `${who} ${kind}`;
-    if (parentId) this.options.emit({ type: "text_delta", text: `${text}\n`, parentId });
-    else this.options.emit({ type: "text_delta", text: `Subagent ${text}.\n`, phase: "commentary" });
+    if (parentId) {
+      const forwarded = this.subagentProse.take(parentId, `${text}\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
+    } else {
+      // The same budget for a thread no collab call anchored: N stray events
+      // must never mean N wire messages without bound (SECURITY.md).
+      const forwarded = this.subagentProse.take(thread || "unanchored", `Subagent ${text}.\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, phase: "commentary" });
+    }
   }
 
   /** The model looked at an image: a row, plus the image itself painted
@@ -599,7 +620,9 @@ export class CodexEventMapper {
   /** Codex apps / dynamic tools: a tool row named the way the engine names it. */
   private onDynamicToolCall(item: CodexItem, phase: ItemPhase) {
     const tool = typeof item.tool === "string" ? item.tool : "tool";
-    const name = typeof item.namespace === "string" && item.namespace ? `${item.namespace}.${tool}` : tool;
+    // Rides the wire as tool_use.name and the activity label: an app-chosen
+    // string, so clamped and control-visible.
+    const name = inertToken(typeof item.namespace === "string" && item.namespace ? `${item.namespace}.${tool}` : tool, 120);
     const args = typeof item.arguments === "object" && item.arguments !== null ? (item.arguments as Record<string, unknown>) : {};
     const detail = firstLine(Object.values(args).find((v) => typeof v === "string") as string | undefined ?? "", 96);
     if (phase === "started") {
@@ -631,12 +654,16 @@ export class CodexEventMapper {
       }
       if (phase === "started") return;
     }
-    const label = `${server}.${tool}`;
+    // Engine-chosen strings riding the wire as tool_use.name / detail and
+    // the activity label: clamped and control-visible like every other
+    // name producer in this mapper.
+    const label = inertToken(`${server}.${tool}`, 120);
+    const detail = inertToken(tool, 96);
     if (phase === "started") {
-      this.announceTool(item.id, label, tool, item.arguments);
+      this.announceTool(item.id, label, detail, item.arguments);
       return;
     }
-    this.ensureAnnounced(item.id, label, tool, item.arguments);
+    this.ensureAnnounced(item.id, label, detail, item.arguments);
     const capped = capOutput(
       item.error ? String(item.error.message ?? "") : mcpText(item.result?.content),
     );

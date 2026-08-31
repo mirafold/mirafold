@@ -158,3 +158,37 @@ test("a running row shows the last streamed line in its head and the stream in i
   assert.equal(lastLine("a\nb\n\n"), "b");
   assert.equal(lastLine("x".repeat(100)).length, 80);
 });
+
+test("apply_patch path labels make direction controls visible", () => {
+  const html = renderToStaticMarkup(
+    createElement(ToolBlock, {
+      id: 1,
+      toggled: true,
+      onToggle: () => {},
+      name: "apply_patch",
+      input: {
+        changes: [
+          { path: "a\u202egnp.sh", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b" },
+          { path: "x", kind: "add", diff: "hi", movePath: "y\u200bz" },
+        ],
+      },
+    }),
+  );
+  assert.ok(html.includes("‹U+202E›"));
+  assert.ok(!html.includes("\u202e"));
+  assert.ok(html.includes("‹U+200B›"));
+});
+
+test("the tool row's name makes engine-chosen controls visible", () => {
+  const html = renderToStaticMarkup(
+    createElement(ToolBlock, {
+      id: 1,
+      toggled: null,
+      onToggle: () => {},
+      name: "crm\u202e.lookup\u{e0041}",
+      output: "ok",
+    }),
+  );
+  assert.ok(html.includes("‹U+202E›") && html.includes("‹U+E0041›"));
+  assert.ok(!html.includes("\u202e"));
+});

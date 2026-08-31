@@ -61,7 +61,7 @@ function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
           <GearGlyph size="1em" />{" "}
         </>
       )}
-      {thinking ? "✳ thinking" : a.label} · {elapsed(a.since)}
+      {thinking ? "✳ thinking" : visibleControls(a.label)} · {elapsed(a.since)}
     </>
   );
 }

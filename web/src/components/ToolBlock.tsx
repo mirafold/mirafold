@@ -52,7 +52,7 @@ export const ToolBlock = memo(function ToolBlock({
         title={expanded ? "Collapse" : "Expand"}
       >
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>
-        <span className="tool-name">{name}</span>
+        <span className="tool-name">{visibleControls(name)}</span>
         {detail && <span className="tool-detail">{visibleControls(detail)}</span>}
         {running && streamed && <span className="tool-live-tail">{visibleControls(lastLine(streamed))}</span>}
       </button>
@@ -125,7 +125,10 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
           const lines: DiffLine[] = kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-");
           return (
             <div className="tool-patch" key={i}>
-              <div className="tool-patch-path">{label}</div>
+              {/* Marked but deliberately not length-clamped: truncating the
+                  path would hide exactly what this row exists to audit, and
+                  the diff body below it is already unbounded model content. */}
+              <div className="tool-patch-path">{visibleControls(label)}</div>
               {lines.length > 0 ? (
                 <pre className="tool-diff">
                   <DiffLines lines={lines} />

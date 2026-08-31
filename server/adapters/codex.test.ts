@@ -1959,3 +1959,78 @@ test("streamed command output applies the final-output ceiling in UTF-8 bytes, n
   assert.doesNotMatch(streamed, /must not pass/);
   s.close();
 });
+
+test("subagent activity lines are clamped and share the narration budget", async () => {
+  const events: [string, Record<string, unknown>][] = [
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-child"], status: "inProgress", agentsStates: {} } }],
+  ];
+  // An engine-chosen path at engine-chosen length, with a direction override.
+  const noisyPath = `${"p".repeat(10)}\u202e${"p".repeat(300)}`;
+  for (let i = 0; i < 800; i++) {
+    events.push(["item/completed", { item: { type: "subAgentActivity", id: `sa${i}`, kind: "working", agentThreadId: "t-child", agentPath: noisyPath } }]);
+  }
+  events.push(DONE);
+  const { s, msgs, awaitTurnEnd } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === "cb1");
+  assert.ok(lines.length > 0);
+  assert.ok(lines[0].text.length <= 120, "agentPath is clamped");
+  assert.ok(lines[0].text.includes("‹U+202E›"), "direction controls are marked, not merely dropped");
+  assert.ok(!lines[0].text.includes("\u202e"), "no raw direction control passes through");
+  const markers = lines.filter((m) => m.text.includes("narration cap reached"));
+  assert.equal(markers.length, 1, "the budget's elision marker fires exactly once");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, "the lane is byte-bounded");
+});
+
+test("unanchored subagent activity is budgeted too", async () => {
+  const events: [string, Record<string, unknown>][] = [["turn/started", {}]];
+  for (let i = 0; i < 800; i++) {
+    events.push(["item/completed", { item: { type: "subAgentActivity", id: `sx${i}`, kind: "working", agentThreadId: "t-stray", agentPath: "p".repeat(96) } }]);
+  }
+  events.push(DONE);
+  const { s, msgs, awaitTurnEnd } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === undefined && m.phase === "commentary");
+  assert.ok(lines.length > 0 && lines.length < 800, "the budget stops the stream");
+  const markers = lines.filter((m) => m.text.includes("narration cap reached"));
+  assert.equal(markers.length, 1, "the elision marker fires exactly once");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, "the unanchored lane is byte-bounded");
+});
+
+test("an MCP call's engine-chosen server/tool names are clamped and control-visible", async () => {
+  const hugeTool = `t\u202e${"t".repeat(10_000)}`;
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "mcpToolCall", id: "m1", server: "srv", tool: hugeTool, status: "inProgress" } }],
+    ["item/completed", { item: { type: "mcpToolCall", id: "m1", server: "srv", tool: hugeTool, status: "completed", result: { content: [{ type: "text", text: "ok" }] } } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const use = msgs.find((m) => m.type === "tool_use" && m.id === "m1");
+  assert.ok(use && use.type === "tool_use");
+  assert.ok(use.name.length <= 140, "the name is clamped");
+  assert.ok(use.name.includes("‹U+202E›") && !use.name.includes("\u202e"), "controls are marked");
+  assert.ok((use.detail ?? "").length <= 110, "the detail is clamped");
+});
+
+test("the subagent anchor map is bounded; overflow threads fall to the budgeted lane", async () => {
+  const many = Array.from({ length: 5_010 }, (_, i) => `t-${i}`);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: many, status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-10", agentPath: "early" } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "started", agentThreadId: "t-5005", agentPath: "late" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const deltas = msgs.filter((m) => m.type === "text_delta");
+  assert.ok(deltas.some((m) => m.parentId === "cb1" && m.text.includes("early")), "a thread under the cap anchors");
+  assert.ok(deltas.some((m) => m.parentId === undefined && m.text.includes("late")), "a thread past the cap is narrated, not dropped");
+});

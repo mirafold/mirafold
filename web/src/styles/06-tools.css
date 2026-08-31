@@ -35,6 +35,7 @@
 }
 
 .tool-name {
+  unicode-bidi: isolate;
   font-weight: 600;
   color: var(--fg-mid);
   flex-shrink: 0;
@@ -133,6 +134,7 @@
 }
 
 .tool-patch-path {
+  unicode-bidi: isolate;
   margin: 0 0 3px 2px;
   font-family: var(--font-mono);
   font-size: 0.78em;
