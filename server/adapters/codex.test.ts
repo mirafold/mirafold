@@ -5,7 +5,6 @@ import os from "node:os";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
-import { CODEX_PAINT_REMINDER, withPaintReminder } from "./codex-prompt";
 import { describePatchChange, normalizePatchChanges } from "./codex-events";
 import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
@@ -413,49 +412,7 @@ test("the render guidance rides thread/start as developerInstructions; turns car
   // Faithful skin: no sandbox / approval policy of our own.
   assert.equal(starts[0].params.sandbox, undefined);
   assert.equal(starts[0].params.approvalPolicy, undefined);
-  // Turn 1 carries the bare prompt (the developer instructions are fresh);
-  // turn 2 follows a prose-only turn, so the paint reminder rides with it.
-  assert.deepEqual(prompts(), ["first ask", withPaintReminder("second ask")]);
-  s.close();
-});
-
-test("the paint reminder rides with every turn after a prose turn, never after a painted one, and never in the transcript (TS.5)", async () => {
-  const mcp = (tool: string): Notification => [
-    "item/completed",
-    {
-      item: {
-        type: "mcpToolCall",
-        id: `g-${tool}`,
-        server: MIRAFOLD_MCP,
-        tool,
-        arguments: { title: "T", body: "b" },
-        status: "completed",
-        result: { content: [], structuredContent: { renderId: "rid-1" } },
-      },
-    },
-  ];
-  const painted: Scripted = [["turn/started", {}], mcp("render_card"), DONE];
-  // Codex's own plan checklist is not a painting the model chose.
-  const todoOnly: Scripted = [
-    ["turn/started", {}],
-    ["item/completed", { item: { type: "todoList", id: "t1", items: [{ text: "step", completed: false }] } }],
-    DONE,
-  ];
-  const { s, msgs, prompts, awaitTurnEnd } = makeSession([DONE], painted, [DONE], todoOnly, [DONE]);
-  for (const [i, text] of ["one", "two", "three", "four", "five"].entries()) {
-    s.pushPrompt(text);
-    await awaitTurnEnd(i + 1);
-  }
-  assert.deepEqual(prompts(), [
-    "one", // first turn: instructions are fresh
-    withPaintReminder("two"), // after a prose turn
-    "three", // after a painted turn — nothing to remind
-    withPaintReminder("four"), // after a prose turn again
-    withPaintReminder("five"), // after a todo-list-only turn: not a painting
-  ]);
-  assert.ok(CODEX_PAINT_REMINDER.length < 320, "the reminder stays terse");
-  // The reminder is engine-only: nothing the adapter emits carries it.
-  assert.ok(!msgs.some((m) => JSON.stringify(m).includes("[Mirafold]")));
+  assert.deepEqual(prompts(), ["first ask", "second ask"]);
   s.close();
 });
 

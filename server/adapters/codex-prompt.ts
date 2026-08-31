@@ -42,22 +42,3 @@ matching render tool FIRST and paint with it; prose is only the connective
 text around the painting. For ANY chart/plot/graph you MUST call
 render_chart — hand-written mermaid, ASCII, or SVG charts render as plain
 code here, never as visuals.`;
-
-/**
- * The per-turn nudge. The 16-turn replay of Kyle's own prompts (PLAN TS.3)
- * showed the thread-start note is not a lever: Codex paints on the first
- * advisory turns and then answers in prose for the rest of a working
- * session, old note or new. A reminder that reaches the model on EVERY
- * turn is the remaining per-turn lever. It rides inside the engine input
- * only — the registry emits `user_prompt` from what the user typed, so the
- * transcript never shows it — and it is skipped right after a turn that
- * painted, so a session that is already painting pays nothing for it.
- * ~45 tokens; over a 30-turn session well under 1% of the input volume.
- */
-export const CODEX_PAINT_REMINDER =
-  "[Mirafold] If this reply has a list, table, comparison, diff, code, command " +
-  "output, results, or options for me to choose from, load the matching " +
-  "render_* tool (see the developer instructions) and paint it first; keep " +
-  "prose to the text around the painting.";
-
-export const withPaintReminder = (text: string) => `${text}\n\n${CODEX_PAINT_REMINDER}`;
