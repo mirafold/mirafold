@@ -3853,7 +3853,7 @@ command output not streamed; a dozen notification kinds unhandled.
   vendored; Tier-1 asserts handled ∪ deliberately-ignored == digest; Tier-4
   regenerates the digest from the installed Codex and fails on drift with
   the diff. Live tests assert zero unknown-kind notices for their scripts.
-- [ ] **TS.8 — Commentary vs. final answer.** Additive `text_delta.phase`
+- [x] **TS.8 — Commentary vs. final answer** — done 2026-08-30 (additive `text_delta.phase`; Codex tags every delta from `item/started`'s phase, verified live; commentary is narration — folds into the activity record when interior, dim when trailing — and the final answer is its own full-weight row; a phase change splits rows. Also mapped here: `plan` items + `item/plan/delta` as commentary, review-mode and reroute notices (new `info` notice kind), `deprecationNotice`/`configWarning`/`guardianWarning` as badged engine warnings; `thread/compacted` and `hookPrompt` classified as ignored with reasons). Additive `text_delta.phase`
   ("commentary" | "final"); the browser renders commentary as narration
   (dim, part of the turn's activity) and the final answer at full weight —
   the terminal's distinction, which 7 of 8 Codex messages currently lose.

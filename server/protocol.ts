@@ -71,7 +71,13 @@ export type SessionMsgBody =
   // it, never parses or dereferences it (for Claude Code it happens to be
   // the spawn tool_use id; the protocol does not promise that). Old clients
   // ignore the field and render the prose inline.
-  | { type: "text_delta"; text: string; parentId?: string }
+  // `phase` (optional/additive, TS.8): the engine's own classification of
+  // this prose — "commentary" is interim narration ("I'm going to check the
+  // watcher…"), "final" is the answer. Codex declares it per message
+  // (7 of 8 Codex messages are commentary); engines that don't leave it
+  // unset and the browser falls back to its length heuristic. Old clients
+  // ignore the field and render everything as prose.
+  | { type: "text_delta"; text: string; parentId?: string; phase?: "commentary" | "final" }
   // The selected provider's live prompt-completion catalog. This is shell
   // data, not agent-authored UI: the browser opens it as soon as the trigger
   // is typed, before anything is sent to the provider. A new message
@@ -194,7 +200,7 @@ export type SessionMsgBody =
   | {
       type: "notice";
       text: string;
-      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
+      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning" | "info";
       source?: string;
     }
   // The `!` bash passthrough, run in a real PTY (interactive

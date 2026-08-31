@@ -26,15 +26,11 @@ const digest = JSON.parse(
 // reported to the user when it arrives (UnknownKindReporter), and each has a
 // plan step. Shrinks as TS.8–TS.11 land; never grows silently.
 const UNMAPPED_ITEMS_WITH_A_PLAN_STEP: Record<string, string> = {
-  plan: "TS.8",
   collabAgentToolCall: "TS.9",
   subAgentActivity: "TS.9",
   imageView: "TS.10",
   imageGeneration: "TS.10",
   dynamicToolCall: "TS.9 — Codex apps/dynamic tools, shown as tool rows",
-  enteredReviewMode: "TS.8 — review mode notice",
-  exitedReviewMode: "TS.8 — review mode notice",
-  hookPrompt: "TS.8 — a hook's prompt fragments",
   sleep: "TS.9 — the agent waiting on a timer",
 };
 const UNMAPPED_METHODS_WITH_A_PLAN_STEP: Record<string, string> = {
@@ -42,12 +38,6 @@ const UNMAPPED_METHODS_WITH_A_PLAN_STEP: Record<string, string> = {
   "item/fileChange/outputDelta": "TS.11",
   "item/fileChange/patchUpdated": "TS.11",
   "turn/diff/updated": "TS.11 — turn-level diff",
-  "thread/compacted": "TS.8 — compaction notice (item form is handled)",
-  "model/rerouted": "TS.8 — model reroute notice",
-  "account/rateLimits/updated": "TS.8 — rate limits like Claude's",
-  deprecationNotice: "TS.8 — engine notices",
-  configWarning: "TS.8 — engine notices",
-  guardianWarning: "TS.8 — engine notices",
 };
 
 test("every Codex thread-item kind is handled, deliberately ignored, or unmapped with a plan step", () => {

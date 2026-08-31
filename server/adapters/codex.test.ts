@@ -1780,7 +1780,7 @@ test("an item kind or notification the adapter cannot map is reported once, neve
     ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t2", agentPath: "worker" } }],
     ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t2", agentPath: "worker" } }],
     ["item/completed", { item: { type: "userMessage", id: "u1", content: [] } }], // deliberately ignored
-    ["model/rerouted", { fromModel: "a", toModel: "b" }],
+    ["thread/somethingNewer", { detail: "a kind this build has never heard of" }],
     ["thread/name/updated", { name: "x" }], // deliberately ignored
     DONE,
   ]);
@@ -1789,9 +1789,50 @@ test("an item kind or notification the adapter cannot map is reported once, neve
   const notices = msgs.filter((m) => m.type === "notice").map((m) => m.text);
   assert.deepEqual(notices, [
     "Mirafold doesn't display this Codex item yet: subAgentActivity",
-    "Mirafold doesn't display this Codex event yet: model/rerouted",
+    "Mirafold doesn't display this Codex event yet: thread/somethingNewer",
   ]);
   // Shell-voiced: no `source` badge on Mirafold's own sentence.
   assert.ok(msgs.filter((m) => m.type === "notice").every((m) => m.source === undefined));
+  s.close();
+});
+
+
+test("agent-message prose carries the engine's phase; a plan streams as commentary (TS.8)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "agentMessage", id: "c1", text: "", phase: "commentary" } }],
+    ["item/agentMessage/delta", { itemId: "c1", delta: "Checking the watcher. " }],
+    ["item/completed", { item: { type: "agentMessage", id: "c1", text: "Checking the watcher. Done.", phase: "commentary" } }],
+    ["item/started", { item: { type: "plan", id: "p1", text: "" } }],
+    ["item/plan/delta", { itemId: "p1", delta: "1. read 2. fix" }],
+    ["item/completed", { item: { type: "plan", id: "p1", text: "1. read 2. fix" } }],
+    ["item/started", { item: { type: "agentMessage", id: "f1", text: "", phase: "final_answer" } }],
+    ["item/agentMessage/delta", { itemId: "f1", delta: "Fixed: " }],
+    ["item/completed", { item: { type: "agentMessage", id: "f1", text: "Fixed: the flush waits.", phase: "final_answer" } }],
+    ["item/completed", { item: { type: "enteredReviewMode", id: "r1", review: {} } }],
+    ["model/rerouted", { fromModel: "gpt-a", toModel: "gpt-b" }],
+    ["configWarning", { message: "config key x is unknown" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.phase]),
+    [
+      ["Checking the watcher. ", "commentary"],
+      ["Done.", "commentary"],
+      ["1. read 2. fix", "commentary"],
+      ["Fixed: ", "final"],
+      ["the flush waits.", "final"],
+    ],
+  );
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.kind, m.source]),
+    [
+      ["Codex entered review mode.", "info", undefined],
+      ["Codex rerouted the model from gpt-a to gpt-b.", "info", undefined],
+      ["config key x is unknown", "warning", "codex"],
+    ],
+  );
   s.close();
 });

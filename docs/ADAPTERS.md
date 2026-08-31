@@ -359,6 +359,15 @@ installed Codex and fails on drift. Claude's ledger is compile-time
 (`CLAUDE_MESSAGE_LEDGER satisfies Record<SDKMessage["type"], …>`); OpenCode
 and Gemini carry explicit ignore lists and report the rest.
 
+**Narration is not the answer (TS.8).** `text_delta.phase` (additive)
+carries the engine's own classification of its prose: Codex declares every
+message `commentary` (interim narration — 7 of 8 of its messages) or
+`final_answer`. The browser treats commentary as narration — it folds into
+the turn's activity record when tools follow it and is drawn dim when
+nothing does — and gives the final answer its own full-weight row; engines
+that declare nothing fall back to the length heuristic. Codex's written
+`plan` streams as commentary too.
+
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in

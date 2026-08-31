@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ZoneMsg } from "./session-bus";
 import {
   createTranscriptProjection,
+  type TextRow,
   type OutputZoneRow,
   type ToolFoldItem,
   type TranscriptProjection,
@@ -460,4 +461,59 @@ test("unchanged rows retain identity; unmatched updates still publish like the e
   assert.equal(unmatched.revision, after.revision + 1);
   assert.strictEqual(unmatched.rows, after.rows);
   assert.strictEqual(unmatched.paintingsById, after.paintingsById);
+});
+
+
+test("engine-declared commentary is narration and the final answer never folds (TS.8)", () => {
+  const projection = createTranscriptProjection();
+  const long = "A long piece of narration. ".repeat(40); // far past the length heuristic
+  const tool = (id: string) => [
+    { type: "tool_use", name: "Shell", detail: "ls", id, input: {} },
+    { type: "tool_result", output: "ok", id },
+  ] as const;
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      ...tool("t1"),
+      { type: "text_delta", text: long, phase: "commentary" },
+      ...tool("t2"),
+      { type: "text_delta", text: "Short.", phase: "final" },
+      ...tool("t3"),
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const rows = result.snapshot.rows;
+  // The long commentary between tools folded into the activity record …
+  const fold = rows.find((r) => r.kind === "tool-fold");
+  assert.ok(fold, "an activity record exists");
+  assert.ok(fold!.items.some((i) => i.kind === "text" && i.text.text === long), "commentary folded regardless of length");
+  // … and the short final answer stayed out of it even though tools surround it.
+  const finalRow = rows.find((r): r is TextRow => r.kind === "text" && r.role === "assistant" && r.text === "Short.");
+  assert.ok(finalRow, "the final answer is its own visible row");
+  assert.equal(finalRow.phase, "final");
+});
+
+test("a phase change starts a new prose row; trailing commentary keeps its phase for the narration style (TS.8)", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "text_delta", text: "Looking… ", phase: "commentary" },
+      { type: "text_delta", text: "Here it is.", phase: "final" },
+      { type: "text_delta", text: " More.", phase: "final" },
+      { type: "text_delta", text: "One more check.", phase: "commentary" },
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const texts = result.snapshot.rows.filter((r): r is TextRow => r.kind === "text" && r.role === "assistant");
+  assert.deepEqual(
+    texts.map((r) => [r.text, r.phase]),
+    [
+      ["Looking… ", "commentary"],
+      ["Here it is. More.", "final"],
+      ["One more check.", "commentary"],
+    ],
+  );
 });

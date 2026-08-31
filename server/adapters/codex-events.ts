@@ -23,6 +23,7 @@ export type CodexItem = {
   type: string;
   id: string;
   text?: string;
+  phase?: unknown;
   summary?: unknown;
   command?: string;
   aggregatedOutput?: string | null;
@@ -52,10 +53,14 @@ export const CODEX_HANDLED_ITEMS = [
   "mcpToolCall",
   "webSearch",
   "contextCompaction",
+  "plan",
+  "enteredReviewMode",
+  "exitedReviewMode",
 ] as const;
 export const CODEX_IGNORED_ITEMS: Record<string, string> = {
   userMessage: "the engine's echo of the prompt; the registry already emitted user_prompt",
   functionCallOutput: "the raw output of a call already represented by its own item",
+  hookPrompt: "a hook's prompt fragments are the engine's input, not its output",
 };
 export const CODEX_HANDLED_METHODS = [
   "turn/started",
@@ -63,12 +68,17 @@ export const CODEX_HANDLED_METHODS = [
   "item/started",
   "item/completed",
   "item/agentMessage/delta",
+  "item/plan/delta",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",
   "turn/plan/updated",
   "thread/tokenUsage/updated",
   "error",
   "warning",
+  "deprecationNotice",
+  "configWarning",
+  "guardianWarning",
+  "model/rerouted",
 ] as const;
 export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "thread/started": "the session consumes it on thread/start",
@@ -128,7 +138,9 @@ export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "turn/moderationMetadata": "moderation bookkeeping with no user-facing text",
   "model/safetyBuffering/updated": "moderation bookkeeping with no user-facing text",
   "model/verification": "model bookkeeping with no user-facing text",
-  "item/plan/delta": "the plan item itself is reported until TS.8 maps it",
+  "thread/compacted": "the contextCompaction item is the shown form of the same event",
+  "account/rateLimits/updated":
+    "rate-limit bookkeeping on every turn; an 'approaching the limit' notice like Claude's needs the params shape recorded first",
 };
 
 /** One file change on an apply_patch row, as the browser renders it. */
@@ -234,6 +246,9 @@ export class CodexEventMapper {
   // as deltas, whether we are holding the rest for the item to finish, and a
   // one/two-backtick suffix that may be the start of a split code fence.
   private prose = new Map<string, { streamed: number; holding: boolean; pending: string }>();
+  // agentMessage.phase per item id, learned at item/started (verified live
+  // 2026-08-30: started carries it), so every delta is tagged as it streams.
+  private phaseOf = new Map<string, "commentary" | "final">();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -286,6 +301,7 @@ export class CodexEventMapper {
     this.turnLast = undefined;
     this.checklist.reset();
     this.prose.clear();
+    this.phaseOf.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
   }
@@ -320,6 +336,31 @@ export class CodexEventMapper {
       case "item/agentMessage/delta":
         this.onProseDelta(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
         break;
+      case "item/plan/delta": {
+        // The model's written plan streams like prose and is narration by
+        // nature — never the answer.
+        const itemId = String(p["itemId"] ?? "");
+        this.phaseOf.set(itemId, "commentary");
+        this.onProseDelta(itemId, String(p["delta"] ?? ""));
+        break;
+      }
+      case "deprecationNotice":
+      case "configWarning":
+      case "guardianWarning":
+        if (typeof p["message"] === "string" && p["message"]) {
+          this.options.emit({ type: "notice", text: this.options.providerDiagnostic(p["message"]), kind: "warning", source: "codex" });
+        }
+        break;
+      case "model/rerouted": {
+        const to = typeof p["toModel"] === "string" ? p["toModel"] : typeof p["model"] === "string" ? p["model"] : "";
+        const from = typeof p["fromModel"] === "string" ? p["fromModel"] : "";
+        this.options.emit({
+          type: "notice",
+          text: `Codex rerouted the model${from ? ` from ${from}` : ""}${to ? ` to ${to}` : ""}.`,
+          kind: "info",
+        });
+        break;
+      }
       case "item/reasoning/summaryTextDelta":
       case "item/reasoning/textDelta": {
         const delta = String(p["delta"] ?? "");
@@ -398,7 +439,7 @@ export class CodexEventMapper {
       const prefix = combined.slice(0, fenceAt);
       if (prefix) {
         state.streamed += prefix.length;
-        this.options.emit({ type: "text_delta", text: prefix });
+        this.options.emit(this.proseMsg(itemId, prefix));
       }
       state.holding = true;
       return;
@@ -408,7 +449,7 @@ export class CodexEventMapper {
     state.pending = pendingLength ? combined.slice(-pendingLength) : "";
     if (!ready) return;
     state.streamed += ready.length;
-    this.options.emit({ type: "text_delta", text: ready });
+    this.options.emit(this.proseMsg(itemId, ready));
   }
 
   /** Normalize one thread item. `phase` distinguishes start vs. finish. */
@@ -436,12 +477,31 @@ export class CodexEventMapper {
       case "contextCompaction":
         this.onContextCompaction(phase);
         break;
+      case "plan":
+        // A completed plan item carries the whole text; deltas may have
+        // streamed part of it already (same remainder rule as prose).
+        this.phaseOf.set(item.id, "commentary");
+        this.onAgentMessage(item, phase);
+        break;
+      case "enteredReviewMode":
+        if (phase === "completed") this.options.emit({ type: "notice", text: "Codex entered review mode.", kind: "info" });
+        break;
+      case "exitedReviewMode":
+        if (phase === "completed") this.options.emit({ type: "notice", text: "Codex left review mode.", kind: "info" });
+        break;
       default:
         if (phase === "completed" && !(item.type in CODEX_IGNORED_ITEMS)) this.unknown.report("item", item.type);
     }
   }
 
+  private proseMsg(itemId: string, text: string): SessionMsg {
+    const phase = this.phaseOf.get(itemId);
+    return phase ? { type: "text_delta", text, phase } : { type: "text_delta", text };
+  }
+
   private onAgentMessage(item: CodexItem, phase: ItemPhase) {
+    const declared = item.phase === "commentary" ? "commentary" : item.phase === "final_answer" ? "final" : undefined;
+    if (declared) this.phaseOf.set(item.id, declared);
     if (phase !== "completed") return;
     const text = typeof item.text === "string" ? item.text : "";
     const streamed = this.prose.get(item.id)?.streamed ?? 0;
@@ -452,7 +512,7 @@ export class CodexEventMapper {
     // component; all other text passes through verbatim.
     for (const segment of convertMermaidCharts(rest)) {
       if ("text" in segment) {
-        this.options.emit({ type: "text_delta", text: segment.text });
+        this.options.emit(this.proseMsg(item.id, segment.text));
       } else {
         this.options.emit({
           type: "render",

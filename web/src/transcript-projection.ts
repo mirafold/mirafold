@@ -18,6 +18,9 @@ export type TextRow = {
   role: "user" | "assistant";
   text: string;
   done: boolean;
+  /** The engine's own classification (text_delta.phase): commentary is
+   *  narration, final is the answer. Unset → the length heuristic decides. */
+  phase?: "commentary" | "final";
 };
 
 export type RenderRow = {
@@ -118,6 +121,10 @@ export const NARRATION_MAX_LINES = 2;
 export const NARRATION_MAX_CHARS = 160;
 export function isShortNarration(row: TextRow): boolean {
   if (row.role !== "assistant") return false;
+  // An engine that declares the phase settles it: commentary is narration
+  // whatever its length; the answer never folds.
+  if (row.phase === "commentary") return row.text.trim().length > 0;
+  if (row.phase === "final") return false;
   const text = row.text.trim();
   if (!text) return false;
   const lines = text.split("\n").filter((line) => line.trim()).length;
@@ -482,6 +489,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "text_delta": {
+        // A phase change (commentary → final answer) starts a new row so the
+        // narration and the answer never share one block.
+        const current = streamingId === null ? undefined : entries.find((e) => e.kind === "text" && e.id === streamingId);
+        if (current && current.kind === "text" && current.phase !== msg.phase && msg.phase !== undefined) {
+          entries = entries.map((entry) => (entry.id === current.id ? { ...entry, done: true } : entry));
+          streamingId = null;
+        }
         if (streamingId !== null) {
           const id = streamingId;
           entries = entries.map((entry) =>
@@ -494,7 +508,7 @@ export function createTranscriptProjection(): TranscriptProjection {
           streamingId = id;
           entries = [
             ...entries,
-            { kind: "text", id, role: "assistant", text: msg.text, done: false },
+            { kind: "text", id, role: "assistant", text: msg.text, done: false, ...(msg.phase ? { phase: msg.phase } : {}) },
           ];
         }
         return true;
