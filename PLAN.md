@@ -3662,28 +3662,51 @@ an existing panel.
   cockpit its tail while active, but its idle-unloaded checkpoint recorded
   the hello-time guess as fact, so the dormant row sent the tail over the
   relay while a remote attach to the same record was still refused. Root
-  cause: the checkpoint dropped the "credential unverified" fact. Fix:
-  `StoredSession.kindPending` (additive; written explicitly, true or false,
-  for every session that classifies at engine start), and the dormant row
-  asks the same `relayGateRefusal()` as the active row and the attach path —
-  one verdict per record. The first cold review found the sibling: records
-  written by daemons ≤ 0.6.1 carry no flag, so `storedKindPending()`
-  (adapters/index.ts, beside `restoreBackend`) reads a flagless record of a
-  classifying agent as unverified until its next checkpoint rewrites it —
-  which `open()` does immediately — the same verdict a remote attach reaches
-  by reviving it (so a verified OpenCode record that is revived and
-  idles out again without a turn reads pending until its next local turn —
-  exactly what a remote attach already saw). Revival now goes through the registry's `makeSession`
-  seam, so tests never construct a real engine session.
-  `dormant-relay-verdict.test.ts` pins active/dormant/restored-from-disk
-  through the real remote connection, the verified api-key (sends) and
-  subscription (refuses) siblings, and both legacy-record cases. Checked and
-  clean: tail content (plain text, inert labels for paintings, bidi controls
-  made visible, surrogate-safe 1,200-unit cap, ring-bounded walk), watcher
-  fan-out cost (≤10 snapshots/s, one serialization per watcher variant,
-  remote connections under `MAX_REMOTE_VIEWPORTS`), Esc in the `!` bar
-  (busy is never set by bang frames, so the whole-session Stop is not
-  installed during a plain `!`), no dependency/workflow/secret changes.
+  cause: a dormant record of an adapter that classifies at engine start
+  holds no CURRENT credential verdict — revival re-arms `kindPending` and
+  re-classifies (the resumed engine may pick a subscription or the Zen
+  gateway). Fix (final form after the PR #77 review, below):
+  `dormantKindPending(backend)` in adapters/index.ts, consumed by the
+  dormant row through the same `relayGateRefusal()` the active row and the
+  attach path use — one verdict per record; the local cockpit is unaffected.
+  Revival now goes through the registry's `makeSession` seam, so tests
+  never construct a real engine session. `dormant-relay-verdict.test.ts`
+  pins active/dormant/restored-from-disk through the real remote
+  connection, the warm api-key (sends) vs subscription (refuses) siblings,
+  and truthful-at-create records (claude-code api-key sends, subscription
+  refuses, the API-free mock never gated). Checked and clean: tail content
+  (plain text, inert labels for paintings, bidi controls made visible,
+  surrogate-safe 1,200-unit cap, ring-bounded walk), watcher fan-out cost
+  (≤10 snapshots/s, one serialization per watcher variant, remote
+  connections under `MAX_REMOTE_VIEWPORTS`), Esc in the `!` bar (busy is
+  never set by bang frames), no dependency/workflow/secret changes.
+- [x] **CP.T — mutation-based test audit (2026-08-30).** 17 mutations across
+  all three tiers (tail cap/truncation/surrogate, remote gate at two layers,
+  watcher wake rules, PTY cancel vs. Bang-bar handoff in Tier 2, error-socket
+  stack, storage clear, bidi escaper, two e2e mutations against rebuilt
+  dist) — every one caught. Nothing repaired or deleted; one pre-existing
+  Tier-3 flake recorded as IH.F.
+- [x] **CP.R — PR #77 automated review (2026-08-30).** Three Codex findings,
+  all verified real and fixed with a regression each, none dismissed:
+  **P1** the first CP.A fix stored a `kindPending` flag in the checkpoint,
+  which is stale by design for a classifying adapter (revival re-classifies)
+  — flag removed, rule moved to `dormantKindPending()` (above); the same
+  push fixed a machine-dependent test of mine that revived a live OpenCode
+  record (fails on a runner without OpenCode installed). **P2** a `!` PTY
+  running beside a model turn was read as idle the moment `turn_end`
+  arrived (a quiet `sleep 30` emits nothing to re-assert `working`), hiding
+  Stop in the cockpit and FleetView while shell work ran — the reducer now
+  carries `bangActive` into the composite status (`session-state.test.ts`).
+  The cold review of that fix caught it inert: `applyState` copied reducer
+  fields by name and skipped the new one, so the reducer's unit test passed
+  while the daemon still idled the row. `applyState` now adopts every
+  reducer field through a `satisfies Record<keyof SessionActivityState,
+  true>` key list (an unadopted field is a compile error) and
+  `registry.test.ts` drives the same scenario through `broadcast()`.
+  **P2** browser-error reports rode the NEWEST socket even while a refused
+  or reconnecting cockpit socket could only queue them for its own
+  `close()` to discard — the forwarder now picks the newest READY socket
+  (`ws.test.ts`, first test, which owns the once-installed page listener).
 
 **Files.** `server/protocol.ts`; `server/sessions/{registry,connection,
 transcript-tail}.ts`; `web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;
