@@ -45,8 +45,11 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
 
   // The fallback is byte-for-byte honest but intentionally non-minimal: all
   // old middle lines are removed and all new middle lines are added. It is
-  // O(n+m) instead of allocating an attacker/model-sized n×m matrix.
-  if (m > 0 && n > DIFF_LCS_CELL_LIMIT / m) {
+  // O(n+m) instead of allocating an attacker/model-sized n×m matrix. A
+  // one-sided middle (pure insertion or deletion) always takes it — the
+  // linear answer is exact there, and the matrix would still allocate a
+  // row per line (PR #80 review).
+  if (m === 0 || n === 0 || n > DIFF_LCS_CELL_LIMIT / m) {
     for (let i = start; i < aEnd; i++) out.push({ sign: "-", text: a[i] });
     for (let j = start; j < bEnd; j++) out.push({ sign: "+", text: b[j] });
     for (let i = aEnd; i < a.length; i++) out.push({ sign: " ", text: a[i] });

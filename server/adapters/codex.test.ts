@@ -2034,3 +2034,24 @@ test("the subagent anchor map is bounded; overflow threads fall to the budgeted 
   assert.ok(deltas.some((m) => m.parentId === "cb1" && m.text.includes("early")), "a thread under the cap anchors");
   assert.ok(deltas.some((m) => m.parentId === undefined && m.text.includes("late")), "a thread past the cap is narrated, not dropped");
 });
+
+test("engine-sized completion text is capped on every result path (PR #80 review)", async () => {
+  const states: Record<string, { status: string; message: string }> = {};
+  for (let i = 0; i < 3_000; i++) states[`t-${i}`] = { status: "running", message: "m".repeat(150) };
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-0"], status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-0"], status: "completed", agentsStates: states } }],
+    ["item/completed", { item: { type: "imageGeneration", id: "ig1", status: "failed", failure: "f".repeat(200_000) } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  for (const id of ["cb1", "ig1"]) {
+    const res = msgs.find((m) => m.type === "tool_result" && m.id === id);
+    assert.ok(res && res.type === "tool_result", `${id} resolved`);
+    assert.ok(Buffer.byteLength(res.output, "utf8") <= OUTPUT_CAP_BYTES + 64, `${id} capped`);
+    assert.ok((res.truncatedBytes ?? 0) > 0, `${id} reports the elision`);
+  }
+  s.close();
+});

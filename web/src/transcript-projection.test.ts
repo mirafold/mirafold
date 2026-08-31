@@ -567,3 +567,34 @@ test("a tool update refreshes structured input in place without reopening a comp
   });
   assert.equal(rows[0].output, "Updated a.ts");
 });
+
+test("streamed output survives an interruption and the settled row releases the copy (PR #80 review)", () => {
+  const interrupted = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "sleep 99", id: "c1", input: {} },
+      { type: "tool_output_delta", id: "c1", text: "tick 1\ntick 2\n" },
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const row = interrupted.snapshot.rows.find((r): r is ToolRow => r.kind === "tool");
+  assert.ok(row, "the interrupted call stays a visible row");
+  assert.equal(row.output, "tick 1\ntick 2\n\n(interrupted — no result)");
+  assert.equal(row.isError, true);
+  assert.equal(row.streamed, undefined, "the copy is released");
+
+  const settled = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "ls", id: "c2", input: {} },
+      { type: "tool_output_delta", id: "c2", text: "a\n" },
+      { type: "tool_result", id: "c2", output: "a\nok\n" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const done = settled.snapshot.rows.find((r): r is ToolRow => r.kind === "tool");
+  assert.ok(done);
+  assert.equal(done.output, "a\nok\n");
+  assert.equal(done.streamed, undefined, "the authoritative result releases the streamed copy");
+});

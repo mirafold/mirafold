@@ -558,8 +558,11 @@ export class CodexEventMapper {
       return `${thread}: ${status}${message}`;
     });
     const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
+    // The state fan-out is engine-sized: capped like every other result.
+    const capped = capOutput(lines.join("\n"));
     this.finishTool(item.id, {
-      output: item.status === "declined" ? "(declined)" : lines.join("\n") || "(done)",
+      output: item.status === "declined" ? "(declined)" : capped.text || "(done)",
+      truncatedBytes: capped.truncatedBytes,
       isError: item.status === "failed" || item.status === "declined" || failed,
     });
   }
@@ -600,7 +603,12 @@ export class CodexEventMapper {
     const prompt = typeof item.revisedPrompt === "string" ? item.revisedPrompt : "";
     const failed = item.status === "failed" || Boolean(item.failure);
     this.announceTool(item.id, "image_generation", firstLine(prompt, 96), { ...(prompt ? { prompt } : {}), ...(saved ? { savedPath: saved } : {}) });
-    this.finishTool(item.id, { output: failed ? String(item.failure ?? "failed") : saved || "(no file saved)", isError: failed });
+    const failure = capOutput(String(item.failure ?? "failed"));
+    this.finishTool(item.id, {
+      output: failed ? failure.text : saved || "(no file saved)",
+      ...(failed && failure.truncatedBytes !== undefined ? { truncatedBytes: failure.truncatedBytes } : {}),
+      isError: failed,
+    });
     if (saved && !failed) this.paintWorkspaceImage(saved, prompt || "generated image");
   }
 

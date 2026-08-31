@@ -646,6 +646,9 @@ export function createTranscriptProjection(): TranscriptProjection {
             ? {
                 ...entry,
                 output: msg.output,
+                // The authoritative output subsumes the streamed copy —
+                // release it (PR #80 review).
+                streamed: undefined,
                 truncatedBytes: msg.truncatedBytes,
                 isError: msg.isError,
               }
@@ -665,10 +668,18 @@ export function createTranscriptProjection(): TranscriptProjection {
               ...entry,
               settled: true,
               // A pending call at turn end was interrupted. Keep it expanded
-              // and explicit instead of folding it as successful activity.
+              // and explicit instead of folding it as successful activity —
+              // and keep the output observed before the stop; the streamed
+              // copy is released either way (PR #80 review).
               ...(entry.output === undefined
-                ? { output: "(interrupted — no result)", isError: true }
+                ? {
+                    output: entry.streamed
+                      ? `${entry.streamed}\n(interrupted — no result)`
+                      : "(interrupted — no result)",
+                    isError: true,
+                  }
                 : {}),
+              streamed: undefined,
             };
           }
           return entry;

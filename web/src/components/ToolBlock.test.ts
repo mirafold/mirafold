@@ -192,3 +192,12 @@ test("the tool row's name makes engine-chosen controls visible", () => {
   assert.ok(html.includes("‹U+202E›") && html.includes("‹U+E0041›"));
   assert.ok(!html.includes("\u202e"));
 });
+
+test("a one-sided middle takes the linear path and keeps the exact answer (PR #80 review)", () => {
+  const removed = Array.from({ length: 200_000 }, (_, i) => `line-${i}`).join("\n");
+  const lines = diffLines(`keep\n${removed}\nkeep2\n`, "keep\nkeep2\n");
+  assert.equal(lines.length, 200_002);
+  assert.deepEqual(lines[0], { sign: " ", text: "keep" });
+  assert.equal(lines.filter((l) => l.sign === "-").length, 200_000);
+  assert.deepEqual(lines.at(-1), { sign: " ", text: "keep2" });
+});
