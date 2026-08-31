@@ -10,6 +10,7 @@ import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
+import { OUTPUT_CAP_BYTES } from "./types";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -781,7 +782,7 @@ test("a declined command (the user said no) is an error row that says so", async
   s.close();
 });
 
-test("mirafold MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
+test("mirafold MCP calls paint on success and fall back to honest rows on failure or an unknown tool", async () => {
   const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}): Notification => [
     "item/completed",
     {
@@ -808,9 +809,6 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
   s.pushPrompt("go");
   await awaitTurnEnd();
 
-  // Suppression: our own UI tools never appear as tool_use/tool_result rows.
-  assert.equal(msgs.filter((m) => m.type === "tool_use" || m.type === "tool_result").length, 0);
-
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");
   assert.deepEqual(render.props, { title: "T", body: "b" }); // id stripped from props
@@ -820,8 +818,20 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
   assert.equal(art.html, "<b>x</b>");
   assert.equal(art.title, "demo");
 
-  // failed render_table + unknown render_bogus → exactly the two paints above.
+  // The two successful calls are represented by their paintings only.
   assert.equal(msgs.filter((m) => m.type === "render" || m.type === "artifact").length, 2);
+  // A failed or unknown call cannot disappear: each gets its ordinary MCP
+  // row, while the successful render/artifact calls still get none.
+  const uses = msgs.filter((m) => m.type === "tool_use");
+  assert.deepEqual(uses.map((m) => [m.id, m.name]), [
+    ["g-render_table", `${MIRAFOLD_MCP}.render_table`],
+    ["g-render_bogus", `${MIRAFOLD_MCP}.render_bogus`],
+  ]);
+  const results = msgs.filter((m) => m.type === "tool_result");
+  assert.deepEqual(results.map((m) => [m.id, m.isError]), [
+    ["g-render_table", true],
+    ["g-render_bogus", false],
+  ]);
   assert.equal(turnEnds(), 1);
   s.close();
 });
@@ -1234,6 +1244,11 @@ test("F.10: the installed Codex executable runs the app-server", () => {
     const spec = capturedSpawn({ kind: "subscription" });
     assert.equal(spec.command, "/operator/chosen/codex");
     assert.equal(spec.args[0], "app-server");
+    assert.equal(
+      configOf(spec).features?.apply_patch_streaming_events,
+      true,
+      "the process must enable current Codex's structured live patch snapshots",
+    );
   });
 });
 
@@ -1875,5 +1890,72 @@ test("command output streams while the call runs, capped, and the result still c
     [["c1", "running 1\n"], ["c1", "running 2\n"]],
   );
   assert.equal(msgs.find((m) => m.type === "tool_result")!.output, "running 1\nrunning 2\nok\n");
+  s.close();
+});
+
+test("current file-change snapshots repaint one apply_patch row through completion", async () => {
+  const firstChanges = [
+    {
+      path: `${tmp}/a.ts`,
+      kind: { type: "update", move_path: null },
+      diff: "@@ -1 +1 @@\n-a\n+b\n",
+    },
+  ];
+  const finalChanges = [
+    {
+      path: `${tmp}/a.ts`,
+      kind: { type: "update", move_path: null },
+      diff: "@@ -1 +1 @@\n-a\n+c\n",
+    },
+  ];
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "fileChange", id: "p1", status: "inProgress", changes: [] } }],
+    ["item/fileChange/patchUpdated", { itemId: "p1", changes: firstChanges }],
+    ["item/fileChange/patchUpdated", { itemId: "p1", changes: finalChanges }],
+    ["item/completed", { item: { type: "fileChange", id: "p1", status: "completed", changes: finalChanges } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const uses = msgs.filter((m) => m.type === "tool_use" && m.id === "p1");
+  assert.equal(uses.length, 1);
+  assert.equal(uses[0].name, "apply_patch");
+  assert.deepEqual(uses[0].input?.changes, []);
+  const updates = msgs.filter((m) => m.type === "tool_update" && m.id === "p1");
+  assert.equal(updates.length, 2, "the identical completion snapshot is not repainted");
+  assert.deepEqual(
+    updates.map((m) => m.input?.changes),
+    [
+      [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }],
+      [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+c\n" }],
+    ],
+  );
+  assert.equal(updates[1].detail, "Updated a.ts");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "p1")?.output, "Updated a.ts");
+  s.close();
+});
+
+test("streamed command output applies the final-output ceiling in UTF-8 bytes, not characters", async () => {
+  const unicode = "€".repeat(OUTPUT_CAP_BYTES);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "bytes", command: "unicode", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "bytes", delta: unicode }],
+    ["item/commandExecution/outputDelta", { itemId: "bytes", delta: "must not pass the exhausted budget" }],
+    ["item/completed", { item: { type: "commandExecution", id: "bytes", command: "unicode", aggregatedOutput: unicode, exitCode: 0, status: "completed" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const streamed = msgs
+    .filter((m) => m.type === "tool_output_delta" && m.id === "bytes")
+    .map((m) => m.text)
+    .join("");
+  assert.ok(Buffer.byteLength(streamed, "utf8") <= OUTPUT_CAP_BYTES);
+  assert.ok(Buffer.byteLength(streamed, "utf8") >= OUTPUT_CAP_BYTES - 3);
+  assert.doesNotMatch(streamed, /must not pass/);
   s.close();
 });

@@ -126,6 +126,18 @@ export type SessionMsgBody =
       input?: Record<string, unknown>;
       parentId?: string;
     }
+  // An in-place refresh of an announced tool row. Some engines publish a
+  // running call's structured input as successive authoritative snapshots
+  // (Codex fileChange/patchUpdated), so a single tool_use cannot faithfully
+  // carry the final patch. Fields that are absent stay unchanged; fields
+  // that are present replace the row's value. Old clients ignore this
+  // additive message and still receive the eventual tool_result.
+  | {
+      type: "tool_update";
+      id: string;
+      detail?: string;
+      input?: Record<string, unknown>;
+    }
   // `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting
   // silently. Optional/additive. `parentId` rides here too, exactly as on

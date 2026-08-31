@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SessionMsg } from "../protocol";
-import { type TodoItem, capOutput, joinTextBlocks } from "./types";
+import { type TodoItem, capOutput, joinTextBlocks, OUTPUT_CAP_BYTES } from "./types";
 import { resolveImageProps } from "../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter, UnknownKindReporter } from "./wire-helpers";
@@ -59,8 +59,6 @@ export type CodexItem = {
 
 export type CodexMcpToolCall = Pick<CodexItem, "result" | "arguments">;
 
-const STREAM_CAP_CHARS = 64_000;
-
 function firstLine(text: string, max: number): string {
   const line = text.split("\n").find((l) => l.trim()) ?? "";
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -115,9 +113,13 @@ export class CodexEventMapper {
   // Subagent lane (TS.9): the collab call that first named a child thread is
   // its anchor row; the child's activity groups under it via parentId.
   private subagentAnchor = new Map<string, string>();
-  // Streamed tool output (TS.11): chars forwarded per running item, capped
+  // Streamed tool output (TS.11): UTF-8 bytes forwarded per running item, capped
   // like the final output so a chatty command cannot flood the ring.
   private streamed = new Map<string, number>();
+  // Latest normalized fileChange snapshot per running item. Codex publishes
+  // full structured snapshots, not textual patch deltas; the signature keeps
+  // duplicate completion snapshots from repainting the same row.
+  private fileChangeSnapshots = new Map<string, string>();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -172,6 +174,7 @@ export class CodexEventMapper {
     this.prose.clear();
     this.phaseOf.clear();
     this.streamed.clear();
+    this.fileChangeSnapshots.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
   }
@@ -207,8 +210,15 @@ export class CodexEventMapper {
         this.onProseDelta(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
         break;
       case "item/commandExecution/outputDelta":
+        this.streamToolOutput(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
+        break;
+      // Retained for version skew. Current Codex marks this notification
+      // deprecated and no longer emits it; patchUpdated below is authoritative.
       case "item/fileChange/outputDelta":
         this.streamToolOutput(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
+        break;
+      case "item/fileChange/patchUpdated":
+        this.publishFileChange(String(p["itemId"] ?? ""), p["changes"]);
         break;
       case "item/plan/delta": {
         // The model's written plan streams like prose and is narration by
@@ -464,13 +474,8 @@ export class CodexEventMapper {
   }
 
   private onFileChange(item: CodexItem, phase: ItemPhase) {
-    if (phase !== "completed") return;
-    const changes = normalizePatchChanges(item.changes, this.options.workspaceDir);
-    const summary = changes.map(describePatchChange).join(", ");
-    // The row carries the normalized changes — path, kind, and the unified
-    // diff (full content for add/delete) — so the browser draws the patch
-    // the way the terminal prints it.
-    this.announceTool(item.id, "apply_patch", summary, { changes });
+    const summary = this.publishFileChange(item.id, item.changes);
+    if (phase === "started") return;
     const declined = item.status === "declined";
     this.finishTool(item.id, {
       output: declined ? "(declined)" : summary || "(no changes)",
@@ -478,15 +483,34 @@ export class CodexEventMapper {
     });
   }
 
-  /** Streamed bytes of a running command or patch (TS.11): forwarded only
+  /** Paint the latest full patch snapshot onto one stable running row. */
+  private publishFileChange(id: string, rawChanges: unknown): string {
+    if (!id) return "";
+    const changes = normalizePatchChanges(rawChanges, this.options.workspaceDir);
+    const summary = changes.map(describePatchChange).join(", ");
+    const signature = JSON.stringify(changes);
+    if (!this.announced.has(id)) {
+      this.fileChangeSnapshots.set(id, signature);
+      this.announceTool(id, "apply_patch", summary, { changes });
+    } else if (this.fileChangeSnapshots.get(id) !== signature) {
+      this.fileChangeSnapshots.set(id, signature);
+      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes } });
+    }
+    return summary;
+  }
+
+  /** Streamed bytes of a running command (plus legacy patch output): forwarded only
    *  for a row already announced, capped at the same size as final output. */
   private streamToolOutput(itemId: string, delta: string) {
     if (!delta || !this.announced.has(itemId)) return;
     const sent = this.streamed.get(itemId) ?? 0;
-    if (sent >= STREAM_CAP_CHARS) return;
-    const room = STREAM_CAP_CHARS - sent;
-    const text = delta.length > room ? delta.slice(0, room) : delta;
-    this.streamed.set(itemId, sent + text.length);
+    if (sent >= OUTPUT_CAP_BYTES) return;
+    const room = OUTPUT_CAP_BYTES - sent;
+    const bytes = Buffer.from(delta, "utf8");
+    const truncated = bytes.length > room;
+    const text = truncated ? utf8Prefix(bytes, room) : delta;
+    this.streamed.set(itemId, truncated ? OUTPUT_CAP_BYTES : sent + bytes.length);
+    if (!text) return;
     this.options.emit({ type: "tool_output_delta", id: itemId, text });
   }
 
@@ -595,12 +619,17 @@ export class CodexEventMapper {
     const server = typeof item.server === "string" ? item.server : "";
     const tool = typeof item.tool === "string" ? item.tool : "";
     // Mirafold's generative-UI server becomes the render/artifact message
-    // represented by the call rather than a raw tool row.
+    // represented by the call rather than a raw tool row. If it did not
+    // produce a painting, fall back to the honest call/result record.
     if (server === MIRAFOLD_MCP) {
       if (phase === "completed" && item.status !== "failed" && !item.error) {
-        this.emitGenerativeUI(tool, item);
+        const message = this.generativeUIMessage(tool, item);
+        if (message) {
+          this.options.emit(message);
+          return;
+        }
       }
-      return;
+      if (phase === "started") return;
     }
     const label = `${server}.${tool}`;
     if (phase === "started") {
@@ -656,16 +685,16 @@ export class CodexEventMapper {
     result: { output: string; isError?: boolean; truncatedBytes?: number },
   ) {
     this.announced.delete(id);
+    this.fileChangeSnapshots.delete(id);
     this.options.emit({ type: "tool_result", ...result, id });
   }
 
-  private emitGenerativeUI(tool: string, item: CodexItem) {
+  private generativeUIMessage(tool: string, item: CodexItem): SessionMsg | null {
     const args =
       item.arguments && typeof item.arguments === "object"
         ? (item.arguments as Record<string, unknown>)
         : {};
-    const message = generativeUIMsg(tool, args, extractRenderId(item), this.options.workspaceDir);
-    if (message) this.options.emit(message);
+    return generativeUIMsg(tool, args, extractRenderId(item), this.options.workspaceDir);
   }
 
   private emitChecklist(steps: unknown[]) {
@@ -678,4 +707,18 @@ export class CodexEventMapper {
     });
     this.checklist.paint(todos);
   }
+}
+
+/** Decode the longest complete UTF-8 prefix within a byte budget. A stream
+ *  slice must not split a character or grow back over the cap as U+FFFD. */
+function utf8Prefix(bytes: Buffer, maxBytes: number): string {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (let end = Math.min(bytes.length, maxBytes); end >= Math.max(0, maxBytes - 3); end--) {
+    try {
+      return decoder.decode(bytes.subarray(0, end));
+    } catch {
+      // A UTF-8 scalar is at most four bytes; back up to its leading byte.
+    }
+  }
+  return "";
 }

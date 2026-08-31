@@ -117,7 +117,11 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
           const c = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
           const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
           const diff = typeof c["diff"] === "string" ? c["diff"] : "";
-          const label = `${kind === "add" ? "Added" : kind === "delete" ? "Deleted" : "Updated"} ${String(c["path"] ?? "")}`;
+          const shownPath = String(c["path"] ?? "");
+          const movePath = typeof c["movePath"] === "string" ? c["movePath"] : undefined;
+          const label = movePath
+            ? `Moved ${shownPath} → ${movePath}`
+            : `${kind === "add" ? "Added" : kind === "delete" ? "Deleted" : "Updated"} ${shownPath}`;
           const lines: DiffLine[] = kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-");
           return (
             <div className="tool-patch" key={i}>

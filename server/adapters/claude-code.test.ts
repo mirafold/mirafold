@@ -173,6 +173,41 @@ test("happy stream: full SDKMessage→WireMsg mapping, exactly one turn_end", as
   s.close();
 });
 
+test("a failed Mirafold render call falls back to an honest error row", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([
+      {
+        type: "tool_use",
+        id: "bad-render",
+        name: "mcp__ui__render_card",
+        input: { title: "missing body" },
+      },
+    ]),
+    user([
+      {
+        type: "tool_result",
+        tool_use_id: "bad-render",
+        content: "body is required",
+        is_error: true,
+      },
+    ]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_use").map((m) => [m.id, m.name, m.input]),
+    [["bad-render", "mcp__ui__render_card", { title: "missing body" }]],
+  );
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_result").map((m) => [m.id, m.output, m.isError]),
+    [["bad-render", "body is required", true]],
+  );
+  assert.equal(msgs.some((m) => m.type === "render"), false);
+  s.close();
+});
+
 test("subagent traffic: tool calls nest under the Task id; text and task tools stay internal", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { prompt: "delegate" } }]),

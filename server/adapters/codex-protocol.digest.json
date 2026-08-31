@@ -214,6 +214,7 @@
     "FileUpdateChange.path": "string",
     "PatchChangeKind": "oneOf(add|delete|update)",
     "CommandExecutionOutputDeltaNotification.delta": "string",
+    "FileChangePatchUpdatedNotification.changes": "array<FileUpdateChange:object{diff,kind,path}>",
     "TurnDiffUpdatedNotification.diff": "string",
     "ThreadItem.fileChange.changes": "array<FileUpdateChange:object{diff,kind,path}>",
     "ThreadItem.fileChange.id": "string",

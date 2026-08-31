@@ -36,6 +36,7 @@ export const CODEX_HANDLED_METHODS = [
   "item/plan/delta",
   "item/commandExecution/outputDelta",
   "item/fileChange/outputDelta",
+  "item/fileChange/patchUpdated",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",
   "turn/plan/updated",
@@ -106,7 +107,6 @@ export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "model/safetyBuffering/updated": "moderation bookkeeping with no user-facing text",
   "model/verification": "model bookkeeping with no user-facing text",
   "thread/compacted": "the contextCompaction item is the shown form of the same event",
-  "item/fileChange/patchUpdated": "the completed fileChange item carries the final changes (TS.6)",
   "turn/diff/updated": "the Changes panel watches the working tree itself",
   "account/rateLimits/updated":
     "rate-limit bookkeeping on every turn; an 'approaching the limit' notice like Claude's needs the params shape recorded first",

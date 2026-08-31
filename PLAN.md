@@ -3863,10 +3863,15 @@ command output not streamed; a dozen notification kinds unhandled.
 - [x] **TS.10 — Image views** — done 2026-08-31 (`view_image`/`image_generation` rows, the picture painted inline through the image tool's own jail and byte cap; outside the workspace the row stands alone). `imageView` → a `view_image path` row plus
   the image itself painted inline (workspace-jailed, byte-capped, the
   existing render_image path) — faithful and better than the terminal.
-- [x] **TS.11 — Streamed command output** — done 2026-08-31 (additive `tool_output_delta`; the running row's head carries the last line, its body the stream; capped like final output; `patchUpdated`/`turn/diff` classified ignored with reasons — the Codex ledger's unmapped lists are now empty). Additive wire
+- [x] **TS.11 — Streamed command output** — done 2026-08-31 (additive `tool_output_delta`; the running row's head carries the last line, its body the stream; capped like final output; Mirafold process-locally enables current Codex's `apply_patch_streaming_events`, whose `patchUpdated` snapshots refresh a file-change row through additive `tool_update`; `turn/diff` remains classified ignored — the Codex ledger's unmapped lists are empty). Additive wire
   `tool_output_delta { id, text, parentId? }` from
   `item/commandExecution/outputDelta`; the browser appends to the running
-  row; `tool_result` still closes it. Same for `item/fileChange/outputDelta`.
+  row; `tool_result` still closes it. Current Codex no longer emits the
+  deprecated `item/fileChange/outputDelta`: its full
+  `item/fileChange/patchUpdated` snapshots replace one announced patch row's
+  detail/input through `tool_update`, and completion closes that same row.
+  The feature-gated notification is enabled by a process-local `-c` override,
+  never by changing the user's Codex configuration.
 - [x] **TS.12 — The other engines' guards** — done 2026-08-31, with one honest gap: Claude's ledger is compile-time exhaustive (`compact_boundary` was already surfaced; `tool_progress` and `task_*` stay unmapped → reported when they arrive); OpenCode: the adapter exports its handled/ignored ledgers and a Tier-4 test pulls the server's own OpenAPI document (`/doc`) and fails on any unclassified event/part kind — **not runnable on this machine: the global `opencode` install is broken (its postinstall never fetched the platform binary), so the test skips with that reason; Kyle's OpenCode sessions on 08-13/08-18 predate the break**; Gemini: the runtime guard only (sunset, no live tier). Claude: an exhaustive ledger
   `satisfies Record<SDKMessage["type"], "handled" | "ignored">` (compile
   error on an SDK bump that adds a kind) + `compact_boundary` surfaced as
@@ -3888,25 +3893,74 @@ tap both read `a-added.ts` inside the 250 ms `readGate`. It passed in
 yesterday's CP.T run, so it is environment-sensitive like IH.F; recorded
 here, not chased on this branch.
 
-- [ ] **TS.13 — OpenCode 1.18 API drift (found 2026-08-31 the moment the
-  local install was repaired).** Against OpenCode 1.18.25: the OC.5 live
-  test times out after the first `permission_request` ("saw:
-  permission_request" and nothing else in 120 s) — the adapter's reply to
-  the legacy `permission.asked` no longer moves the turn, and the spec now
-  carries `permission.v2.asked/replied`, `question.*`/`question.v2.*`, and a
-  whole `session.next.*` per-session stream (text/reasoning/tool/step/
-  compaction/revert events) beside the legacy `message.*` events. Part
-  kinds the adapter does not map: **`patch`, `file`** (edits and files —
-  the OpenCode counterpart of the Codex diff bug), `agent`, `subtask`,
-  `compaction`, `retry`. Ledger classification for now: `session.next.*`
-  deliberately ignored (the legacy stream carries the same content today —
-  this step decides the migration); the v2 permission/question events and
-  the six parts are unmapped-with-a-step, so they surface as notices if
-  they arrive. Work: reproduce OC.5's stall with raw event logging, move
-  the permission reply to the endpoint 1.18 honors, map `patch`/`file`
-  parts to the same diff rows Codex edits now get, then re-run OC.5 and the
-  conformance test. Not started; Kyle's OpenCode sessions (08-13/08-18)
-  predate the version that broke this.
+- [x] **TS.13 — OpenCode 1.18.25 compatibility, corrected from the initial
+  diagnosis** — done 2026-08-31. The recorded API-break diagnosis was false:
+  OC.5's first `permission_request` was Mirafold's own folder-trust gate,
+  raised before `opencode serve` or its transport existed. Raw transport
+  instrumentation saw zero OpenCode events in that stalled run. OC.5 now
+  points `MIRAFOLD_WORKSPACE_TRUST_FILE` into its disposable home, explicitly
+  accepts that trust ask, and matches the later engine ask by `tool ===
+  "bash"` plus its exact resolution id. Against the real 1.18.25 engine the
+  global `/event` feed emitted legacy `permission.asked/replied` for both the
+  root and child sessions; the existing `POST /permission/{requestID}/reply`
+  with `once` completed both. No permission migration was needed.
+
+  The same raw capture corrected the edit premise. A real file change emits
+  an ordinary lowercase `write` tool part with camelCase `filePath` and
+  `content`, plus `file.edited` / empty `session.diff`; it emits no `patch` or
+  `file` message part. The published `PatchPart` is undo metadata only
+  (`hash` + file names, no diff bytes), while `file`, `agent`, and `subtask`
+  are prompt-input/reference markers. The adapter now normalizes only the
+  observed built-in `write` call and the real engine's advertised `edit`
+  schema to the browser's existing `Write` / `Edit` painter shapes, including
+  workspace-relative `file_path` and the canonical edit fields; every other
+  tool remains provider-native. The unused `permission.v2.*` and duplicate
+  `session.next.*` surfaces are
+  deliberately ignored with literal reasons, guarded by OC.5 if the driven
+  feed ever changes. Verification: typecheck; production build; full Tier 1
+  **1,069/1,069**; OpenCode adapter **60/60**; shared tool painter **8/8**;
+  final combined real-engine gate: OC.5 **1/1** (15.2 s) and
+  installed-server OpenAPI conformance **1/1** (5.2 s).
+- [ ] **TS.14 — OpenCode interactive questions and advisory parts** (separate
+  protocol work found while correcting TS.13; not part of edit painting).
+  The published `question.*` / `question.v2.*` events need a richer answer
+  round-trip than the yes/no permission bar. `session.compacted`, the
+  `session.status` retry state, and the published `retry` part warrant
+  faithful notices; the `compaction` part itself is only OpenCode's synthetic
+  user summary prompt and is deliberately ignored. None of the pending
+  variants appeared in the 1.18.25 render/bash/write/subagent live capture.
+  Event/part kinds remain unmapped-with-this-plan-step so the never-silent
+  reporter exposes an arrival; capture each live before choosing wire/UI
+  behavior. (`session.status` subtypes need their own guard in this step.)
+- [x] **TS.BH — Phase TS correctness bughunt** — complete 2026-08-31. The
+  fresh-agent cold review found three linked medium Codex file-change issues;
+  all were fixed, and the post-fix cold re-review passed with no remaining
+  legitimate finding. Scope was the shipped
+  painting/transcript pipeline and its adapter/browser interactions; TS.14
+  stayed explicitly out of scope. Nine confirmed classes were fixed, with
+  no finding deferred: (1) the daemon and browser delta coalescers now
+  preserve `text_delta.phase`, keep commentary/final lanes separate, and
+  batch `tool_output_delta` by tool id + parent; (2) Codex no longer freezes
+  the non-authoritative `fileChange` start snapshot; (3) current
+  `patchUpdated` events now replace that stable row's structured patch through
+  additive, checkpointed `tool_update` messages (the retired textual event
+  remains version-skew compatibility, not the live claim); (4) Mirafold now
+  process-locally enables the installed engine's otherwise-disabled
+  `apply_patch_streaming_events`, so those current events actually arrive;
+  (5) failed or unsynthesizable Mirafold render calls fall back to honest tool rows in
+  Claude, Codex, and Gemini, matching OpenCode; (6) unified-diff hunk content
+  beginning `--`/`++` is no longer mistaken for file headers; (7) expanded
+  move patches name both paths; (8) Codex's live-output ceiling is UTF-8-byte
+  based; (9) the shared diff painter trims equal edges and uses a lossless
+  linear fallback above a one-million-cell LCS middle. The measured
+  4,000×4,000 replacement fell from ~678 ms / 16 million cells to 5.6 ms
+  while retaining all 8,000 changed lines. Pre-cold-review integration:
+  adapter + replay/browser projection/painter slice **250/250**; the post-fix
+  Codex/protocol/checkpoint/projection slice was **127/127**. Final gates:
+  typecheck; full Tier 1 **1,080/1,080**; production build; real OpenCode OC.5
+  **1/1** (14.4 s); installed OpenCode OpenAPI conformance **1/1** (5.2 s);
+  installed Codex protocol-digest conformance **1/1**; `git diff --check`
+  clean. No finding was deferred.
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.

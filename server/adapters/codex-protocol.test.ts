@@ -77,4 +77,5 @@ test("the field shapes the adapter reads are what the protocol says they are", (
   assert.equal(f["ThreadItem.mcpToolCall.tool"], "string");
   assert.match(f["ThreadItem.mcpToolCall.result"], /content,structuredContent/);
   assert.equal(f["CommandExecutionOutputDeltaNotification.delta"], "string");
+  assert.match(f["FileChangePatchUpdatedNotification.changes"], /^array<FileUpdateChange:/);
 });

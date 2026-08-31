@@ -89,6 +89,12 @@ const WIRE: WireByType = {
     input: { command: "ls -la" },
     parentId: "task1",
   },
+  tool_update: {
+    type: "tool_update",
+    id: "t1",
+    detail: "src/a.ts",
+    input: { changes: [{ path: "src/a.ts", kind: "update" }] },
+  },
   tool_result: {
     type: "tool_result",
     output: "file.txt",

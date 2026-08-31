@@ -8,7 +8,6 @@ export const OPENCODE_IGNORED_EVENTS: Record<string, string> = {
   "session.updated": "metadata the registry derives itself",
   "session.deleted": "lifecycle the session owns",
   "session.diff": "the Changes panel watches the tree itself",
-  "session.compacted": "TS.12: surface as the compaction notice",
   "message.removed": "editing bookkeeping",
   "message.part.removed": "editing bookkeeping",
   "file.edited": "the Changes panel watches the tree itself",
@@ -47,11 +46,19 @@ export const OPENCODE_IGNORED_EVENTS: Record<string, string> = {
   "workspace.status": "workspace/worktree plumbing for OpenCode's own UI",
   "worktree.ready": "workspace/worktree plumbing for OpenCode's own UI",
   "worktree.failed": "workspace/worktree plumbing for OpenCode's own UI",
+  // OpenCode 1.18.25 advertises a parallel v2 permission API, but the
+  // production global `/event` feed emitted only these legacy events in the
+  // root and child live probes: `permission.asked` / `permission.replied`.
+  // The legacy reply endpoint completed both asks. Ignore the unused mirror;
+  // OC.5 fails if a future engine actually moves the driven path to v2.
+  "permission.v2.asked": "alternate permission API; the driven /event path emits permission.asked",
+  "permission.v2.replied": "alternate permission API; the driven /event path emits permission.replied",
 };
 // OpenCode 1.18's newer per-session stream. The legacy `message.*` events
 // the adapter consumes still carry the same content on the same /event
-// feed; PLAN TS.13 decides whether to migrate. Ignored as a family so a
-// session does not raise thirty notices for one turn.
+// feed (confirmed through render, bash, write, and child-session turns on
+// 1.18.25). Ignored as a family so a session does not raise duplicate notices
+// for the alternate surface; OC.5 guards the production global feed.
 export const OPENCODE_IGNORED_EVENT_PREFIXES = ["session.next."] as const;
 export const opencodeEventIgnored = (type: string): boolean =>
   type in OPENCODE_IGNORED_EVENTS || OPENCODE_IGNORED_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix));
@@ -71,5 +78,10 @@ export const OPENCODE_HANDLED_PARTS = ["step-start", "text", "reasoning", "tool"
 export const OPENCODE_IGNORED_PARTS: Record<string, string> = {
   "step-finish": "a step boundary; usage arrives on session.idle",
   snapshot: "OpenCode's own undo snapshots",
+  patch: "undo snapshot metadata (hash + file names), with no diff bytes to paint",
+  file: "prompt attachment/reference input, not a file edit",
+  agent: "an @-mention input marker, not a model-initiated subagent spawn",
+  subtask: "a command input marker; model-initiated spawns arrive as task tool parts",
+  compaction: "OpenCode's synthetic user prompt for context summarization",
   "step-start": "handled",
 };

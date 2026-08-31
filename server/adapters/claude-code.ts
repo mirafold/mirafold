@@ -172,6 +172,13 @@ export class ClaudeCodeSession implements AgentSession {
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
+  // Successful render calls are represented by the painting emitted by the
+  // in-process server. Keep their call metadata only until the result so a
+  // FAILED render can fall back to an honest error row instead of vanishing.
+  private pendingRenderTools = new Map<
+    string,
+    { name: string; input?: Record<string, unknown>; parentId?: string }
+  >();
   // The live checklist. `tasks` is the session task list (id → item),
   // built from Task*/TodoWrite calls and persisted across turns like the SDK's
   // own list; `checklist` paints it (one render block per turn). `taskSeq`
@@ -582,8 +589,21 @@ export class ClaudeCodeSession implements AgentSession {
                 continue;
               }
               if (block.type !== "tool_use") continue;
-              // Render tools already paint their own component block.
-              if (block.name.startsWith(`mcp__${UI_MCP}__`)) continue;
+              // Successful render tools already paint their own component
+              // block. Remember the call until its result so failure still
+              // gets an ordinary, visible tool record.
+              if (block.name.startsWith(`mcp__${UI_MCP}__`)) {
+                const input =
+                  typeof block.input === "object" && block.input !== null
+                    ? (block.input as Record<string, unknown>)
+                    : undefined;
+                this.pendingRenderTools.set(block.id, {
+                  name: block.name,
+                  input,
+                  parentId,
+                });
+                continue;
+              }
               // The agent's task list becomes one live checklist
               // component (updated in place), not raw tool rows. This SDK
               // manages it via the Task* family (TaskCreate/TaskUpdate,
@@ -615,6 +635,31 @@ export class ClaudeCodeSession implements AgentSession {
             if (!Array.isArray(content)) break; // plain prompt echo, not tool results
             for (const block of content) {
               if (block.type !== "tool_result") continue;
+              const pendingRender = this.pendingRenderTools.get(block.tool_use_id);
+              if (pendingRender) {
+                this.pendingRenderTools.delete(block.tool_use_id);
+                if (block.is_error === true) {
+                  const detail = toolDetail(pendingRender.input);
+                  this.emit({
+                    type: "tool_use",
+                    name: pendingRender.name,
+                    ...(detail ? { detail } : {}),
+                    id: block.tool_use_id,
+                    ...(pendingRender.input ? { input: pendingRender.input } : {}),
+                    ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
+                  });
+                  const capped = capOutput(resultText(block.content));
+                  this.emit({
+                    type: "tool_result",
+                    output: capped.text,
+                    truncatedBytes: capped.truncatedBytes,
+                    isError: true,
+                    id: block.tool_use_id,
+                    ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
+                  });
+                }
+                continue;
+              }
               if (!this.announcedTools.delete(block.tool_use_id)) continue;
               const capped = capOutput(resultText(block.content));
               this.emit({
@@ -711,6 +756,7 @@ export class ClaudeCodeSession implements AgentSession {
     // boundary is the safe clear point (a stale cross-turn straggler is
     // dropped rather than completing an old row).
     this.announcedTools.clear();
+    this.pendingRenderTools.clear();
     this.emit({ type: "turn_end" });
   }
 

@@ -72,6 +72,7 @@ export function digestFrom(doc) {
     ["FileUpdateChange", "path"],
     ["PatchChangeKind", null],
     ["CommandExecutionOutputDeltaNotification", "delta"],
+    ["FileChangePatchUpdatedNotification", "changes"],
     ["TurnDiffUpdatedNotification", "diff"],
   ];
   for (const [def, prop] of want) {

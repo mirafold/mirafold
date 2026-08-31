@@ -263,7 +263,7 @@ them. The rules, for the next adapter author:
 | Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` + `/agent` (build/plan/custom) + the engine's own `/command` catalog (badged `source:"opencode"`) | implemented `/model` | scripted supported catalog |
 | Text streaming granularity | token-level (`includePartialMessages`) | token-level (`item/agentMessage/delta`), held only from a code fence on so a hand-written chart still converts | token-level: a true delta channel (`message.part.delta`) plus snapshot accrual | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ✅ (`reasoning` parts) | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
-| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; error output capped by `capOutput` like success) | ✅ | ✅ |
+| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; error output capped by `capOutput` like success) | ✅ | ✅ |
 | Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ⚠ partial (TS.9): collab calls (`spawn_agent`/`wait`/`send_message`…) are engine-named rows carrying the prompt and each child's state; a child's lifecycle (`subAgentActivity`) narrates under its spawn row via `parentId`; the child's INNER calls and prose still need per-thread `app-server` subscriptions the adapter does not open | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
 | Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ✅ full round-trip: `item/*/requestApproval` → the bar → `{decision}` / granted profile; fail-closed on timeout/close; PLUS a folder-trust ask before the first `thread/start` | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
@@ -351,8 +351,18 @@ asserts every kind is handled, deliberately ignored (with a reason), or
 unmapped with a plan step, and that the read fields still have the shapes the
 adapter assumes; the Tier-4 live test regenerates the digest from the
 installed Codex and fails on drift. Claude's ledger is compile-time
-(`CLAUDE_MESSAGE_LEDGER satisfies Record<SDKMessage["type"], …>`); OpenCode
-and Gemini carry explicit ignore lists and report the rest.
+(`CLAUDE_MESSAGE_LEDGER satisfies Record<SDKMessage["type"], …>`). OpenCode's
+Tier-4 gate pulls the installed server's own OpenAPI document and applies the
+same handled / deliberately ignored / planned classification to every event
+and message-part kind; its live gate separately proves which advertised
+surface the production `/event` feed actually emits. Gemini's finite
+`stream-json` switch reports every event outside its handled set; no benign
+extra kinds have been observed that warrant a separate ignore ledger.
+
+A successful Mirafold render-tool call is represented by its painting, not a
+duplicate raw row. A failed or unsynthesizable render call is still engine
+activity: every adapter falls back to an ordinary `tool_use` + error/result
+row so the attempted action and failure cannot disappear.
 
 **Narration is not the answer (TS.8).** `text_delta.phase` (additive)
 carries the engine's own classification of its prose: Codex declares every
@@ -363,12 +373,39 @@ nothing does — and gives the final answer its own full-weight row; engines
 that declare nothing fall back to the length heuristic. Codex's written
 `plan` streams as commentary too.
 
-**Streamed output (TS.11).** `tool_output_delta` (additive) carries a running
-call's output as it arrives — the terminal prints it live — for the row
-`tool_use` announced; the row's head shows the last line, its body the stream
-so far, and `tool_result` still closes it with the engine's capped output.
-Codex feeds it from `item/commandExecution/outputDelta` and
-`item/fileChange/outputDelta`.
+Both coalescing seams treat `phase` as part of a prose lane and preserve it:
+the daemon's 33 ms replay-ring window and the browser's animation-frame queue
+can merge commentary with commentary, never commentary with a final answer.
+
+**Live tool updates (TS.11).** `tool_output_delta` (additive) carries a running
+command's textual output as it arrives — the terminal prints it live — for the
+row `tool_use` announced; the row's head shows the last line, its body the
+stream so far, and `tool_result` still closes it with the engine's capped
+output. Codex feeds it from `item/commandExecution/outputDelta`. Both
+coalescing seams batch this stream by `(tool id, parentId)`, and the adapter's
+ceiling is the same UTF-8 byte budget as final tool output—never JavaScript
+character count.
+
+Current Codex does not emit the deprecated `item/fileChange/outputDelta`.
+Instead, each `item/fileChange/patchUpdated` carries the latest complete
+structured patch snapshot when `features.apply_patch_streaming_events` is
+enabled. Mirafold enables that feature only for its app-server process through
+a `-c` override; it does not alter the user's Codex configuration. Additive
+`tool_update` replaces the announced row's detail/input in place, so an
+initially empty `fileChange` becomes the real multi-file diff as it evolves
+and the completed item closes that same row. The retired textual event remains
+accepted only for older Codex version skew; it is not the basis of the
+current-engine fidelity claim.
+
+**Edit painting (TS.6).** `Write` shows the new content; `Edit` and the
+registry's `render_diff` share the line differ; Codex `apply_patch` shows one
+normalized block per file, refreshed from its live patch snapshots.
+Unified-diff file headers are ignored only before
+the first hunk, so changed source beginning with `--` or `++` remains visible,
+and a move heading names both paths. The shared differ trims equal edges and
+caps its LCS matrix at one million changed-middle cells; over that threshold
+it shows every old middle line removed and every new middle line added. The
+fallback is intentionally less minimal, but linear and lossless.
 
 Adapter obligations for either path:
 
@@ -381,10 +418,11 @@ Adapter obligations for either path:
    OpenCode advertises MCP tools as `mirafold_<tool>`, so the adapter recognizes
    its own render calls by the `mirafold_` prefix and paints them, suppressing
    the raw tool rows.
-2. Suppress the raw `tool_use`/`tool_result` rows for our render server's
-   calls and emit the corresponding `render`/`artifact` WireMsg instead (the
-   shared `emitGenerativeUI` path); other MCP servers' calls surface as
-   ordinary tool records.
+2. On success, suppress the raw `tool_use`/`tool_result` rows for our render
+   server's calls and emit the corresponding `render`/`artifact` WireMsg
+   instead (the shared `generativeUIMsg` path). On failure—or if synthesis
+   cannot produce a validated painting—fall back to the ordinary tool record;
+   other MCP servers' calls always surface that way.
 3. Re-sending a render `id` is an in-place update — adapters must paint under
    the id the agent will re-send, provided it fits `RENDER_ID_GRAMMAR`
    (1–128 characters of letters, digits, `_ . : -`; the guidance tells the

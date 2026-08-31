@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -39,7 +39,8 @@ type Any = WireMsg & Record<string, any>;
 
 /** The scripted model: keeps requesting the render until its ack is in
  *  history (rides out the engine's cold first call carrying zero tools —
- *  see opencode.spike.md), then a permission-gated bash on the probe turn. */
+ *  see opencode.spike.md), then drives a permission-gated bash, a write,
+ *  and a child task on later turns. */
 function startFakeModel(): Promise<{ port: number; close: () => void }> {
   let n = 0;
   const sse = (res: http.ServerResponse, obj: unknown) =>
@@ -51,7 +52,8 @@ function startFakeModel(): Promise<{ port: number; close: () => void }> {
       n++;
       res.writeHead(200, { "content-type": "text/event-stream" });
       const base = { id: `c${n}`, object: "chat.completion.chunk", created: 1, model: "fake-model" };
-      const messages: { role: string; content?: unknown }[] = JSON.parse(body || "{}").messages ?? [];
+      const messages: { role: string; content?: unknown }[] =
+        JSON.parse(body || "{}").messages ?? [];
       const flat = JSON.stringify(messages);
       const toolCall = (name: string, args: unknown) => {
         sse(res, {
@@ -85,12 +87,19 @@ function startFakeModel(): Promise<{ port: number; close: () => void }> {
       const lastUser = JSON.stringify(
         [...messages].reverse().find((m) => m.role === "user")?.content ?? "",
       );
+      const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+      const currentTurnMessages = messages.slice(lastUserIndex + 1);
+      const editPath = /EDIT_PATH ([^"\\\s]+)/.exec(lastUser)?.[1];
+      const editDone = currentTurnMessages.some((m) => m.role === "tool");
       const renderDone = flat.includes("Rendered card");
       const probeTurn = flat.includes("probe command");
       const bashDone = messages.some(
         (m) => m.role === "tool" && /oc5-live/.test(JSON.stringify(m.content ?? "")),
       );
-      if (/CHILD_TASK/.test(lastUser)) {
+      if (editPath) {
+        if (!editDone) toolCall("write", { filePath: editPath, content: "OpenCode live edit\n" });
+        else text("EDIT DONE");
+      } else if (/CHILD_TASK/.test(lastUser)) {
         // The CHILD conversation (SA.3): a permission-gated bash, then its
         // report — narration the lane must carry.
         const childBashDone = messages.some(
@@ -125,13 +134,15 @@ function startFakeModel(): Promise<{ port: number; close: () => void }> {
   });
 }
 
-test("OC.5: real engine — render, permission, usage, resume, all through the shipped code", {
+test("OC.5: real engine — render, permission, edit, subagent, usage, and resume", {
   skip: BIN ? false : "opencode is not installed (set OPENCODE_BIN or install it)",
   timeout: 180_000,
 }, async () => {
   const model = await startFakeModel();
   const home = mkdtempSync(path.join(os.tmpdir(), "mirafold-oc5-home-"));
   const work = mkdtempSync(path.join(os.tmpdir(), "mirafold-oc5-work-"));
+  const previousTrustFile = process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
+  process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = path.join(home, "trusted-workspaces.json");
   mkdirSync(path.join(home, ".config", "opencode"), { recursive: true });
   writeFileSync(
     path.join(home, ".config", "opencode", "opencode.json"),
@@ -161,7 +172,12 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
       model: "fake/fake-model",
       resumeId,
       makeTransport: (config) =>
-        new OpenCodeServerProcess({ bin: BIN as string, cwd: work, configContent: config, env: jailedEnv }),
+        new OpenCodeServerProcess({
+          bin: BIN as string,
+          cwd: work,
+          configContent: config,
+          env: jailedEnv,
+        }),
     });
     const msgs: Any[] = [];
     session.onMessage((m) => msgs.push(m as Any));
@@ -181,6 +197,16 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
 
     // Turn 1: the render paints through the real MCP stub.
     first.session.pushPrompt("paint a card please");
+    await waitFor(
+      () => first.msgs.some((m) => m.type === "permission_request" && m.tool === "OpenCode"),
+      "the disposable folder-trust ask",
+      10_000,
+      () => seenTypes(first),
+    );
+    const trustAsk = first.msgs.find(
+      (m) => m.type === "permission_request" && m.tool === "OpenCode",
+    )!;
+    first.session.resolvePermission(trustAsk.id, true);
     await waitFor(() => first.turnEnds() >= 1, "turn 1 (render)", 120_000, () => seenTypes(first));
     const render = first.msgs.find((m) => m.type === "render" && m.component === "card");
     assert.ok(render, "card rendered through the real engine");
@@ -193,16 +219,22 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     // Turn 2: the permission round-trip, answered through the bridge.
     first.session.pushPrompt("now run the probe command");
     await waitFor(
-      () => first.msgs.some((m) => m.type === "permission_request"),
+      () => first.msgs.some((m) => m.type === "permission_request" && m.tool === "bash"),
       "the ask",
       60_000,
       () => seenTypes(first),
     );
-    const ask = first.msgs.find((m) => m.type === "permission_request");
+    const ask = first.msgs.find(
+      (m) => m.type === "permission_request" && m.tool === "bash",
+    );
     assert.equal(ask?.tool, "bash");
     first.session.resolvePermission(ask!.id, true);
     await waitFor(() => first.turnEnds() >= 2, "turn 2 (bash)", 120_000, () => seenTypes(first));
-    assert.ok(first.msgs.some((m) => m.type === "permission_resolved" && m.allow === true));
+    assert.ok(
+      first.msgs.some(
+        (m) => m.type === "permission_resolved" && m.id === ask!.id && m.allow === true,
+      ),
+    );
     assert.ok(
       first.msgs.some((m) => m.type === "tool_result" && /oc5-live/.test(m.output)),
       "the engine really ran the command",
@@ -210,7 +242,24 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     // The fake provider is the user's own config — no gray disclosure rides.
     assert.equal(first.msgs.filter((m) => m.type === "notice").length, 0);
 
-    // Turn 3 (SA.3): a REAL subagent — the engine's task tool spawns a child
+    // Turn 3: the real engine's lowercase/camelCase write tool is normalized
+    // into the shared Write painter shape, while the tool really edits disk.
+    const editPath = path.join(work, "oc5-edit.txt");
+    first.session.pushPrompt(`create the probe file exactly as requested: EDIT_PATH ${editPath}`);
+    await waitFor(() => first.turnEnds() >= 3, "turn 3 (edit)", 120_000, () => seenTypes(first));
+    const writeUse = first.msgs.find(
+      (m) => m.type === "tool_use" && m.name === "Write" && m.input?.["file_path"] === "oc5-edit.txt",
+    );
+    assert.equal(writeUse?.detail, "oc5-edit.txt", "the live edit header uses a relative path");
+    assert.equal(writeUse?.input?.["content"], "OpenCode live edit\n");
+    assert.ok(
+      first.msgs.some((m) => m.type === "tool_result" && m.id === writeUse?.id),
+      "the normalized write row resolves",
+    );
+    assert.equal(readFileSync(editPath, "utf8"), "OpenCode live edit\n", "OpenCode really wrote the file");
+    assert.ok(first.msgs.some((m) => m.type === "text_delta" && /EDIT DONE/.test(m.text)));
+
+    // Turn 4 (SA.3): a REAL subagent — the engine's task tool spawns a child
     // session on the same server; its permission ask, calls, and prose all
     // ride the lane, attributed to the spawn card.
     first.session.pushPrompt("now spawn the subagent");
@@ -222,7 +271,7 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     );
     const childAsk = first.msgs.find((m) => m.type === "permission_request" && m.parentId)!;
     first.session.resolvePermission(childAsk.id, true);
-    await waitFor(() => first.turnEnds() >= 3, "turn 3 (fan-out)", 120_000, () => seenTypes(first));
+    await waitFor(() => first.turnEnds() >= 4, "turn 4 (fan-out)", 120_000, () => seenTypes(first));
     const spawnRow = first.msgs.find((m) => m.type === "tool_use" && m.name === "task")!;
     assert.equal(spawnRow.parentId, undefined, "the spawn is the card anchor, un-nested");
     assert.equal(childAsk.parentId, spawnRow.id, "the ask is attributed to the spawn card");
@@ -240,7 +289,6 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
       first.msgs.some((m) => m.type === "text_delta" && !m.parentId && /FANOUT DONE/.test(m.text)),
       "the parent's own reply stayed top-level",
     );
-
     // Resume: engine-side persistence across a full server restart.
     const resumeId = first.session.resumeId;
     assert.ok(resumeId, "the engine session id was published");
@@ -258,6 +306,8 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
   } finally {
     first.session.close();
     model.close();
+    if (previousTrustFile === undefined) delete process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
+    else process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = previousTrustFile;
     rmSync(home, { recursive: true, force: true });
     rmSync(work, { recursive: true, force: true });
   }
@@ -301,25 +351,19 @@ test("OpenCode's published API lists no event or part kind the adapter hasn't cl
       else if (name.endsWith("Part")) for (const t of constsOf(schema)) parts.add(t);
     }
     assert.ok(events.size > 0 && parts.size > 0, `could not read event/part kinds from the spec (schemas: ${Object.keys(schemas).slice(0, 20).join(", ")})`);
-    // Known gaps with a plan step (TS.13) — shrinks as the step lands, never
+    // Known gaps with a plan step (TS.14) — shrinks as the step lands, never
     // grows silently; each still surfaces as a notice when it arrives.
     const UNMAPPED_EVENTS_WITH_A_PLAN_STEP: Record<string, string> = {
-      "permission.v2.asked": "TS.13",
-      "permission.v2.replied": "TS.13",
-      "question.asked": "TS.13",
-      "question.replied": "TS.13",
-      "question.rejected": "TS.13",
-      "question.v2.asked": "TS.13",
-      "question.v2.replied": "TS.13",
-      "question.v2.rejected": "TS.13",
+      "session.compacted": "TS.14",
+      "question.asked": "TS.14",
+      "question.replied": "TS.14",
+      "question.rejected": "TS.14",
+      "question.v2.asked": "TS.14",
+      "question.v2.replied": "TS.14",
+      "question.v2.rejected": "TS.14",
     };
     const UNMAPPED_PARTS_WITH_A_PLAN_STEP: Record<string, string> = {
-      patch: "TS.13 — edits as diff rows, like Codex",
-      file: "TS.13",
-      agent: "TS.13",
-      subtask: "TS.13",
-      compaction: "TS.13",
-      retry: "TS.13",
+      retry: "TS.14",
     };
     const unclassifiedEvents = [...events].filter(
       (t) => !(OPENCODE_HANDLED_EVENTS as readonly string[]).includes(t) && !opencodeEventIgnored(t) && !(t in UNMAPPED_EVENTS_WITH_A_PLAN_STEP),

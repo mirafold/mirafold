@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { diffLines, unifiedDiffLines, wholeFileLines } from "../diff";
+import { DIFF_LCS_CELL_LIMIT, diffLines, unifiedDiffLines, wholeFileLines } from "../diff";
 import { ToolBlock, formatBytes, lastLine } from "./ToolBlock";
 
 test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {
@@ -33,6 +33,20 @@ test("diffLines handles an empty side", () => {
   assert.deepEqual(diffLines("", "x"), [
     { sign: "+", text: "x", noNewline: true },
   ]);
+});
+
+test("diffLines bounds an oversized changed middle without dropping lines", () => {
+  const side = Math.floor(Math.sqrt(DIFF_LCS_CELL_LIMIT)) + 1;
+  const oldLines = Array.from({ length: side }, (_, i) => (i === 500 ? "shared" : `old-${i}`));
+  const newLines = Array.from({ length: side }, (_, i) => (i === 500 ? "shared" : `new-${i}`));
+  const lines = diffLines(oldLines.join("\n"), newLines.join("\n"));
+
+  assert.equal(lines.length, side * 2);
+  assert.equal(lines.filter((line) => line.sign === "-").length, side);
+  assert.equal(lines.filter((line) => line.sign === "+").length, side);
+  assert.equal(lines.filter((line) => line.text === "shared").length, 2);
+  assert.equal(lines.at(side - 1)?.noNewline, true);
+  assert.equal(lines.at(-1)?.noNewline, true);
 });
 
 test("diffLines: a terminated-vs-unterminated shared final line splits, git-style", () => {
@@ -86,6 +100,7 @@ test("an apply_patch row draws each file's patch as diff rows (TS.6)", () => {
           { path: "server/a.ts", kind: "update", diff: "@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n" },
           { path: "NOTES.md", kind: "add", diff: "alpha probe\n" },
           { path: "gone.md", kind: "delete", diff: "bye" },
+          { path: "old-name.ts", movePath: "new-name.ts", kind: "update", diff: "" },
         ],
       },
       output: "Updated server/a.ts, Added NOTES.md, Deleted gone.md",
@@ -99,6 +114,7 @@ test("an apply_patch row draws each file's patch as diff rows (TS.6)", () => {
   assert.match(html, /diff-add[^>]*>\+ alpha probe/);
   assert.match(html, /Deleted gone\.md/);
   assert.match(html, /diff-del[^>]*>- bye/);
+  assert.match(html, /Moved old-name\.ts → new-name\.ts/);
   assert.match(html, /No newline at end of file/); // "bye" has no trailing newline
   assert.doesNotMatch(html, /\[object Object\]/);
 });
@@ -111,6 +127,17 @@ test("unifiedDiffLines and wholeFileLines produce the shared DiffLine rows", () 
   ]);
   assert.deepEqual(wholeFileLines("a\nb", "+"), [{ sign: "+", text: "a" }, { sign: "+", text: "b", noNewline: true }]);
   assert.deepEqual(wholeFileLines("", "-"), []);
+});
+
+test("unifiedDiffLines keeps hunk content beginning with two pluses or minuses", () => {
+  assert.deepEqual(
+    unifiedDiffLines("--- a\n+++ b\n@@ -1 +1 @@\n--- deleted\n+++ added\n"),
+    [
+      { sign: " ", text: "@@ -1 +1 @@" },
+      { sign: "-", text: "-- deleted" },
+      { sign: "+", text: "++ added" },
+    ],
+  );
 });
 
 

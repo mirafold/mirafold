@@ -620,6 +620,18 @@ export function createTranscriptProjection(): TranscriptProjection {
         ];
         return true;
       }
+      case "tool_update": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? {
+                ...entry,
+                ...(msg.detail !== undefined ? { detail: msg.detail } : {}),
+                ...(msg.input !== undefined ? { input: msg.input } : {}),
+              }
+            : entry,
+        );
+        return true;
+      }
       case "tool_output_delta": {
         entries = entries.map((entry) =>
           entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined

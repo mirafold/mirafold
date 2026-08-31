@@ -6,6 +6,7 @@ import type { OpenCodeEvent } from "./opencode-client";
 import { UnknownKindReporter } from "./wire-helpers";
 import { OPENCODE_IGNORED_PARTS, opencodeEventIgnored } from "./opencode-ledger";
 import { createLogger } from "../log";
+import { displayPath } from "./codex-patch";
 
 const log = createLogger("opencode-events");
 
@@ -405,8 +406,9 @@ export class OpenCodeEventMapper {
         return;
       }
     }
+    const presented = presentOpenCodeTool(tool, input, this.options.workspaceDir);
     if (status === "running" || status === "completed" || status === "error")
-      this.announceTool(track, partID, tool, input, parentId);
+      this.announceTool(track, partID, presented.tool, presented.input, parentId);
     if (track.finished) return;
     if (status === "completed") {
       track.finished = true;
@@ -512,6 +514,39 @@ export class OpenCodeEventMapper {
     });
     this.checklist.paint(items);
   }
+}
+
+/** OpenCode's built-in edit tools use lowercase names and camelCase fields,
+ *  while the shared transcript painter consumes the canonical Claude-style
+ *  Write/Edit shapes. Normalize the real 1.18.25 write call plus the edit
+ *  schema that engine advertised; every other tool/input stays native. */
+function presentOpenCodeTool(
+  tool: string,
+  input: Record<string, unknown>,
+  workspaceDir: string,
+): { tool: string; input: Record<string, unknown> } {
+  if (tool !== "write" && tool !== "edit") return { tool, input };
+
+  const normalized = { ...input };
+  if (typeof input["filePath"] === "string") {
+    delete normalized["filePath"];
+    normalized["file_path"] = displayPath(input["filePath"], workspaceDir);
+  }
+  if (tool === "write") return { tool: "Write", input: normalized };
+
+  if (typeof input["oldString"] === "string") {
+    delete normalized["oldString"];
+    normalized["old_string"] = input["oldString"];
+  }
+  if (typeof input["newString"] === "string") {
+    delete normalized["newString"];
+    normalized["new_string"] = input["newString"];
+  }
+  if (typeof input["replaceAll"] === "boolean") {
+    delete normalized["replaceAll"];
+    normalized["replace_all"] = input["replaceAll"];
+  }
+  return { tool: "Edit", input: normalized };
 }
 
 function num(value: unknown): number {

@@ -6,6 +6,7 @@ import {
   createTranscriptProjection,
   type TextRow,
   type OutputZoneRow,
+  type ToolRow,
   type ToolFoldItem,
   type TranscriptProjection,
   type TranscriptSnapshot,
@@ -539,4 +540,30 @@ test("streamed tool output accumulates on the running row and the result closes 
   const closed = done.snapshot.rows.find((r) => r.kind === "tool");
   assert.ok(closed && closed.kind === "tool");
   assert.equal(closed.output, "running 1\nrunning 2\nok\n");
+});
+
+test("a tool update refreshes structured input in place without reopening a completed row", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "apply_patch", id: "p1", input: { changes: [] } },
+      {
+        type: "tool_update",
+        id: "p1",
+        detail: "Updated a.ts",
+        input: { changes: [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }] },
+      },
+      { type: "tool_result", id: "p1", output: "Updated a.ts" },
+      { type: "tool_update", id: "p1", detail: "must not replace settled input", input: { changes: [] } },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const rows = result.snapshot.rows.filter((row): row is ToolRow => row.kind === "tool");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].detail, "Updated a.ts");
+  assert.deepEqual(rows[0].input, {
+    changes: [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }],
+  });
+  assert.equal(rows[0].output, "Updated a.ts");
 });

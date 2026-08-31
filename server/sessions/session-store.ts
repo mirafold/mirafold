@@ -158,6 +158,15 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("tool_update"),
+      id: idSchema,
+      detail: z.string().optional(),
+      input: jsonRecordSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("tool_result"),
       output: z.string(),
       isError: z.boolean().optional(),
@@ -299,7 +308,11 @@ export function admitForCheckpoint(msg: SessionMsg): SessionMsg | undefined {
       const { costUsd, ...rest } = m;
       m = { ...rest, inputTokens, outputTokens, ...(costOk && costUsd !== undefined ? { costUsd } : {}) };
     }
-  } else if (m.type === "tool_use" && m.input !== undefined && !isObject(m.input)) {
+  } else if (
+    (m.type === "tool_use" || m.type === "tool_update") &&
+    m.input !== undefined &&
+    !isObject(m.input)
+  ) {
     const { input: _input, ...rest } = m;
     m = rest;
   } else if (m.type === "picker" && m.rows.length > PICKER_ROW_CAP) {

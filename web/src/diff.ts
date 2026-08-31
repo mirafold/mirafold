@@ -18,37 +18,66 @@ export function splitTextLines(text: string): { lines: string[]; endsWithNewline
   };
 }
 
+/** Largest changed-middle matrix the browser will allocate. Past this, an
+ *  exact remove/add presentation is safer than freezing the main thread. */
+export const DIFF_LCS_CELL_LIMIT = 1_000_000;
+
 /** Line-level diff via LCS — enough to read an Edit at a glance. */
 export function diffLines(oldText: string, newText: string): DiffLine[] {
   const oldSource = splitTextLines(oldText);
   const newSource = splitTextLines(newText);
   const a = oldSource.lines;
   const b = newSource.lines;
-  const n = a.length;
-  const m = b.length;
+  // Equal edges never need the matrix. Besides making ordinary edits much
+  // cheaper, this leaves the large-input fallback focused on the changed
+  // middle and preserves useful context around it.
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let aEnd = a.length;
+  let bEnd = b.length;
+  while (aEnd > start && bEnd > start && a[aEnd - 1] === b[bEnd - 1]) {
+    aEnd--;
+    bEnd--;
+  }
+  const n = aEnd - start;
+  const m = bEnd - start;
+  const out: DiffLine[] = a.slice(0, start).map((text) => ({ sign: " ", text }));
+
+  // The fallback is byte-for-byte honest but intentionally non-minimal: all
+  // old middle lines are removed and all new middle lines are added. It is
+  // O(n+m) instead of allocating an attacker/model-sized n×m matrix.
+  if (m > 0 && n > DIFF_LCS_CELL_LIMIT / m) {
+    for (let i = start; i < aEnd; i++) out.push({ sign: "-", text: a[i] });
+    for (let j = start; j < bEnd; j++) out.push({ sign: "+", text: b[j] });
+    for (let i = aEnd; i < a.length; i++) out.push({ sign: " ", text: a[i] });
+    return markNoNewline(out, oldSource.endsWithNewline, newSource.endsWithNewline);
+  }
+
   // LCS length table.
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      lcs[i][j] = a[start + i] === b[start + j]
+        ? lcs[i + 1][j + 1] + 1
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
-  const out: DiffLine[] = [];
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      out.push({ sign: " ", text: a[i] });
+    if (a[start + i] === b[start + j]) {
+      out.push({ sign: " ", text: a[start + i] });
       i++;
       j++;
     } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-      out.push({ sign: "-", text: a[i++] });
+      out.push({ sign: "-", text: a[start + i++] });
     } else {
-      out.push({ sign: "+", text: b[j++] });
+      out.push({ sign: "+", text: b[start + j++] });
     }
   }
-  while (i < n) out.push({ sign: "-", text: a[i++] });
-  while (j < m) out.push({ sign: "+", text: b[j++] });
+  while (i < n) out.push({ sign: "-", text: a[start + i++] });
+  while (j < m) out.push({ sign: "+", text: b[start + j++] });
+  for (i = aEnd; i < a.length; i++) out.push({ sign: " ", text: a[i] });
   return markNoNewline(out, oldSource.endsWithNewline, newSource.endsWithNewline);
 }
 
@@ -114,12 +143,16 @@ function markNoNewline(
  */
 export function unifiedDiffLines(diff: string): DiffLine[] {
   const out: DiffLine[] = [];
+  let inHunk = false;
   for (const raw of splitTextLines(diff).lines) {
     if (raw.startsWith("\\ No newline")) {
       if (out.length) out[out.length - 1].noNewline = true;
       continue;
     }
-    if (raw.startsWith("+++ ") || raw.startsWith("--- ")) continue;
+    // `--- file` / `+++ file` are headers only before the first hunk. Inside
+    // a hunk, the same bytes mean source content beginning with `--` / `++`.
+    if (!inHunk && (raw.startsWith("+++ ") || raw.startsWith("--- "))) continue;
+    if (raw.startsWith("@@")) inHunk = true;
     const sign = raw[0];
     if (sign === "+" || sign === "-") out.push({ sign, text: raw.slice(1) });
     else if (sign === " ") out.push({ sign: " ", text: raw.slice(1) });

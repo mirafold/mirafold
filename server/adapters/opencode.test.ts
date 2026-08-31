@@ -248,6 +248,63 @@ test("tool lifecycle: running announces, completed resolves, output is capped", 
   session.close();
 });
 
+test("OpenCode write/edit calls use the shared code and diff painter shapes", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    snap({
+      type: "tool",
+      id: "write-1",
+      tool: "write",
+      state: {
+        status: "completed",
+        input: { filePath: path.join(tmp, "new.txt"), content: "new file\n" },
+        output: "Wrote file successfully.",
+      },
+    }),
+    snap({
+      type: "tool",
+      id: "edit-1",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: {
+          filePath: path.join(tmp, "old.txt"),
+          oldString: "before\n",
+          newString: "after\n",
+          replaceAll: true,
+        },
+        output: "Edit applied successfully.",
+      },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+
+  const uses = msgs.filter((m) => m.type === "tool_use");
+  assert.deepEqual(
+    uses.map(({ name, detail, input }) => ({ name, detail, input })),
+    [
+      {
+        name: "Write",
+        detail: "new.txt",
+        input: { file_path: "new.txt", content: "new file\n" },
+      },
+      {
+        name: "Edit",
+        detail: "old.txt",
+        input: {
+          file_path: "old.txt",
+          old_string: "before\n",
+          new_string: "after\n",
+          replace_all: true,
+        },
+      },
+    ],
+  );
+  session.close();
+});
+
 test("tool error resolves as an isError result; completed-first still announces", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

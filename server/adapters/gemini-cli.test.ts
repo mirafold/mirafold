@@ -256,7 +256,7 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
     // genui artifact without an id — takes the stub-assigned one from output.
     { type: "tool_use", tool_name: "mcp_mirafold_emit_artifact", tool_id: "r2", parameters: { html: "<b>x</b>", title: "demo" } },
     { type: "tool_result", tool_id: "r2", status: "success", output: "Rendered artifact (id: abcd1234-5678)" },
-    // failed genui call → suppressed entirely.
+    // Failed genui call → an honest error row (successful calls paint only).
     { type: "tool_use", tool_name: "mcp_mirafold_render_table", tool_id: "r3", parameters: { columns: ["a"] } },
     { type: "tool_result", tool_id: "r3", status: "error", output: "nope" },
     // a result for an id never announced → dropped, no orphan row.
@@ -273,9 +273,15 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
   assert.equal(text, "the reply"); // the user echo never painted
 
   const uses = msgs.filter((m) => m.type === "tool_use");
-  assert.deepEqual(uses.map((u) => [u.name, u.id, u.detail]), [["run_shell_command", "t1", "ls"]]);
+  assert.deepEqual(uses.map((u) => [u.name, u.id, u.detail]), [
+    ["run_shell_command", "t1", "ls"],
+    ["mcp_mirafold_render_table", "r3", '{"columns":["a"]}'],
+  ]);
   const results = msgs.filter((m) => m.type === "tool_result");
-  assert.deepEqual(results.map((r) => r.id), ["t1"]); // genui + orphan results never row
+  assert.deepEqual(results.map((r) => [r.id, r.isError]), [
+    ["t1", false],
+    ["r3", true],
+  ]);
 
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");

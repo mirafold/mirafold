@@ -629,7 +629,25 @@ export class GeminiCliSession implements AgentSession {
         const pending = this.pendingRenders.get(id);
         if (pending) {
           this.pendingRenders.delete(id);
-          if (ev["status"] !== "error") this.emitGenerativeUI(pending, ev["output"]);
+          if (ev["status"] !== "error" && this.emitGenerativeUI(pending, ev["output"])) break;
+          // A successful render call is represented by its painting. A failed
+          // or unsynthesizable one is still a real engine action: show the
+          // ordinary call/result pair instead of erasing it.
+          this.emit({
+            type: "tool_use",
+            name: `${MCP_PREFIX}${pending.tool}`,
+            detail: toolDetail(pending.params),
+            id,
+            input: pending.params,
+          });
+          const capped = capOutput(String(ev["output"] ?? ""));
+          this.emit({
+            type: "tool_result",
+            output: capped.text,
+            truncatedBytes: capped.truncatedBytes,
+            isError: ev["status"] === "error",
+            id,
+          });
           break;
         }
         if (!this.announced.delete(id)) break;
@@ -668,9 +686,14 @@ export class GeminiCliSession implements AgentSession {
   }
 
   /** A buffered Mirafold render tool call → the render/artifact SessionMsg it stands for. */
-  private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
+  private emitGenerativeUI(
+    pending: { tool: string; params: Record<string, unknown> },
+    output: unknown,
+  ): boolean {
     const id = renderIdFor({ ackText: output, argId: pending.params["id"] });
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);
-    if (msg) this.emit(msg);
+    if (!msg) return false;
+    this.emit(msg);
+    return true;
   }
 }

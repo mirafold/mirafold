@@ -9,7 +9,53 @@ export function msgBytes(msg: SessionMsg): number {
   return Buffer.byteLength(JSON.stringify(msg));
 }
 
-type Delta = Extract<SessionMsg, { type: "text_delta" | "thinking_delta" }>;
+type Delta = Extract<
+  SessionMsg,
+  { type: "text_delta" | "thinking_delta" | "tool_output_delta" }
+>;
+
+const isDelta = (msg: SessionMsg): msg is Delta =>
+  msg.type === "text_delta" ||
+  msg.type === "thinking_delta" ||
+  msg.type === "tool_output_delta";
+
+/** A coalescing lane is the exact stream a delta belongs to. Prose is split
+ *  by parent and declared phase; tool output is split by call id and parent. */
+function sameDeltaLane(left: Delta, right: Delta): boolean {
+  if (left.type !== right.type || left.parentId !== right.parentId) return false;
+  if (left.type === "text_delta" && right.type === "text_delta") {
+    return left.phase === right.phase;
+  }
+  if (left.type === "tool_output_delta" && right.type === "tool_output_delta") {
+    return left.id === right.id;
+  }
+  return true;
+}
+
+/** Copy only the unstamped wire fields the ring owns. */
+function copyDelta(msg: Delta): Delta {
+  if (msg.type === "text_delta") {
+    return {
+      type: msg.type,
+      text: msg.text,
+      ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+      ...(msg.phase !== undefined ? { phase: msg.phase } : {}),
+    };
+  }
+  if (msg.type === "tool_output_delta") {
+    return {
+      type: msg.type,
+      id: msg.id,
+      text: msg.text,
+      ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+    };
+  }
+  return {
+    type: msg.type,
+    text: msg.text,
+    ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+  };
+}
 
 /**
  * One session's sequenced replay ring: the retained tail of the session
@@ -22,9 +68,9 @@ type Delta = Extract<SessionMsg, { type: "text_delta" | "thinking_delta" }>;
  * the transcript's tail past the replay.
  *
  * The ring delivers through `deliver` — the registry's fan-out/checkpoint
- * path — so stream order is exactly the adapter's: a delta of the other type,
- * a different subagent's delta, or any non-delta message flushes the window
- * before it is delivered.
+ * path — so stream order is exactly the adapter's: a delta from another
+ * prose phase, subagent, tool call, or type — or any non-delta message —
+ * flushes the window before it is delivered.
  */
 export class ReplayRing {
   buffer: SessionMsg[] = [];
@@ -64,21 +110,14 @@ export class ReplayRing {
    *  inside the window into one message whose text is their concatenation;
    *  anything else flushes the window first, then delivers. */
   offer(msg: SessionMsg) {
-    if (this.opts.coalesceMs > 0 && (msg.type === "text_delta" || msg.type === "thinking_delta")) {
+    if (this.opts.coalesceMs > 0 && isDelta(msg)) {
       const pending = this.pendingDelta;
-      // The merge key is (type, parentId): with parallel subagents streaming,
-      // merging on type alone would concatenate one agent's prose into
-      // another's (or into the parent's) inside a single message.
-      if (pending && pending.type === msg.type && pending.parentId === msg.parentId) {
+      if (pending && sameDeltaLane(pending, msg)) {
         pending.text += msg.text;
         return;
       }
       this.flush();
-      this.pendingDelta = {
-        type: msg.type,
-        text: msg.text,
-        ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
-      };
+      this.pendingDelta = copyDelta(msg);
       this.deltaTimer = setTimeout(() => this.flush(), this.opts.coalesceMs);
       this.deltaTimer.unref();
       return;
