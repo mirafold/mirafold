@@ -17,6 +17,7 @@
 
 @import "./styles/01-frame.css";
 @import "./styles/02-folder-tree.css";
+@import "./styles/03-cockpit-panel.css";
 @import "./styles/03-diff-panel.css";
 @import "./styles/04-banners.css";
 @import "./styles/05-transcript.css";

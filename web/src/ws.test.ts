@@ -27,6 +27,59 @@ function setup(t: TestContext) {
   return { dom, client, sock: () => FakeWS.instances.at(-1)! };
 }
 
+test("closing a supplemental socket restores browser-error forwarding to the session socket", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  FakeWS.instances = [];
+  (globalThis as Record<string, unknown>).WebSocket = FakeWS;
+  const dom = shimDom();
+  const primary = new SocketClient("ws://test/primary");
+  const primarySocket = FakeWS.instances[0];
+  primarySocket.open();
+  const supplemental = new SocketClient("ws://test/supplemental");
+  const supplementalSocket = FakeWS.instances[1];
+  supplementalSocket.open();
+
+  dom.error({
+    error: new Error("reported through the supplemental socket"),
+    message: "supplemental",
+    filename: "cockpit.tsx",
+    lineno: 1,
+  });
+  assert.equal(
+    supplementalSocket.parsedSent().filter((message) => message.type === "client_error").length,
+    1,
+  );
+
+  supplemental.close();
+  dom.error({
+    error: new Error("reported after the cockpit closes"),
+    message: "restored",
+    filename: "shell.tsx",
+    lineno: 2,
+  });
+  assert.equal(
+    primarySocket.parsedSent().filter((message) => message.type === "client_error").length,
+    1,
+    "the still-live session socket resumes error forwarding",
+  );
+
+  // PR #77 review (P2): a supplemental socket that is refused or still
+  // reconnecting must not swallow reports into a queue its close() discards
+  // while the session socket sits open beside it — the newest READY socket
+  // carries them, not the newest socket.
+  const connecting = new SocketClient("ws://test/connecting");
+  const connectingSocket = FakeWS.instances[2]; // never opened
+  dom.error({ error: new Error("while the cockpit socket is down"), message: "down", filename: "x.tsx", lineno: 3 });
+  assert.equal(
+    primarySocket.parsedSent().filter((message) => message.type === "client_error").length,
+    2,
+    "the usable session socket carries the report",
+  );
+  assert.equal(connectingSocket.parsedSent().filter((message) => message.type === "client_error").length, 0);
+  connecting.close();
+  primary.close();
+});
+
 test("hello goes first on every open; sends while connecting queue in order", (t) => {
   const { client, sock } = setup(t);
   client.setHello(() => ({ type: "attach", sessionId: "s1" }));

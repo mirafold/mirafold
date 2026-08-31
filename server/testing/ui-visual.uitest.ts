@@ -149,6 +149,42 @@ test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async
   );
 });
 
+test("visual: in-session cockpit with transcript and prompt disclosures", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-cockpit",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1280, height: 900 }),
+    },
+    async (page, base) => {
+      await enterMockSession(page);
+      const second = await page.context().newPage();
+      await second.goto(`${base}/?token=ui-visual-cockpit&new=1`);
+      await enterMockSession(second);
+      await settleKpiTurn(second, "kpi cockpit preview");
+
+      await page.locator(".ab-cockpit").click();
+      await page.waitForFunction(() => document.querySelectorAll(".cockpit-item").length === 2);
+      const secondRow = page.locator(".cockpit-item").nth(1);
+      await secondRow.locator(".cockpit-transcript-toggle").click();
+      await secondRow.locator(".cockpit-prompt-toggle").click();
+      await secondRow.locator(".cockpit-transcript-text", { hasText: "kpi cockpit preview" }).waitFor();
+      await normalizeSessionFacts(page);
+      await page.evaluate(() => {
+        document.querySelectorAll(".cockpit-session-name").forEach((element, index) => {
+          element.textContent = index === 0 ? "current session" : "second session";
+        });
+        document.querySelectorAll(".cockpit-session-id").forEach((element, index) => {
+          element.textContent = index === 0 ? "session-a" : "session-b";
+        });
+      });
+      await assertVisualSnapshot(browser, page, "cockpit-panel");
+      await second.close();
+    },
+  );
+});
+
 test("visual: enabled submitted-input navigation, both themes", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,

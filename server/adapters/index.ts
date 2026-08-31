@@ -736,6 +736,22 @@ function configuredClaudeBackend(
 }
 
 /**
+ * Whether a DORMANT record's credential kind is a verdict the relay gate may
+ * act on. An adapter that classifies at engine start — OpenCode is the one
+ * exposing `onBackendKind` — re-classifies on every revival (registry.ts
+ * activate() re-arms kindPending; the resumed engine may now back the
+ * session with a subscription or the Zen gateway even though the checkpoint
+ * last saw an API key), so a checkpoint of such an agent never holds a
+ * CURRENT verdict: it is pending until revived and classified, exactly what
+ * a remote attach to the same record is told. A non-classifying agent's kind
+ * was truthful at create and stays the record's own. (Audit 2026-08-30;
+ * tightened on the PR #77 review.)
+ */
+export function dormantKindPending(backend: Backend): boolean {
+  return backend.live && backend.agent === "opencode";
+}
+
+/**
  * The backend a SAVED session may be revived on — the restore half of the
  * choice policy, beside resolveChosenBackend so credential-drift rules live
  * in one file. A discovered endpoint was an explicit user choice and is

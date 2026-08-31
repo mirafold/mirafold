@@ -26,6 +26,10 @@ function conn(reg: SessionRegistry, remote: boolean) {
 const send = (c: Connection, msg: unknown) => c.handleMessage(JSON.stringify(msg));
 const errors = (seen: WireMsg[]) =>
   seen.filter((m) => m.type === "error").map((m) => (m as { message: string }).message);
+const lastSessions = (seen: WireMsg[]) =>
+  [...seen]
+    .reverse()
+    .find((message): message is Extract<WireMsg, { type: "sessions" }> => message.type === "sessions");
 
 test("M.2 remote gate: prompt_session and answer_permission are refused on a subscription session", () => {
   const reg = new SessionRegistry({ backend: SUB });
@@ -67,6 +71,51 @@ test("M.2 remote gate: interrupt_session stays ungated (teardown, like end_sessi
   reg.end(e.id);
 });
 
+test("BUGHUNT: whole-session interrupt cancels PTY work as well as the model", () => {
+  const reg = new SessionRegistry({ backend: NONE });
+  const e = reg.create({ cwd: dir() });
+  let modelInterrupts = 0;
+  let bangCancels = 0;
+  e.session.interrupt = () => {
+    modelInterrupts++;
+  };
+  const installBang = () => {
+    e.bang = {
+      id: "b1",
+      silent: false,
+      proc: { write() {}, kill() {} },
+      cancel: () => {
+        bangCancels++;
+      },
+    };
+  };
+
+  const fleet = conn(reg, false);
+  installBang();
+  send(fleet.c, { type: "interrupt_session", sessionId: e.id });
+  assert.deepEqual(
+    { modelInterrupts, bangCancels },
+    { modelInterrupts: 1, bangCancels: 1 },
+    "the row's one Stop covers both kinds of work represented by status=working",
+  );
+
+  const attached = conn(reg, false);
+  send(attached.c, { type: "attach", sessionId: e.id });
+  installBang();
+  send(attached.c, { type: "interrupt" });
+  assert.deepEqual(
+    { modelInterrupts, bangCancels },
+    { modelInterrupts: 2, bangCancels: 2 },
+    "the in-session interrupt uses the same whole-session operation",
+  );
+
+  installBang();
+  reg.end(e.id);
+  assert.equal(bangCancels, 3, "ending a session cancels rather than hands off its dying PTY");
+  fleet.c.close();
+  attached.c.close();
+});
+
 test("M.2 local connections are never gated — a subscription session takes a grid prompt", () => {
   const reg = new SessionRegistry({ backend: SUB });
   const e = reg.create({ cwd: dir() });
@@ -74,6 +123,40 @@ test("M.2 local connections are never gated — a subscription session takes a g
   send(c, { type: "prompt_session", sessionId: e.id, text: "hi" });
   assert.equal(errors(seen).length, 0);
   assert.ok(e.ring.buffer.some((m) => m.type === "user_prompt"));
+  reg.end(e.id);
+});
+
+test("CP.1 watch_sessions transcript opt-in follows the relay gate", () => {
+  const reg = new SessionRegistry({ backend: SUB, deltaCoalesceMs: 0 });
+  const e = reg.create({ cwd: dir() });
+  reg.broadcast(e, { type: "text_delta", text: "subscription-only transcript" });
+
+  const local = conn(reg, false);
+  send(local.c, { type: "watch_sessions", transcript: true });
+  const localSnapshot = lastSessions(local.seen);
+  assert.equal(
+    localSnapshot?.type === "sessions" ? localSnapshot.sessions[0].transcriptTail?.text : undefined,
+    "subscription-only transcript",
+  );
+
+  const remote = conn(reg, true);
+  send(remote.c, { type: "watch_sessions", transcript: true });
+  const remoteSnapshot = lastSessions(remote.seen);
+  assert.equal(
+    remoteSnapshot?.type === "sessions" ? remoteSnapshot.sessions[0].transcriptTail : "wrong frame",
+    undefined,
+  );
+
+  const ordinary = conn(reg, false);
+  send(ordinary.c, { type: "watch_sessions" });
+  const ordinarySnapshot = lastSessions(ordinary.seen);
+  assert.equal(
+    ordinarySnapshot?.type === "sessions" ? ordinarySnapshot.sessions[0].transcriptTail : "wrong frame",
+    undefined,
+  );
+  local.c.close();
+  remote.c.close();
+  ordinary.c.close();
   reg.end(e.id);
 });
 

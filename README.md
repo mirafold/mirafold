@@ -17,8 +17,9 @@ configuration, and permission model.
 - Streamed markdown plus live tables, charts, diffs, task lists, diagrams,
   images, and other interactive components generated through Model Context
   Protocol (MCP) tools.
-- Persistent sessions, multiple attached browser views, and a mission-control
-  view for supervising several sessions at once.
+- Persistent sessions, multiple attached browser views, a mission-control
+  page, and a compact in-session cockpit for supervising and moving among
+  several sessions without leaving the current one.
 - Read-only workspace browsing and Git change review beside the conversation.
 - A real pseudo-terminal (PTY) for `!` commands, including interactive
   programs and password prompts, inside shell-owned UI.
@@ -80,6 +81,9 @@ Inside a session:
   it with `!!` to run it the same way but shell-only — the agent never sees
   it.
 - Open `/` for mission control and `/s/<session-id>` for a session viewport.
+- Open Cockpit from the left activity rail to preview, prompt, stop, end, or
+  switch directly among live sessions; it follows you across session switches
+  until you close it.
 - Use the Files and Changes workspaces to inspect the current directory and
   its Git working-tree changes.
 
