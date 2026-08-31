@@ -16,7 +16,7 @@ import {
   createCodexRuntimeBinding,
   type CodexBackendKind,
 } from "./codex-binding";
-import { CODEX_DEFERRED_TOOLS_ADDENDUM } from "./codex-prompt";
+import { CODEX_DEFERRED_TOOLS_ADDENDUM, withPaintReminder } from "./codex-prompt";
 import {
   CODEX_EFFORT_STAND_IN,
   refreshCodexPromptOptions,
@@ -368,7 +368,28 @@ export class CodexSession implements AgentSession {
   }
 
   private emit(msg: SessionMsg) {
+    // A painting the MODEL chose. Codex's own plan checklist (`todo-list`,
+    // wire-helpers) is the engine's tool, not a render call, so it does not
+    // count as painting for the per-turn reminder.
+    if ((msg.type === "render" && msg.component !== "todo-list") || msg.type === "artifact") {
+      this.turnPainted = true;
+    }
     for (const cb of this.listeners) cb(msg);
+  }
+
+  // Per-turn paint reminder state (codex-prompt.ts, CODEX_PAINT_REMINDER):
+  // the reminder rides with every engine turn after the first, except the
+  // one right after a turn that painted.
+  private turnsRun = 0;
+  private turnPainted = false;
+  private lastTurnPainted = false;
+
+  /** The engine input for a user prompt: the prompt as typed, plus the paint
+   *  reminder when the previous turn answered in prose. Engine commands
+   *  (`/model`, `/effort`) never reach here. */
+  private engineInput(text: string): string {
+    const remind = this.turnsRun > 0 && !this.lastTurnPainted;
+    return remind ? withPaintReminder(text) : text;
   }
 
   /** Serial queue: command switches and engine turns apply in prompt order. */
@@ -633,11 +654,21 @@ export class CodexSession implements AgentSession {
       turn.finish = resolve;
     });
     this.activeTurn = turn;
+    const engineText = this.engineInput(text);
+    this.turnPainted = false;
+    // Only a turn the engine actually ran informs the next reminder; a prompt
+    // refused before turn/start (untrusted folder, unresolved model) is not a
+    // prose turn.
+    let reachedEngine = false;
     const end = () => {
       if (ended) return;
       ended = true;
       this.eventMapper.endTurn();
       this.emit({ type: "turn_end" });
+      if (reachedEngine) {
+        this.lastTurnPainted = this.turnPainted;
+        this.turnsRun += 1;
+      }
     };
     if (this.localTurnTimeoutMs > 0) {
       timeoutHandle = setTimeout(() => {
@@ -682,7 +713,7 @@ export class CodexSession implements AgentSession {
       this.eventMapper.beginTurn();
       const startPending = client.request("turn/start", {
         threadId: thread.id,
-        input: [{ type: "text", text }],
+        input: [{ type: "text", text: engineText }],
         ...(this.model ? { model: this.model } : {}),
         ...(this.effort ? { effort: this.effort } : {}),
       }) as Promise<{ turn?: { id?: unknown } }>;
@@ -696,6 +727,7 @@ export class CodexSession implements AgentSession {
         throw new Error("codex app-server answered turn/start without a turn id");
       }
       turn.id = started.turn.id;
+      reachedEngine = true;
       if (turn.interrupted) this.sendTurnInterrupt(turn);
       const result = await outcome;
       if ("exited" in result) {
