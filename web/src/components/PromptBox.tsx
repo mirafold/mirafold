@@ -403,7 +403,11 @@ export function PromptBox({
         }}
       />
       {busy ? (
-        <button className="stop-btn" onClick={onInterrupt} title="Interrupt the turn">
+        <button
+          className="stop-btn"
+          onClick={onInterrupt}
+          title="Stop active model and shell work (the session stays warm)"
+        >
           ■ esc
         </button>
       ) : (

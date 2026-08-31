@@ -472,7 +472,8 @@ export type ViewportMsgBody =
   | { type: "pong" }
   // The fleet snapshot, sent to `watch_sessions` connections on
   // subscribe and re-sent whenever the fleet changes (create/close, status
-  // transition, rename). Per-viewport plumbing — never buffered/sequenced.
+  // transition, rename). An opted-in cockpit watcher also receives bounded
+  // transcript-tail updates. Per-viewport plumbing — never buffered/sequenced.
   | { type: "sessions"; sessions: SessionMeta[] }
   // The session was explicitly ended (from here, the fleet view, or another
   // tab). A per-viewport control signal — an attached viewport leaves to mission
@@ -602,6 +603,11 @@ export type SessionMeta = {
   // per-turn tokens SUMMED; costUsd TAKEN (it arrives session-cumulative),
   // never summed.
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  // Opt-in text-only tail for the in-session cockpit panel. Bounded and
+  // derived from the existing replay ring; absent for ordinary FleetView
+  // watchers, empty transcripts, and relay-ineligible sessions watched over
+  // the paid relay. `truncated` makes a cut tail explicit.
+  transcriptTail?: { text: string; truncated?: true };
 };
 
 /**
@@ -618,7 +624,7 @@ export type Action =
 /** Browser → server */
 export type ClientMsg =
   | { type: "prompt"; text: string }
-  // Halt the in-flight turn (the session stays warm).
+  // Halt active model and PTY work; the session stays warm.
   | { type: "interrupt" }
   // The user's answer to a permission_request.
   | { type: "permission_response"; id: string; allow: boolean }
@@ -667,7 +673,9 @@ export type ClientMsg =
   | { type: "ping" }
   // This connection is a fleet watcher, not a session viewport —
   // it receives `sessions` snapshots instead of a transcript stream.
-  | { type: "watch_sessions" }
+  // `transcript` opts into each eligible row's bounded text tail for the
+  // compact in-session cockpit. Ordinary FleetView traffic stays unchanged.
+  | { type: "watch_sessions"; transcript?: true }
   // Rename a session (fleet affordance).
   | { type: "rename"; sessionId: string; name: string }
   // Explicitly end a session — kill its PTY, close the engine, drop it from

@@ -4,11 +4,13 @@ import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
 import { FolderTreeGlyph } from "./FolderTreeGlyph";
+import { CockpitGlyph } from "./CockpitGlyph";
 import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
 import { OutputZone } from "./OutputZone";
 import { FolderTreePanel } from "./folder-tree/FolderTreePanel";
 import { DiffPanel } from "./diff-panel/DiffPanel";
+import { CockpitPanel } from "./CockpitPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
@@ -31,12 +33,15 @@ import { Announcer, useAnnouncer } from "./Announcer";
 import { PermissionBar } from "./PermissionBar";
 import type { InputNavigationDirection } from "../input-navigation";
 import { sessionIdFromPath } from "../session-url";
+import { cockpitPanelWasOpen, rememberCockpitPanel } from "../cockpit-panel-state";
+import { useIsPhone } from "../use-is-phone";
 import type {
   InputNavigationHandle,
   InputNavigationState,
 } from "../use-input-navigation";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
+type AuxiliarySurface = WorkspaceSurface | "cockpit";
 
 /**
  * The trusted shell. Owns the socket and the prompt box; neither is ever
@@ -149,11 +154,16 @@ export function Shell() {
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
   // ── The auxiliary workspace ─────────────────────────────────────────────
-  // Exactly one shell-owned side surface can be open: Files answers what
-  // exists; Changes answers what differs from Git HEAD. This single slot is
-  // the invariant that keeps the transcript visible on desktop and prevents
-  // stacked full-screen layers on phone.
-  const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
+  // Exactly one shell-owned side surface can be open: Cockpit moves between
+  // sessions, Files answers what exists, and Changes answers what differs
+  // from Git HEAD. Cockpit alone persists because its purpose is to follow a
+  // direct session-to-session navigation; an explicit close or replacement
+  // clears that preference.
+  const [auxiliary, setAuxiliary] = useState<AuxiliarySurface | null>(() =>
+    cockpitPanelWasOpen() ? "cockpit" : null,
+  );
+  const phone = useIsPhone();
+  const cockpitOpen = auxiliary === "cockpit";
   const folderTreeOpen = auxiliary === "folder-tree";
   const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
@@ -166,20 +176,25 @@ export function Shell() {
     setPromptDraft({ id: promptDraftId.current, text });
     setReviewPromptVisible(true);
   }, []);
-  const toggleAuxiliary = (surface: WorkspaceSurface) => {
+  const toggleAuxiliary = (surface: AuxiliarySurface) => {
     if (surface !== "diff-panel" || auxiliary !== "diff-panel") setReviewPromptVisible(false);
-    setAuxiliary((current) => (current === surface ? null : surface));
+    setAuxiliary((current) => {
+      const next = current === surface ? null : surface;
+      rememberCockpitPanel(next === "cockpit");
+      return next;
+    });
   };
   const closeAuxiliary = () => {
     setAuxiliary(null);
+    rememberCockpitPanel(false);
     setReviewPromptVisible(false);
   };
   // Phone: the status bar carries ONE workspace toggle,
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
-  // switches between them. Desktop keeps the two-icon rail unchanged.
+  // switches between them. Cockpit stays a desktop rail surface.
   const lastSurface = useRef<WorkspaceSurface>("folder-tree");
-  if (auxiliary) lastSurface.current = auxiliary;
+  if (auxiliary === "folder-tree" || auxiliary === "diff-panel") lastSurface.current = auxiliary;
   const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
   const switchAuxiliary = (surface: WorkspaceSurface) => {
     if (auxiliary !== surface) toggleAuxiliary(surface);
@@ -189,6 +204,7 @@ export function Shell() {
     setFileOpenRequest({ id: fileOpenRequestId.current, path });
     setReviewPromptVisible(false);
     setAuxiliary("folder-tree");
+    rememberCockpitPanel(false);
   }, []);
 
   // ── The theme and the settings card ─────────────────────────────────────
@@ -479,19 +495,24 @@ export function Shell() {
         {/* The activity bar (VS Code convention) is the workbench's permanent
             left edge — it spans transcript, prompt box AND status bar,
             everything to its strict right; only banners run full-width. Its
-            Files and Changes icons share one auxiliary workspace slot, which
+            Cockpit, Files, and Changes icons share one auxiliary slot, which
             sits left of the transcript in a flex row so the transcript keeps
-            rendering beside it; both closed = transcript full-width. */}
+            rendering beside it; all closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
+            cockpitOpen={cockpitOpen}
             folderTreeOpen={folderTreeOpen}
             diffPanelOpen={diffPanelOpen}
             disabled={!meta.sessionId}
+            onToggleCockpit={() => toggleAuxiliary("cockpit")}
             onToggleFolderTree={() => toggleAuxiliary("folder-tree")}
             onToggleDiffPanel={() => toggleAuxiliary("diff-panel")}
           />
           <div className="main-col">
             <div className="zone-outer">
+              {!phone && cockpitOpen && meta.sessionId && (
+                <CockpitPanel currentSessionId={meta.sessionId} />
+              )}
               <FolderTreePanel
                 open={folderTreeOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
@@ -606,7 +627,7 @@ export function Shell() {
               billing={daemonInfo.billing === "license-key"}
               subRequest={bus.requestSubscription}
               subReply={subReply}
-              workspaceOpen={auxiliary !== null}
+              workspaceOpen={folderTreeOpen || diffPanelOpen}
               workspaceDisabled={!meta.sessionId}
               onToggleWorkspace={toggleWorkspace}
             />
@@ -668,26 +689,40 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
 }
 
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
- *  always present so the affordance never moves; its Files and Changes icons
- *  share one auxiliary workspace slot. Disabled until there's a session.
+ *  always present so the affordance never moves; Cockpit, Files, and Changes
+ *  share one auxiliary slot. Disabled until there's a session.
  *  DESKTOP ONLY: on ≤640px the strip is hidden — a
- *  permanent 46px rail is too much of a 390px screen — and both toggles live
- *  in the status bar instead. */
+ *  permanent 46px rail is too much of a 390px screen — and one Files/Changes
+ *  workspace toggle lives in the status bar instead. */
 function ActivityBar({
+  cockpitOpen,
   folderTreeOpen,
   diffPanelOpen,
   disabled,
+  onToggleCockpit,
   onToggleFolderTree,
   onToggleDiffPanel,
 }: {
+  cockpitOpen: boolean;
   folderTreeOpen: boolean;
   diffPanelOpen: boolean;
   disabled: boolean;
+  onToggleCockpit: () => void;
   onToggleFolderTree: () => void;
   onToggleDiffPanel: () => void;
 }) {
   return (
     <div className="activity-bar">
+      <button
+        className={"ab-btn ab-cockpit" + (cockpitOpen ? " is-active" : "")}
+        onClick={onToggleCockpit}
+        disabled={disabled}
+        title={cockpitOpen ? "Hide cockpit" : "Show cockpit"}
+        aria-label="Cockpit"
+        aria-expanded={cockpitOpen}
+      >
+        <CockpitGlyph />
+      </button>
       <button
         className={"ab-btn ab-folder-tree" + (folderTreeOpen ? " is-active" : "")}
         onClick={onToggleFolderTree}

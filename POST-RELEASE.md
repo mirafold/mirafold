@@ -66,12 +66,15 @@ has a home in this plan, the entry points there instead of duplicating it.
   grid rather than only entering them. The v1 (live activity / pending
   permission / usage on enriched rows; permission allow/deny, interrupt, and
   quick prompt from the grid) was promoted to active work 2026-07-24 and is
-  tracked in PLAN.md as **Phase M — Mission control**; this entry parks the
-  post-v1 depth — a live output-preview line on rows, one-click default
-  new-session, a card-grid presentation (all considered and deliberately not
-  picked for v1). The **archived-session fleetview** below stays its own
-  entry — Phase M leaves the `sessions` snapshot live-only so it can arrive
-  additively.
+  tracked in PLAN.md as **Phase M — Mission control**. **Phase CP — In-session
+  cockpit panel** delivered the useful live-output-preview depth on 2026-08-30:
+  a bounded tail disclosure plus prompt/stop/end/direct-switch controls in a
+  persistent compact session panel. A duplicate preview line on the full
+  FleetView page is no longer separately planned. This entry now parks only
+  one-click default new-session and a card-grid presentation (both considered
+  and deliberately not picked). The **archived-session fleetview** below
+  stays its own entry — the `sessions` snapshot remains live-only so it can
+  arrive additively.
 
 - [ ] **Folder & file & diff view** — shell-owned project browsing: the
   working tree, file contents, and diffs of what the agent changed. The

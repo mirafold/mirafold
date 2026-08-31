@@ -9,6 +9,7 @@ import {
   resolveBackend,
   resolveBackendFor,
   restoreBackend,
+  dormantKindPending,
   type AgentName,
   type AgentSession,
   type Backend,
@@ -30,6 +31,7 @@ import {
   type SessionActivityState,
   type SessionStateInput,
 } from "./session-state";
+import { changesTranscriptTail, transcriptTail } from "./transcript-tail";
 
 export { foldUsage } from "./session-state";
 
@@ -194,8 +196,10 @@ export type SessionEntry = SessionActivityState & {
   lastActivity: number;
   idleTimer?: NodeJS.Timeout;
   // The one running `!` command, if any (one at a time per session,
-  // like a terminal). The proc itself never leaves the server.
-  bang?: { id: string; proc: BangProc; silent: boolean };
+  // like a terminal). `cancel` is the whole-session Stop path: unlike the
+  // Bang bar's PTY-only kill, it also prevents a non-silent command's partial
+  // transcript from starting a fresh model turn after cancellation.
+  bang?: { id: string; proc: BangProc; silent: boolean; cancel: () => void };
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
@@ -208,6 +212,41 @@ export type SessionEntry = SessionActivityState & {
   checkpointTimer?: NodeJS.Timeout;
 };
 
+// Every field the stream-state reducer owns, adopted onto the entry as one
+// unit. `satisfies` makes a new SessionActivityState field a compile error
+// here rather than a silently dropped one: `bangActive` reached the reducer
+// but never the entry, so the daemon idled a row whose `!` PTY was still
+// running while the reducer's own unit test passed (PR #77 review).
+const ACTIVITY_STATE_KEYS = Object.keys({
+  status: true,
+  modelTurnsPending: true,
+  errorAwaitingTurnEnd: true,
+  bangActive: true,
+  activity: true,
+  permissions: true,
+  usage: true,
+} satisfies Record<keyof SessionActivityState, true>) as (keyof SessionActivityState)[];
+
+function adoptField<K extends keyof SessionActivityState>(
+  entry: SessionActivityState,
+  state: SessionActivityState,
+  key: K,
+) {
+  entry[key] = state[key];
+}
+
+type SessionSummaryOptions = { transcript?: boolean; remote?: boolean };
+type SessionWatchOptions = { transcript: boolean; remote: boolean };
+
+function transcriptTailForWatcher(
+  messages: readonly SessionMsg[],
+  options: SessionSummaryOptions,
+  allowedOnRelay: () => boolean,
+) {
+  return options.transcript && (!options.remote || allowedOnRelay())
+    ? transcriptTail(messages)
+    : undefined;
+}
 
 export type RegistryOptions = {
   /** The daemon-default backend for a create() that names no agent. */
@@ -324,7 +363,7 @@ export class SessionRegistry {
     const cwd = resolveCwd(stored.cwd);
     const model = stored.model ?? backend.model;
     const restoredBackend = { ...backend, ...(model ? { model } : {}) };
-    const session = createSession(restoredBackend, { cwd, resumeId: stored.resumeId });
+    const session = this.makeSession(restoredBackend, { cwd, resumeId: stored.resumeId });
     const { buffer, nextSeq } = recoverStoredTranscript(stored);
     const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
     const entry: SessionEntry = {
@@ -381,6 +420,9 @@ export class SessionRegistry {
         // this stops them receiving the now-subscription stream at all.
         if (!allowedOverRelay(update.kind)) this.evictRemoteViewports(entry);
         this.checkpoint(entry);
+        // An opted-in remote cockpit must lose (or gain) its text tail at the
+        // same instant the truthful credential verdict changes.
+        this.notifyWatchers();
       });
     }
     entry.session.refreshPromptOptions?.();
@@ -542,6 +584,7 @@ export class SessionRegistry {
     // turn and reopen the previous partial checkpoint on restart.
     this.scheduleCheckpoint(entry, msg);
     if (watchersChanged) this.notifyWatchers();
+    else if (changesTranscriptTail(msg)) this.notifyWatchers(true);
     this.fanout(entry, msg);
   }
 
@@ -549,12 +592,7 @@ export class SessionRegistry {
    *  fleet-visible metadata changed. */
   private applyState(entry: SessionEntry, input: SessionStateInput): boolean {
     const { state, watchersChanged } = reduceSessionState(entry, input);
-    entry.status = state.status;
-    entry.modelTurnsPending = state.modelTurnsPending;
-    entry.errorAwaitingTurnEnd = state.errorAwaitingTurnEnd;
-    entry.activity = state.activity;
-    entry.permissions = state.permissions;
-    entry.usage = state.usage;
+    for (const key of ACTIVITY_STATE_KEYS) adoptField(entry, state, key);
     return watchersChanged;
   }
 
@@ -719,11 +757,11 @@ export class SessionRegistry {
     clearTimeout(entry.idleTimer);
     clearTimeout(entry.checkpointTimer);
     entry.checkpointTimer = undefined;
-    entry.bang?.proc.kill();
     // Remove first: close() may synchronously resolve pending permissions, and
-    // asynchronous catalog/engine callbacks can arrive later. broadcast()'s
-    // identity guard then makes all of them inert.
+    // PTY exit plus asynchronous catalog/engine callbacks can arrive later.
+    // broadcast()'s identity guard then makes all of them inert.
     this.entries.delete(entry.id);
+    entry.bang?.cancel();
     entry.session.close();
   }
 
@@ -763,31 +801,54 @@ export class SessionRegistry {
   // ---- Fleet watchers: connections that observe the registry itself —
   // the mission-control page — rather than any one session's stream.
 
-  private watchers = new Set<Viewport>();
+  private watchers = new Map<Viewport, SessionWatchOptions>();
   private notifyTimer: NodeJS.Timeout | null = null;
+  private pendingFullWatcherSnapshot = false;
 
-  summary(): SessionMeta[] {
-    const active: SessionMeta[] = [...this.entries.values()].map((e) => ({
-      sessionId: e.id,
-      name: e.name,
-      cwd: e.cwd,
-      agent: e.agent,
-      model: e.session.modelName,
-      status: e.status,
-      lastActivity: e.lastActivity,
-      viewports: e.viewports.size,
-      createdAt: e.createdAt,
-      // Copies, and absent-when-empty: a watcher's serialized
-      // snapshot must not alias entry state, and old clients strip fields
-      // they don't know rather than seeing empty placeholders.
-      ...(e.activity ? { activity: { ...e.activity } } : {}),
+  private summarizeActive(entry: SessionEntry, options: SessionSummaryOptions): SessionMeta {
+    const tail = transcriptTailForWatcher(
+      entry.ring.buffer,
+      options,
+      () => !relayGateRefusal(entry),
+    );
+    return {
+      sessionId: entry.id,
+      name: entry.name,
+      cwd: entry.cwd,
+      agent: entry.agent,
+      model: entry.session.modelName,
+      status: entry.status,
+      lastActivity: entry.lastActivity,
+      viewports: entry.viewports.size,
+      createdAt: entry.createdAt,
+      // Copies, and absent-when-empty: a watcher's serialized snapshot must
+      // not alias entry state; old clients strip fields they do not know.
+      ...(entry.activity ? { activity: { ...entry.activity } } : {}),
       // askedAt stays server-side — the wire shape is unchanged.
-      ...(e.permissions.length
-        ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
+      ...(entry.permissions.length
+        ? {
+            permissions: entry.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })),
+          }
         : {}),
-      ...(e.usage ? { usage: { ...e.usage } } : {}),
-    }));
-    const dormant: SessionMeta[] = [...this.dormant.values()].map((stored) => ({
+      ...(entry.usage ? { usage: { ...entry.usage } } : {}),
+      ...(tail ? { transcriptTail: { ...tail } } : {}),
+    };
+  }
+
+  private summarizeDormant(stored: StoredSession, options: SessionSummaryOptions): SessionMeta {
+    // The one relay verdict, pending-awareness included — the same call the
+    // active row and a remote attach make, so a record never answers
+    // "attach refused" and "tail sent" at once.
+    const tail = transcriptTailForWatcher(
+      stored.buffer,
+      options,
+      () =>
+        !relayGateRefusal({
+          kind: stored.backend.kind,
+          kindPending: dormantKindPending(stored.backend),
+        }),
+    );
+    return {
       sessionId: stored.id,
       name: stored.name,
       cwd: stored.cwd,
@@ -798,13 +859,27 @@ export class SessionRegistry {
       viewports: 0,
       createdAt: stored.createdAt,
       ...(stored.usage ? { usage: { ...stored.usage } } : {}),
-    }));
+      ...(tail ? { transcriptTail: { ...tail } } : {}),
+    };
+  }
+
+  summary(options: SessionSummaryOptions = {}): SessionMeta[] {
+    const active = [...this.entries.values()].map((entry) =>
+      this.summarizeActive(entry, options),
+    );
+    const dormant = [...this.dormant.values()].map((stored) =>
+      this.summarizeDormant(stored, options),
+    );
     return [...active, ...dormant].sort((a, b) => b.lastActivity - a.lastActivity);
   }
 
-  watch(viewport: Viewport) {
-    this.watchers.add(viewport);
-    viewport({ type: "sessions", sessions: this.summary() });
+  watch(viewport: Viewport, options: SessionSummaryOptions = {}) {
+    const normalized: SessionWatchOptions = {
+      transcript: options.transcript === true,
+      remote: options.remote === true,
+    };
+    this.watchers.set(viewport, normalized);
+    viewport({ type: "sessions", sessions: this.summary(normalized) });
   }
 
   unwatch(viewport: Viewport) {
@@ -860,10 +935,13 @@ export class SessionRegistry {
     return true;
   }
 
-  /** Halt a session's in-flight turn from the grid; the session stays warm. */
+  /** Halt active model and PTY work for one session; the session stays warm.
+   * A running `!` PTY is part of the fleet's composite `working` state, so a
+   * Stop that interrupted only the model left the work named by the row alive. */
   interruptSession(id: string): boolean {
     const entry = this.entries.get(id);
     if (!entry) return false;
+    entry.bang?.cancel();
     entry.session.interrupt();
     return true;
   }
@@ -906,13 +984,35 @@ export class SessionRegistry {
     this.applyState(entry, { kind: "prompt_accepted" });
   }
 
-  /** Push a fresh snapshot to every watcher, coalescing bursts. */
-  private notifyWatchers() {
-    if (this.watchers.size === 0 || this.notifyTimer) return;
+  private hasTranscriptWatcher(): boolean {
+    for (const options of this.watchers.values()) {
+      if (options.transcript) return true;
+    }
+    return false;
+  }
+
+  /** Push a fresh snapshot, coalescing bursts. Text-only movement wakes only
+   * opted-in cockpit watchers; metadata changes still wake every watcher. */
+  private notifyWatchers(transcriptOnly = false) {
+    if (this.watchers.size === 0) return;
+    if (transcriptOnly && !this.hasTranscriptWatcher()) return;
+    if (!transcriptOnly) this.pendingFullWatcherSnapshot = true;
+    if (this.notifyTimer) return;
     this.notifyTimer = setTimeout(() => {
       this.notifyTimer = null;
-      const msg: WireMsg = { type: "sessions", sessions: this.summary() };
-      for (const w of this.watchers) w(msg);
+      const notifyAll = this.pendingFullWatcherSnapshot;
+      this.pendingFullWatcherSnapshot = false;
+      const snapshots = new Map<string, WireMsg>();
+      for (const [watcher, options] of this.watchers) {
+        if (!notifyAll && !options.transcript) continue;
+        const key = `${options.transcript ? "transcript" : "metadata"}:${options.remote ? "remote" : "local"}`;
+        let msg = snapshots.get(key);
+        if (!msg) {
+          msg = { type: "sessions", sessions: this.summary(options) };
+          snapshots.set(key, msg);
+        }
+        watcher(msg);
+      }
     }, 100);
     this.notifyTimer.unref();
   }

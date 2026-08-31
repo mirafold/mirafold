@@ -375,6 +375,7 @@ const COCKPIT_META: SessionMeta = {
   activity: { label: "Bash", since: 1_720_000_000_500 },
   permissions: [{ id: "p1", tool: "Bash", detail: "rm -rf build" }],
   usage: { inputTokens: 1200, outputTokens: 300, costUsd: 0.05 },
+  transcriptTail: { text: "❯ inspect the parser\nThe parser is sound.", truncated: true },
 };
 
 test("M.1 the enriched fleet row: exact key set, pure JSON", () => {
@@ -389,10 +390,21 @@ test("M.1 the enriched fleet row: exact key set, pure JSON", () => {
     "permissions",
     "sessionId",
     "status",
+    "transcriptTail",
     "usage",
     "viewports",
   ]);
   assert.deepEqual(JSON.parse(JSON.stringify(COCKPIT_META)), COCKPIT_META);
+});
+
+test("CP.1 transcript watching is additive: the old request stays valid and the opt-in round-trips", () => {
+  const oldWatcher: Extract<ClientMsg, { type: "watch_sessions" }> = { type: "watch_sessions" };
+  const cockpitWatcher: Extract<ClientMsg, { type: "watch_sessions" }> = {
+    type: "watch_sessions",
+    transcript: true,
+  };
+  assert.deepEqual(JSON.parse(JSON.stringify(oldWatcher)), { type: "watch_sessions" });
+  assert.deepEqual(JSON.parse(JSON.stringify(cockpitWatcher)), cockpitWatcher);
 });
 
 test("Q.2 load-bearing frames keep their exact shape (a rename fails here loudly)", () => {

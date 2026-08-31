@@ -129,6 +129,13 @@ client messages, attaches or creates a session, routes prompts and shell
 actions, and sends per-viewport replies. Session broadcasts are sequenced and
 fanned out to every attached viewport.
 
+Fleet watchers do not attach to a session. Ordinary `watch_sessions`
+connections receive metadata snapshots for `FleetView`; an additive
+`transcript: true` option lets the in-session cockpit receive a bounded,
+plain-text tail derived from each replay ring. Text movement wakes only those
+opted-in watchers, and a remote watcher never receives a tail for a backend
+that provider policy forbids over the paid relay.
+
 [`session-store.ts`](../server/sessions/session-store.ts) writes bounded,
 owner-only checkpoints and strictly validates them before recovery. A closed
 tab detaches its viewport; it does not end the session. An idle active engine
@@ -147,7 +154,11 @@ can unload while the checkpoint remains available for lazy recovery.
 [`SocketClient`](../web/src/ws.ts) and fans incoming messages to shell
 consumers. `Shell` owns connection state, agent picker, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
-and other trusted controls.
+and other trusted controls. While its desktop Cockpit panel is open,
+[`CockpitPanel.tsx`](../web/src/components/CockpitPanel.tsx) owns a second,
+non-attached watcher socket for fleet snapshots and session-id-addressed acts.
+The open preference lives in browser storage so direct session navigation
+keeps the panel; an explicit close or replacement clears it.
 
 [`OutputZone.tsx`](../web/src/components/OutputZone.tsx) receives the transcript
 stream. Pure projection code converts wire messages into ordered transcript
@@ -180,8 +191,9 @@ first and only for their own element: the prompt box's textarea (completion
 menu open: ArrowUp/ArrowDown move, Tab/Enter accept, Escape dismisses the
 menu; otherwise ArrowUp on an empty desktop box enters input history, Enter
 sends on desktop and inserts a newline on phone, Shift+Enter is always a
-newline) and the transcript's input-history strips (ArrowUp/ArrowDown/
-Escape while one is selected).
+newline), the Cockpit quick-prompt input (Enter submits; Escape closes that
+input without interrupting the active session), and the transcript's
+input-history strips (ArrowUp/ArrowDown/Escape while one is selected).
 
 Adding a global listener means choosing a row: an owner that must win uses
 capture plus `stopPropagation` (the `exclusive` idiom); an owner that must
@@ -225,6 +237,11 @@ browser/server protocol:
 - `ClientMsg` covers prompts, interrupts, permission answers, session
   attachment and creation, mediated component actions, PTY input, filesystem
   requests, uploads, and fleet actions.
+
+Fleet snapshots are per-viewport plumbing, not replay records: they have no
+session sequence number. The optional transcript tail is requested by the
+watcher and remains capped; it does not turn the fleet connection into a
+second full transcript stream.
 
 The protocol is **additive**: add a new message type or optional field; do not
 reshape an existing message. Both ends ignore unknown message types, and
@@ -328,6 +345,16 @@ accepted residual risks in detail.
 3. A second local tab follows the same path. A paired remote browser uses the
    same connection logic after the relay layer authenticates and decrypts its
    frames.
+
+### Switch sessions from the in-session cockpit
+
+1. Opening Cockpit creates a fleet watcher with bounded transcript tails
+   enabled; it does not attach another viewport to any session.
+2. A row can reveal its current text tail or dispatch the existing
+   session-id-addressed prompt, interrupt, and end actions.
+3. Following the row's session link performs ordinary `/s/<id>` navigation.
+   Browser storage restores Cockpit in the destination session; only an
+   explicit close or replacement removes that preference.
 
 ## Repository map
 

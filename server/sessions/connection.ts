@@ -515,7 +515,10 @@ export function openConnection(
           entry = null;
         }
         watching = true;
-        registry.watch(viewport);
+        registry.watch(viewport, {
+          transcript: msg.transcript === true,
+          remote,
+        });
         break;
       case "rename":
         if (typeof msg.sessionId === "string" && typeof msg.name === "string") {
@@ -582,7 +585,7 @@ export function openConnection(
         break;
       }
       case "interrupt":
-        entry?.session.interrupt();
+        if (entry) registry.interruptSession(entry.id);
         break;
       case "permission_response":
         if (typeof msg.id === "string" && typeof msg.allow === "boolean" && entry) {

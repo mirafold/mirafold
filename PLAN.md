@@ -2678,6 +2678,19 @@ is one complete single-pass `$next` chunk.
   phone touch/hardware-keyboard ownership, live-turn endpoint focus, and live
   provider-picker key arbitration, plus phone modal/workspace focus layering.
   The regressions pin those sibling paths.
+- [ ] **IH.F — a load-sensitive Tier-3 flake (test-audit 2026-08-30, open).**
+  `input-navigation.e2e.ts` "phone discloses temporary navigation directly
+  above the submit arrow" failed once in a full `yarn test:e2e` run at the
+  assertion "endpoint premise did not leave phone focus on the body"
+  (`document.activeElement === document.body` after the older-arrow reached
+  its endpoint), then passed 3/3 in isolation (13 s each) with no code
+  change between runs. Nothing in the run touched that surface (the run was
+  the cockpit-panel feature + audit). Unfixed here because it is not the
+  feature's test and the failure was not reproduced; the next owner should
+  characterize it under load (`--test-concurrency=1` is already set, so the
+  pressure is the machine, not parallel tests) before changing either the
+  test or `use-input-navigation.ts`. A flake that stays teaches the team to
+  ignore red — fix or root-cause it, don't retry it.
   The review also aligned the live-tail documentation and made the replay test
   remove its own temporary session directory.
   Verified before the final phone focus-layer correction: focused model/tail
@@ -3595,6 +3608,127 @@ ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
   overflowed past ~24.8 days (chained hops, clock re-checked); the bidi rule
   sat on `<div>`s (already isolated) instead of the inline `<q>` — now
   `.pair-quote`, asserted by computed style in the e2e.
+
+## Phase CP — In-session cockpit panel (opened + ✅ COMPLETE 2026-08-30; Kyle-directed)
+
+**Goal.** Move between live sessions without detouring through `/`: a compact,
+scrollable cockpit panel in the session workbench's left activity rail. It is
+about 60% of Changes' 370px minimum width, stays open across session
+navigation/reload until the user closes or replaces it, and leaves FleetView's
+layout and metadata-only watcher traffic unchanged.
+
+**Verified starting state (2026-08-30).** `Shell` has one auxiliary slot with
+only Files and Changes; no cockpit panel component or activity-bar control
+exists. `FleetView` already owns sessionId-addressed stop/end/prompt acts and
+`watch_sessions` snapshots, but those snapshots carry metadata only — no
+transcript tail. The requested preview is new additive wire work, not a fix to
+an existing panel.
+
+- [x] **CP.1 — opt-in transcript tails.** Add an optional request flag and
+  optional bounded plain-text tail to the existing `watch_sessions` /
+  `sessions` path. Derive it from the registry replay ring, update preview
+  watchers as visible transcript text moves, omit empty tails, and never send
+  a relay watcher text from a session whose credential cannot ride the paid
+  relay. Existing FleetView watchers keep their current metadata-only traffic.
+- [x] **CP.2 — compact persistent panel.** Add a third desktop activity-bar
+  control and a roughly 222px panel containing only session name, id,
+  two-click stop/end controls, a down-chevron transcript disclosure, and a
+  right-chevron quick-prompt disclosure. The list scrolls; the current session
+  is identified; session links navigate directly; the open preference survives
+  the navigation and disappears only on an explicit close/replacement action.
+  Files/Changes remain mutually exclusive in the same auxiliary slot and their
+  phone drawer stays unchanged.
+- [x] **CP.3 — prove the seam and the workflow.** Protocol/unit coverage pins
+  the additive shapes, tail cap/derivation/copy behavior, watcher opt-in, live
+  updates, and the relay omission. Tier 2 observes the real socket path. Tier 3
+  opens the panel, expands a live tail, prompts/stops/ends through it, switches
+  sessions with the panel still open, verifies explicit close persistence and
+  compact geometry, and runs the accessibility/side-scroll gates.
+- [x] **CP.H — post-feature bughunt (2026-08-30).** Four confirmed findings,
+  all fixed with a regression and no deferrals: Stop now remains available
+  during permission holds and a whole-session interrupt cancels both model and
+  active PTY work (while the Bang bar's PTY-only stop keeps its existing
+  handoff); transcript tails now retain bang completion (`done`, `killed`, or
+  exit code) and tool-result source-elision counts; an absent optional tail is
+  described as an unavailable preview rather than falsely claiming an empty
+  transcript; and an independently refused supplemental Cockpit socket shows
+  its relay refusal reason without disturbing the primary session socket. The
+  browser regression's fake socket is an anonymous object/Proxy so
+  Playwright's serialized init callback does not depend on esbuild's
+  module-scoped `__name` helper.
+- [x] **CP.A — post-feature security audit (2026-08-30).** One finding,
+  fixed with regressions and two cold reviews, nothing deferred: a
+  pending-kind session (OpenCode before its first turn) refused a remote
+  cockpit its tail while active, but its idle-unloaded checkpoint recorded
+  the hello-time guess as fact, so the dormant row sent the tail over the
+  relay while a remote attach to the same record was still refused. Root
+  cause: a dormant record of an adapter that classifies at engine start
+  holds no CURRENT credential verdict — revival re-arms `kindPending` and
+  re-classifies (the resumed engine may pick a subscription or the Zen
+  gateway). Fix (final form after the PR #77 review, below):
+  `dormantKindPending(backend)` in adapters/index.ts, consumed by the
+  dormant row through the same `relayGateRefusal()` the active row and the
+  attach path use — one verdict per record; the local cockpit is unaffected.
+  Revival now goes through the registry's `makeSession` seam, so tests
+  never construct a real engine session. `dormant-relay-verdict.test.ts`
+  pins active/dormant/restored-from-disk through the real remote
+  connection, the warm api-key (sends) vs subscription (refuses) siblings,
+  and truthful-at-create records (claude-code api-key sends, subscription
+  refuses, the API-free mock never gated). Checked and clean: tail content
+  (plain text, inert labels for paintings, bidi controls made visible,
+  surrogate-safe 1,200-unit cap, ring-bounded walk), watcher fan-out cost
+  (≤10 snapshots/s, one serialization per watcher variant, remote
+  connections under `MAX_REMOTE_VIEWPORTS`), Esc in the `!` bar (busy is
+  never set by bang frames), no dependency/workflow/secret changes.
+- [x] **CP.T — mutation-based test audit (2026-08-30).** 17 mutations across
+  all three tiers (tail cap/truncation/surrogate, remote gate at two layers,
+  watcher wake rules, PTY cancel vs. Bang-bar handoff in Tier 2, error-socket
+  stack, storage clear, bidi escaper, two e2e mutations against rebuilt
+  dist) — every one caught. Nothing repaired or deleted; one pre-existing
+  Tier-3 flake recorded as IH.F.
+- [x] **CP.R — PR #77 automated review (2026-08-30).** Three Codex findings,
+  all verified real and fixed with a regression each, none dismissed:
+  **P1** the first CP.A fix stored a `kindPending` flag in the checkpoint,
+  which is stale by design for a classifying adapter (revival re-classifies)
+  — flag removed, rule moved to `dormantKindPending()` (above); the same
+  push fixed a machine-dependent test of mine that revived a live OpenCode
+  record (fails on a runner without OpenCode installed). **P2** a `!` PTY
+  running beside a model turn was read as idle the moment `turn_end`
+  arrived (a quiet `sleep 30` emits nothing to re-assert `working`), hiding
+  Stop in the cockpit and FleetView while shell work ran — the reducer now
+  carries `bangActive` into the composite status (`session-state.test.ts`).
+  The cold review of that fix caught it inert: `applyState` copied reducer
+  fields by name and skipped the new one, so the reducer's unit test passed
+  while the daemon still idled the row. `applyState` now adopts every
+  reducer field through a `satisfies Record<keyof SessionActivityState,
+  true>` key list (an unadopted field is a compile error) and
+  `registry.test.ts` drives the same scenario through `broadcast()`.
+  **P2** browser-error reports rode the NEWEST socket even while a refused
+  or reconnecting cockpit socket could only queue them for its own
+  `close()` to discard — the forwarder now picks the newest READY socket
+  (`ws.test.ts`, first test, which owns the once-installed page listener).
+
+**Files.** `server/protocol.ts`; `server/sessions/{registry,connection,
+transcript-tail}.ts`; `web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;
+panel state, shared fleet ordering, structural CSS, and the supplemental-socket
+error-forwarding lifecycle in `web/src/ws.ts`; focused tests in all three tiers
+plus a committed visual baseline; README/architecture/backlog synced. No new
+dependency was added — the panel composes the existing React, socket, action,
+and two-click-confirm machinery.
+
+**Completion evidence (2026-08-30).** `yarn typecheck`; Tier 1 **1,046/1,046**;
+Tier 2 **161/161**; Tier 3 **127/127**; browser matrix + visual gate **11/11**.
+The focused Chrome workflow measured a 228px dock at 1280px, proved live tail,
+quick prompt, stop, end, direct navigation persistence, explicit-close
+persistence, scrolling, no side-scroll, and an axe-clean expanded state. The
+new `cockpit-panel` visual baseline was inspected at full resolution. During
+integration review, closing the panel's second socket was found to clear the
+page's browser-error reporter; the socket layer now restores the preceding
+live client, with its own regression test. Existing FleetView traffic remains
+metadata-only, its layout is unchanged, and the phone workspace
+drawer remains unchanged.
+
+---
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 

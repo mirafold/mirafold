@@ -139,6 +139,11 @@ const startBang = (
   id: string,
   silent: boolean,
 ) => {
+  // A Bang-bar stop kills only the PTY and still hands its partial transcript
+  // to the model. A whole-session Stop cancels that handoff too: otherwise
+  // killing the shell command immediately starts fresh model work after the
+  // user asked the session to stop.
+  let handoffToAgent = !silent;
   // Tail-kept accumulator, capped as data arrives — a long-running
   // command (`!yes`) must not grow server memory until exit.
   let output = "";
@@ -203,9 +208,10 @@ const startBang = (
             id,
           });
         }
-        if (silent) {
-          // `!!`: the command is over and nothing follows — bang_end is a
-          // true idle edge here, and the cwd still carries to the next bang.
+        if (!handoffToAgent) {
+          // `!!`, or a non-silent command canceled by a whole-session Stop:
+          // the command is over and nothing follows. The cwd still carries
+          // to the next bang.
           registry.broadcast(e, { type: "bang_end", id, exitCode });
           applyCwdHandoff(registry, e, runCwd, cwdFile);
           return;
@@ -235,7 +241,15 @@ const startBang = (
       },
       cwdFile,
     );
-    e.bang = { id, proc, silent };
+    e.bang = {
+      id,
+      proc,
+      silent,
+      cancel: () => {
+        handoffToAgent = false;
+        proc.kill();
+      },
+    };
   } catch (err) {
     // A throwing spawn (missing shell — the win32 /bin/bash trap)
     // is a session-level error, never a daemon death: this handler runs

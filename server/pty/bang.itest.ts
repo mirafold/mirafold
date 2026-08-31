@@ -297,8 +297,8 @@ test("bang burst throttle: a too-fast second bang is refused with a clean end (a
   await bd.stop();
 });
 
-test("one bang at a time; bang_kill force-stops even a HUP-ignoring command", async () => {
-  // `echo up` first: bang_start alone doesn't prove the child is attached,
+test("bang_kill force-stops a HUP-ignoring command and still hands its partial transcript to the model", async () => {
+  // Wait for output first: bang_start alone doesn't prove the child is attached,
   // and killing a PTY before its process fully spawns can surface as a clean
   // exit instead of signal death under CPU load (the C.1 runner flake) —
   // wait for output, which only a live process can produce.
@@ -308,10 +308,16 @@ test("one bang at a time; bang_kill force-stops even a HUP-ignoring command", as
   c.send({
     type: "bang",
     id: "b2",
-    command: "trap '' HUP; echo up; sleep 30; exit 7",
+    // The command source does not contain contiguous `dangerous`; only its
+    // output assembles that mock-scenario trigger. A permission ask after the
+    // kill therefore proves the partial PTY output reached the model.
+    command: "trap '' HUP; printf 'run something dang%s\\n' erous; sleep 30; exit 7",
   } as never);
   await c.type("bang_start");
-  await c.waitFor((m) => m.type === "bang_output" && /up/.test((m as Any).data), "b2 live");
+  await c.waitFor(
+    (m) => m.type === "bang_output" && /run something dangerous/.test((m as Any).data),
+    "b2 live",
+  );
   c.send({ type: "bang", id: "b3", command: "echo nope" } as never);
   const err = (await c.type("error")) as Any;
   assert.match(err.message, /already running/);
@@ -319,4 +325,10 @@ test("one bang at a time; bang_kill force-stops even a HUP-ignoring command", as
   const end = (await c.type("bang_end", 20_000)) as Any;
   assert.equal(end.id, "b2");
   assert.equal(end.exitCode, null); // signal death, not a clean exit
+  // This is the Bang bar's PTY-only stop, not whole-session Stop: its partial
+  // transcript still becomes the immediate model turn.
+  const permission = (await c.type("permission_request", 30_000)) as Any;
+  assert.equal(permission.tool, "Bash");
+  c.send({ type: "permission_response", id: permission.id, allow: false } as never);
+  await c.type("turn_end", 30_000);
 });

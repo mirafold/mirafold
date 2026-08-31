@@ -28,6 +28,11 @@ export type SessionActivityState = {
   // immediate terminal feedback; this marker keeps its following turn_end
   // from decrementing the pending count a second time.
   errorAwaitingTurnEnd: boolean;
+  // A `!` PTY is running. It runs BESIDE the model turn, so the turn's own
+  // terminal event must not read the session as idle while the PTY lives
+  // (a quiet command emits no later bang_output to re-assert `working`).
+  // Never persisted — a dormant session has no PTY.
+  bangActive: boolean;
   // What the session is doing RIGHT NOW ("thinking", a tool name, "! <cmd>");
   // `since` is when that label started. Absent when idle.
   activity?: { label: string; since: number };
@@ -54,6 +59,7 @@ export const IDLE_STATE: SessionActivityState = Object.freeze({
   status: "idle",
   modelTurnsPending: 0,
   errorAwaitingTurnEnd: false,
+  bangActive: false,
   permissions: Object.freeze([]) as unknown as SessionActivityState["permissions"],
 });
 
@@ -140,8 +146,9 @@ export function reduceSessionState(
     } else {
       next.modelTurnsPending = Math.max(0, next.modelTurnsPending - 1);
     }
-    next.status = next.modelTurnsPending > 0 ? "working" : "idle";
+    next.status = next.modelTurnsPending > 0 || next.bangActive ? "working" : "idle";
   } else if (msg.type === "bang_end") {
+    next.bangActive = false;
     next.status = next.permissions.length
       ? "permission"
       : next.modelTurnsPending > 0
@@ -150,6 +157,7 @@ export function reduceSessionState(
   } else if (msg.type === "permission_request") {
     next.status = "permission";
   } else if (msg.type === "bang_start" || msg.type === "bang_output") {
+    if (msg.type === "bang_start") next.bangActive = true;
     if (next.status !== "permission") next.status = "working";
   } else if (msg.type !== "permission_resolved") {
     // permission_resolved decides its own status below — it must not
