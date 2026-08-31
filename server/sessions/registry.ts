@@ -212,6 +212,29 @@ export type SessionEntry = SessionActivityState & {
   checkpointTimer?: NodeJS.Timeout;
 };
 
+// Every field the stream-state reducer owns, adopted onto the entry as one
+// unit. `satisfies` makes a new SessionActivityState field a compile error
+// here rather than a silently dropped one: `bangActive` reached the reducer
+// but never the entry, so the daemon idled a row whose `!` PTY was still
+// running while the reducer's own unit test passed (PR #77 review).
+const ACTIVITY_STATE_KEYS = Object.keys({
+  status: true,
+  modelTurnsPending: true,
+  errorAwaitingTurnEnd: true,
+  bangActive: true,
+  activity: true,
+  permissions: true,
+  usage: true,
+} satisfies Record<keyof SessionActivityState, true>) as (keyof SessionActivityState)[];
+
+function adoptField<K extends keyof SessionActivityState>(
+  entry: SessionActivityState,
+  state: SessionActivityState,
+  key: K,
+) {
+  entry[key] = state[key];
+}
+
 type SessionSummaryOptions = { transcript?: boolean; remote?: boolean };
 type SessionWatchOptions = { transcript: boolean; remote: boolean };
 
@@ -569,12 +592,7 @@ export class SessionRegistry {
    *  fleet-visible metadata changed. */
   private applyState(entry: SessionEntry, input: SessionStateInput): boolean {
     const { state, watchersChanged } = reduceSessionState(entry, input);
-    entry.status = state.status;
-    entry.modelTurnsPending = state.modelTurnsPending;
-    entry.errorAwaitingTurnEnd = state.errorAwaitingTurnEnd;
-    entry.activity = state.activity;
-    entry.permissions = state.permissions;
-    entry.usage = state.usage;
+    for (const key of ACTIVITY_STATE_KEYS) adoptField(entry, state, key);
     return watchersChanged;
   }
 

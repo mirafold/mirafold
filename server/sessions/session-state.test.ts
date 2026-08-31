@@ -131,3 +131,26 @@ test("IDLE_STATE is frozen, its permissions array included; the reducer never mu
   assert.equal(s.permissions.length, 1);
   assert.equal(IDLE_STATE.permissions.length, 0);
 });
+
+test("a running `!` keeps the row working when the model turn ends first (PR #77 review, P2)", () => {
+  // `!` runs BESIDE the model turn; a quiet command (`sleep 30`) emits no
+  // later bang_output to re-assert `working`, so turn_end alone must not
+  // read the session as idle while its PTY is alive — the fleet row would
+  // hide Stop exactly while shell work is still running.
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([{ type: "user_prompt", text: "explain" }, { type: "bang_start", command: "sleep 30", id: "b1" }], s);
+  assert.equal(s.status, "working");
+  s = run([{ type: "turn_end" }], s);
+  assert.equal(s.status, "working", "the PTY is still running");
+  assert.equal(s.activity?.label, "! sleep 30", "and the row still names it");
+  s = run([{ type: "bang_end", id: "b1", exitCode: 0 }], s);
+  assert.equal(s.status, "idle");
+  assert.equal(s.activity, undefined);
+
+  // The error-terminated variant of the same turn.
+  let e = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  e = run([{ type: "bang_start", command: "sleep 30", id: "b2" }, { type: "error", message: "boom" }], e);
+  assert.equal(e.status, "working", "an error-ended turn does not idle a live PTY either");
+  e = run([{ type: "turn_end" }, { type: "bang_end", id: "b2", exitCode: null }], e);
+  assert.equal(e.status, "idle");
+});

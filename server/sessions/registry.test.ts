@@ -1066,3 +1066,17 @@ test("audit: every engine-authored value the decoder would refuse is coerced or 
   assert.ok(loaded.sessions.has(entry.id));
   reg.end(entry.id);
 });
+
+test("PR #77 review: a `!` PTY outliving the model turn keeps the ROW working (registry path, not just the reducer)", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "user_prompt", text: "explain" });
+  reg.broadcast(entry, { type: "bang_start", command: "sleep 30", id: "b1" });
+  reg.broadcast(entry, { type: "turn_end" });
+  const row = () => reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.equal(row().status, "working", "the PTY is still running");
+  assert.equal(row().activity?.label, "! sleep 30");
+  reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
+  assert.equal(row().status, "idle");
+  assert.equal(row().activity, undefined);
+  reg.end(entry.id);
+});
