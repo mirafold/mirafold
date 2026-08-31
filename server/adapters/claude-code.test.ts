@@ -1011,3 +1011,19 @@ test("the ui render server exempts every tool from Claude Code's tool-search def
     assert.equal(registered[name]._meta?.["anthropic/alwaysLoad"], true, `${name} must be always-loaded`);
   }
 });
+
+test("TS.12: an SDK message kind the ledger leaves unmapped is reported once, never dropped silently", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    { type: "task_started", task_id: "t1" }, // ledger: unmapped
+    { type: "task_started", task_id: "t2" }, // once per kind
+    { type: "auth_status", status: "ok" }, // ledger: deliberately ignored — no notice
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]),
+    [["Mirafold doesn't display this Claude Code message yet: task_started", undefined]],
+  );
+  s.close();
+});

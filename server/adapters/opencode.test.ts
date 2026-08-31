@@ -1533,3 +1533,30 @@ test("an untrusted folder asks before `opencode serve` starts; a no spawns nothi
     session.close();
   }
 });
+
+test("TS.7: an event or part kind the mapper cannot place is reported once per session, never dropped silently", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    ev("question.v3.asked", { sessionID: SES }),
+    ev("question.v3.asked", { sessionID: SES }), // once per kind
+    ev("server.heartbeat", {}), // deliberately ignored: no notice
+    snap({ type: "hologram", data: 1 }), // unknown message part
+    snap({ type: "text", text: "hi" }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const notices = () => msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]);
+  assert.deepEqual(notices(), [
+    ["Mirafold doesn't display this OpenCode event yet: question.v3.asked", undefined],
+    ["Mirafold doesn't display this OpenCode message part yet: hologram", undefined],
+  ]);
+  // The dedup is session-lifetime, not per turn: the same kind in a LATER
+  // turn stays silent (cold review 2026-08-31: a per-turn reporter reset
+  // survived every prior test).
+  await prompt("again");
+  feed(ev("question.v3.asked", { sessionID: SES }), idle());
+  await awaitTurnEnd(2);
+  assert.equal(notices().length, 2, "a later turn re-reports nothing");
+  session.close();
+});

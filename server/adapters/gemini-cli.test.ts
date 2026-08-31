@@ -934,3 +934,21 @@ test("a repository cannot route the invalid-JSON backup through a planted symlin
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test("TS.7: an event kind the adapter cannot map is reported once, never dropped silently", async () => {
+  fixture("unknown-kind.jsonl", [
+    { type: "quantum_flux", detail: "a kind this build has never heard of" },
+    { type: "quantum_flux", detail: "again" }, // once per kind
+    { type: 5 }, // malformed non-string kind: skipped, never reported or thrown
+    { type: "message", role: "assistant", content: "done" },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]),
+    [["Mirafold doesn't display this Gemini CLI event yet: quantum_flux", undefined]],
+  );
+  s.close();
+  delete process.env.FAKE_EVENTS;
+});
