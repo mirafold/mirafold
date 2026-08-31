@@ -313,6 +313,25 @@ schemas in `server/registry-spec.ts` — and delivered two ways:
   `server/render-mcp.ts`, spawned via `renderMcpCommand()` (`render-mcp-cmd.ts`)
   — compiled twin when present, `tsx` + source in dev.
 
+**Delivered is not the same as visible.** Both first-party engines now hide
+MCP tool definitions from the model by default, and a model that has to hunt
+for a tool rarely paints (Phase TS, 2026-08-30):
+
+- Claude Code's Agent SDK defers every MCP tool behind `ToolSearch` (on by
+  default since Claude Code 2.1.x). `render-tools.ts` marks the `ui` server
+  `alwaysLoad: true`, which is the SDK's per-server exemption
+  (`_meta["anthropic/alwaysLoad"]` on each tool): Mirafold's tools are in
+  the prompt from turn one, and the user's own MCP servers keep whatever
+  deferral their terminal Claude Code applies. Measured: with the exemption
+  Claude paints without a search round-trip; without it, it searches first.
+- Codex has no exemption. On an OpenAI provider it either defers MCP tools
+  behind `tool_search` (≤0.149) or exposes them only inside its `exec`
+  JavaScript runtime as `tools.mcp__mirafold__<name>(args)`, discovered via
+  `ALL_TOOLS` (≥0.147; custom/local providers still see them directly). The
+  adapter's developer instructions therefore open with a where-are-the-tools
+  note (`codex-prompt.ts`) that names all three paths with exact call shapes
+  and makes loading the tool the first step of any structured reply.
+
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in

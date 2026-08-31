@@ -3730,6 +3730,76 @@ drawer remains unchanged.
 
 ---
 
+## Phase TS — Render tools hidden by tool-search deferral (opened 2026-08-30; Kyle-directed)
+
+**Origin.** Kyle, using Mirafold daily on Codex (ChatGPT login) for a week:
+"95% of the time I don't see any cards or nice displays, just text." The
+demos paint every turn because they are scripted; real sessions were not.
+
+**Measured (2026-08-30, from the engines' own session logs — not from docs).**
+- **Codex.** `~/.codex/sessions` rollouts driven by Mirafold (identified by the
+  injected render guidance), August, Codex 0.147.0–0.151.0: **78 sessions,
+  ~1,630 prompts, 171 paintings — 156 of them in one testing session on
+  08-24; the other 77 sessions / ~1,400 prompts hold 15.** July (0.142.5):
+  55 mostly-test sessions, 61 paintings. Mechanism: openai/codex#29486 put
+  every MCP tool behind `tool_search` (opt-out removed); since 0.147 the
+  tools are reachable only inside Codex's `exec` JavaScript runtime as
+  `tools.mcp__mirafold__<name>(args)`, discovered by filtering `ALL_TOOLS`.
+  The model does that when a prompt is an explicit visual ask and almost
+  never mid-work. Custom/local providers still see the tools directly.
+- **Claude Code.** No Mirafold-driven Claude sessions in Kyle's logs. Live
+  probe through the real SDK path (Haiku, one turn, $0.06): the Agent SDK
+  defers the `ui` server's tools behind `ToolSearch` by default; Claude
+  searched (`select:mcp__ui__render_table`) and then painted. With
+  `ENABLE_TOOL_SEARCH=false` it painted twice with no search.
+- **OpenCode, Gemini CLI.** Tools listed directly; both painted on request
+  in Kyle's August sessions (OpenCode: 2 real prompts, 2 cards; Gemini: 8
+  paintings on 08-18). Not affected.
+- A first pass of this measurement reported **zero** Codex paintings in
+  August; it was an undercount (the counter missed the CamelCase
+  `McpToolCall` rollout item). The corrected figures are the ones above.
+
+- [x] **TS.1 — Claude Code: exempt the `ui` server from deferral** — done
+  2026-08-30. `createSdkMcpServer({ alwaysLoad: true })` in
+  `render-tools.ts` (the SDK's own per-server exemption, `_meta
+  anthropic/alwaysLoad` per tool); only Mirafold's server — the user's other
+  MCP servers keep the deferral their terminal applies (faithful skin).
+  Unit test pins the flag on every registered tool
+  (`claude-code.test.ts`). Live-verified on the default env: Claude went
+  straight to `render_table`, no ToolSearch call ($0.06).
+- [x] **TS.2 — Codex: teach the real mechanism, first** — done 2026-08-30.
+  `codex-prompt.ts` rewritten: the where-are-the-tools note now LEADS the
+  developer instructions and names all three paths (listed directly;
+  deferred behind `tool_search`; inside the `exec` runtime via `ALL_TOOLS`
+  and `tools.mcp__mirafold__…`) with exact call shapes, and makes loading
+  the matching render tool the first step of any reply with a structured
+  core. `codex.test.ts` pins order and content. No Codex config opt-out
+  exists (verified against the sample config's full `mcp_servers` key list).
+- [x] **TS.3 — Codex: measured live, honestly** — done 2026-08-30 (ChatGPT
+  login, real adapter, `gpt-5.6-sol` at Kyle's `max` effort). Single-turn
+  asks painted with the OLD note too (a table, a list). A scripted
+  three-turn work session (read a file and explain → compare two files →
+  summarize) painted **3/3 with the new note (key-value, table, list) and
+  3/3 with the old one (table, table, list)**. So short probes cannot
+  separate the two: the model DOES find the tools when a turn has an
+  obvious structured answer; what the August logs show is that it stops
+  bothering deep in long feature-building sessions. TS.2 stands on its
+  merits (it teaches the actual mechanism and leads with it) but is
+  **unproven by probe** — the proof is Kyle's next week of real sessions,
+  re-measured with the rollout recount. If the rate stays ~1%, the next
+  lever is Mirafold-side: a short per-turn paint reminder riding with each
+  prompt (a product decision — it changes what the engine receives every
+  turn), or TS.4.
+- [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
+  Codex session runs on a provider that defers MCP tools, say so where the
+  user reads it instead of silently degrading. Not started.
+
+**Files.** `server/render-tools.ts`, `server/adapters/codex-prompt.ts`,
+`server/adapters/codex.ts`, tests in `claude-code.test.ts` and
+`codex.test.ts`, `docs/ADAPTERS.md` §5.
+
+---
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
