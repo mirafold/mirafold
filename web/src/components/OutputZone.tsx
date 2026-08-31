@@ -51,6 +51,7 @@ const toolBlockProps = (call: {
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  streamed?: string;
 }) => ({
   name: call.name,
   detail: call.detail,
@@ -58,6 +59,7 @@ const toolBlockProps = (call: {
   output: call.output,
   truncatedBytes: call.truncatedBytes,
   isError: call.isError,
+  streamed: call.streamed,
 });
 
 // Memoized on the entry's text: a settled block's markdown tree is reused

@@ -54,6 +54,9 @@ export type ToolRow = {
   isError?: boolean;
   startedAt: number;
   replayed?: boolean;
+  /** Output streamed while the call runs (tool_output_delta); `output` is
+   *  still the engine's authoritative text once the call completes. */
+  streamed?: string;
 };
 
 export type SubagentProseRow = {
@@ -611,6 +614,14 @@ export function createTranscriptProjection(): TranscriptProjection {
             ...(msg.replay ? { replayed: true } : {}),
           },
         ];
+        return true;
+      }
+      case "tool_output_delta": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? { ...entry, streamed: (entry.streamed ?? "") + msg.text }
+            : entry,
+        );
         return true;
       }
       case "tool_result": {

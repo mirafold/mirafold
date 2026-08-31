@@ -25,20 +25,10 @@ const digest = JSON.parse(
 // Item kinds the adapter knows about but does not yet map — each one is
 // reported to the user when it arrives (UnknownKindReporter), and each has a
 // plan step. Shrinks as TS.8–TS.11 land; never grows silently.
-const UNMAPPED_ITEMS_WITH_A_PLAN_STEP: Record<string, string> = {
-  collabAgentToolCall: "TS.9",
-  subAgentActivity: "TS.9",
-  imageView: "TS.10",
-  imageGeneration: "TS.10",
-  dynamicToolCall: "TS.9 — Codex apps/dynamic tools, shown as tool rows",
-  sleep: "TS.9 — the agent waiting on a timer",
-};
-const UNMAPPED_METHODS_WITH_A_PLAN_STEP: Record<string, string> = {
-  "item/commandExecution/outputDelta": "TS.11",
-  "item/fileChange/outputDelta": "TS.11",
-  "item/fileChange/patchUpdated": "TS.11",
-  "turn/diff/updated": "TS.11 — turn-level diff",
-};
+// Empty as of TS.11: every kind Codex can send is handled or deliberately
+// ignored. A protocol bump that adds a kind lands here first, with its step.
+const UNMAPPED_ITEMS_WITH_A_PLAN_STEP: Record<string, string> = {};
+const UNMAPPED_METHODS_WITH_A_PLAN_STEP: Record<string, string> = {};
 
 test("every Codex thread-item kind is handled, deliberately ignored, or unmapped with a plan step", () => {
   const kinds = Object.keys(digest.items).sort();

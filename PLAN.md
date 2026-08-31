@@ -3857,15 +3857,15 @@ command output not streamed; a dozen notification kinds unhandled.
   ("commentary" | "final"); the browser renders commentary as narration
   (dim, part of the turn's activity) and the final answer at full weight —
   the terminal's distinction, which 7 of 8 Codex messages currently lose.
-- [ ] **TS.9 — Codex subagent lane.** `collabAgentToolCall` → tool rows
+- [x] **TS.9 — Codex subagent lane** — done 2026-08-31 (collab calls as engine-named rows with the prompt and child states; child activity narrates under its spawn via `parentId`, or as commentary when no call named the thread; `dynamicToolCall` and `sleep` rows too). `collabAgentToolCall` → tool rows
   (spawn/wait/send with the prompt and agent ids); `subAgentActivity`
   (started/interacted/interrupted/completed) → narration under the spawn
   row via `parentId`, the Phase SA deck. Inner child content still needs
   per-thread subscriptions — recorded, not attempted here.
-- [ ] **TS.10 — Image views.** `imageView` → a `view_image path` row plus
+- [x] **TS.10 — Image views** — done 2026-08-31 (`view_image`/`image_generation` rows, the picture painted inline through the image tool's own jail and byte cap; outside the workspace the row stands alone). `imageView` → a `view_image path` row plus
   the image itself painted inline (workspace-jailed, byte-capped, the
   existing render_image path) — faithful and better than the terminal.
-- [ ] **TS.11 — Streamed command output.** Additive wire
+- [x] **TS.11 — Streamed command output** — done 2026-08-31 (additive `tool_output_delta`; the running row's head carries the last line, its body the stream; capped like final output; `patchUpdated`/`turn/diff` classified ignored with reasons — the Codex ledger's unmapped lists are now empty). Additive wire
   `tool_output_delta { id, text, parentId? }` from
   `item/commandExecution/outputDelta`; the browser appends to the running
   row; `tool_result` still closes it. Same for `item/fileChange/outputDelta`.

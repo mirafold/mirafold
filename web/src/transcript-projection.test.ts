@@ -517,3 +517,26 @@ test("a phase change starts a new prose row; trailing commentary keeps its phase
     ],
   );
 });
+
+
+test("streamed tool output accumulates on the running row and the result closes it (TS.11)", () => {
+  const projection = createTranscriptProjection();
+  const result = projection.apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "tool_use", name: "Shell", detail: "yarn test", id: "c1", input: {} },
+      { type: "tool_output_delta", id: "c1", text: "running 1\n" },
+      { type: "tool_output_delta", id: "c1", text: "running 2\n" },
+      { type: "tool_output_delta", id: "nope", text: "orphan" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const running = result.snapshot.rows.find((r) => r.kind === "tool");
+  assert.ok(running && running.kind === "tool");
+  assert.equal(running.output, undefined);
+  assert.equal(running.streamed, "running 1\nrunning 2\n");
+  const done = projection.apply([{ type: "tool_result", id: "c1", output: "running 1\nrunning 2\nok\n" }] as ZoneMsg[], () => 0);
+  const closed = done.snapshot.rows.find((r) => r.kind === "tool");
+  assert.ok(closed && closed.kind === "tool");
+  assert.equal(closed.output, "running 1\nrunning 2\nok\n");
+});

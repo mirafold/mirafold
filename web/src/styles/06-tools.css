@@ -79,6 +79,24 @@
   border-color: var(--err-border);
 }
 
+/* Streamed output of a running call: its last line rides the head, dim and
+   truncated from the left, so a long command shows its progress the way the
+   terminal scrolls it. */
+.tool-live-tail {
+  margin-left: 8px;
+  color: var(--fg-dimmer);
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40ch;
+}
+
+.tool-output.tool-output-live {
+  border-style: dashed;
+}
+
 /* Tool input: full args in the expansion — diff / code / JSON. */
 .tool-input {
   margin: 4px 0 2px 22px;

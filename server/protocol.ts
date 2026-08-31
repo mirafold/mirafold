@@ -138,6 +138,12 @@ export type SessionMsgBody =
       truncatedBytes?: number;
       parentId?: string;
     }
+  // Streamed output of a RUNNING tool call (optional/additive, TS.11): the
+  // terminal prints command output as it arrives; this carries those bytes
+  // for the row `id` that tool_use announced. The later tool_result still
+  // closes the row with the engine's authoritative, capped output. Old
+  // clients ignore it. `parentId` rides exactly as on tool_use.
+  | { type: "tool_output_delta"; id: string; text: string; parentId?: string }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`
   // (optional/additive): set when the ASKER is a subagent — the same opaque

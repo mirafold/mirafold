@@ -1777,8 +1777,8 @@ test("apply_patch changes normalize from the wire shape and the rollout shape al
 test("an item kind or notification the adapter cannot map is reported once, never dropped silently (TS.7)", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["turn/started", {}],
-    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t2", agentPath: "worker" } }],
-    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t2", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "futureItemKind", id: "fx1", payload: 1 } }],
+    ["item/completed", { item: { type: "futureItemKind", id: "fx2", payload: 2 } }],
     ["item/completed", { item: { type: "userMessage", id: "u1", content: [] } }], // deliberately ignored
     ["thread/somethingNewer", { detail: "a kind this build has never heard of" }],
     ["thread/name/updated", { name: "x" }], // deliberately ignored
@@ -1788,7 +1788,7 @@ test("an item kind or notification the adapter cannot map is reported once, neve
   await awaitTurnEnd();
   const notices = msgs.filter((m) => m.type === "notice").map((m) => m.text);
   assert.deepEqual(notices, [
-    "Mirafold doesn't display this Codex item yet: subAgentActivity",
+    "Mirafold doesn't display this Codex item yet: futureItemKind",
     "Mirafold doesn't display this Codex event yet: thread/somethingNewer",
   ]);
   // Shell-voiced: no `source` badge on Mirafold's own sentence.
@@ -1834,5 +1834,89 @@ test("agent-message prose carries the engine's phase; a plan streams as commenta
       ["config key x is unknown", "warning", "codex"],
     ],
   );
+  s.close();
+});
+
+
+test("subagent collab calls are rows, child activity narrates under its spawn; sleep and dynamic tools are rows (TS.9)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "running", message: null } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa3", kind: "started", agentThreadId: "t-unknown", agentPath: "stray" } }],
+    ["item/completed", { item: { type: "sleep", id: "sl1", durationMs: 1500 } }],
+    ["item/started", { item: { type: "dynamicToolCall", id: "dt1", tool: "lookup", namespace: "crm", arguments: { query: "acme" }, status: "inProgress" } }],
+    ["item/completed", { item: { type: "dynamicToolCall", id: "dt1", tool: "lookup", namespace: "crm", arguments: { query: "acme" }, status: "completed", success: true, contentItems: [{ type: "text", text: "2 accounts" }] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const uses = msgs.filter((m) => m.type === "tool_use").map((m) => [m.name, m.detail, m.id]);
+  assert.deepEqual(uses, [
+    ["spawn_agent", "Audit the watcher", "cb1"],
+    ["sleep", "1.5 s", "sl1"],
+    ["crm.lookup", "acme", "dt1"],
+  ]);
+  const results = msgs.filter((m) => m.type === "tool_result").map((m) => [m.id, m.output, m.isError]);
+  assert.deepEqual(results, [
+    ["cb1", "t-child: running", false],
+    ["sl1", "(done)", undefined],
+    ["dt1", "2 accounts", false],
+  ]);
+  // The child's lifecycle groups under the spawn row; a thread no call named
+  // is narrated in the transcript instead of dropped.
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.parentId, m.phase]),
+    [
+      ["worker started\n", "cb1", undefined],
+      ["worker completed\n", "cb1", undefined],
+      ["Subagent stray started.\n", undefined, "commentary"],
+    ],
+  );
+  assert.equal(msgs.filter((m) => m.type === "notice").length, 0, "nothing was reported as unmapped");
+  s.close();
+});
+
+test("an image the model viewed is a row plus the picture inline; outside the workspace the row stands alone (TS.10)", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  writeFileSync(path.join(tmp, "shot.png"), png);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/completed", { item: { type: "imageView", id: "iv1", path: `${tmp}/shot.png` } }],
+    ["item/completed", { item: { type: "imageView", id: "iv2", path: "/etc/hostname" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_use").map((m) => [m.name, m.detail]),
+    [["view_image", "shot.png"], ["view_image", "/etc/hostname"]],
+  );
+  const paintings = msgs.filter((m) => m.type === "render");
+  assert.equal(paintings.length, 1);
+  assert.equal(paintings[0].component, "image");
+  assert.match(String(paintings[0].props["src"]), /^data:image\/png;base64,/);
+  s.close();
+});
+
+test("command output streams while the call runs, capped, and the result still closes the row (TS.11)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "c1", command: "yarn test", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "running 1\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "running 2\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "never-announced", delta: "orphan" }],
+    ["item/completed", { item: { type: "commandExecution", id: "c1", command: "yarn test", aggregatedOutput: "running 1\nrunning 2\nok\n", exitCode: 0, status: "completed" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_output_delta").map((m) => [m.id, m.text]),
+    [["c1", "running 1\n"], ["c1", "running 2\n"]],
+  );
+  assert.equal(msgs.find((m) => m.type === "tool_result")!.output, "running 1\nrunning 2\nok\n");
   s.close();
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { diffLines, unifiedDiffLines, wholeFileLines } from "../diff";
-import { ToolBlock, formatBytes } from "./ToolBlock";
+import { ToolBlock, formatBytes, lastLine } from "./ToolBlock";
 
 test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {
   const html = renderToStaticMarkup(
@@ -111,4 +111,23 @@ test("unifiedDiffLines and wholeFileLines produce the shared DiffLine rows", () 
   ]);
   assert.deepEqual(wholeFileLines("a\nb", "+"), [{ sign: "+", text: "a" }, { sign: "+", text: "b", noNewline: true }]);
   assert.deepEqual(wholeFileLines("", "-"), []);
+});
+
+
+test("a running row shows the last streamed line in its head and the stream in its body (TS.11)", () => {
+  const html = renderToStaticMarkup(
+    createElement(ToolBlock, {
+      id: 3,
+      toggled: true,
+      onToggle: () => {},
+      name: "Shell",
+      detail: "yarn test",
+      streamed: "compiling\nrunning 12 tests\n",
+      output: undefined,
+    }),
+  );
+  assert.match(html, /tool-live-tail[^>]*>running 12 tests/);
+  assert.match(html, /tool-output-live/);
+  assert.equal(lastLine("a\nb\n\n"), "b");
+  assert.equal(lastLine("x".repeat(100)).length, 80);
 });

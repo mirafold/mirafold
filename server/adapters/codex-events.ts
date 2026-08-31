@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { SessionMsg } from "../protocol";
-import { type TodoItem, capOutput, joinTextBlocks } from "./types";
+import { type TodoItem, capOutput, joinTextBlocks, toolDetail } from "./types";
+import { resolveImageProps } from "../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter, UnknownKindReporter } from "./wire-helpers";
 import { createLogger } from "../log";
@@ -30,6 +31,23 @@ export type CodexItem = {
   exitCode?: number | null;
   status?: string;
   changes?: unknown;
+  // collabAgentToolCall / subAgentActivity / imageView / imageGeneration /
+  // dynamicToolCall / sleep (TS.9–TS.10)
+  prompt?: unknown;
+  receiverThreadIds?: unknown;
+  agentsStates?: unknown;
+  agentThreadId?: unknown;
+  agentPath?: unknown;
+  kind?: unknown;
+  path?: unknown;
+  savedPath?: unknown;
+  revisedPrompt?: unknown;
+  namespace?: unknown;
+  contentItems?: unknown;
+  success?: unknown;
+  durationMs?: unknown;
+  failure?: unknown;
+  model?: unknown;
   server?: string;
   tool?: string;
   arguments?: unknown;
@@ -39,6 +57,13 @@ export type CodexItem = {
 };
 
 export type CodexMcpToolCall = Pick<CodexItem, "result" | "arguments">;
+
+const STREAM_CAP_CHARS = 64_000;
+
+function firstLine(text: string, max: number): string {
+  const line = text.split("\n").find((l) => l.trim()) ?? "";
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
 
 // The adapter's ledger against Codex's protocol digest
 // (codex-protocol.digest.json, from `codex app-server generate-json-schema`;
@@ -56,6 +81,12 @@ export const CODEX_HANDLED_ITEMS = [
   "plan",
   "enteredReviewMode",
   "exitedReviewMode",
+  "collabAgentToolCall",
+  "subAgentActivity",
+  "imageView",
+  "imageGeneration",
+  "dynamicToolCall",
+  "sleep",
 ] as const;
 export const CODEX_IGNORED_ITEMS: Record<string, string> = {
   userMessage: "the engine's echo of the prompt; the registry already emitted user_prompt",
@@ -69,6 +100,8 @@ export const CODEX_HANDLED_METHODS = [
   "item/completed",
   "item/agentMessage/delta",
   "item/plan/delta",
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",
   "turn/plan/updated",
@@ -139,6 +172,8 @@ export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "model/safetyBuffering/updated": "moderation bookkeeping with no user-facing text",
   "model/verification": "model bookkeeping with no user-facing text",
   "thread/compacted": "the contextCompaction item is the shown form of the same event",
+  "item/fileChange/patchUpdated": "the completed fileChange item carries the final changes (TS.6)",
+  "turn/diff/updated": "the Changes panel watches the working tree itself",
   "account/rateLimits/updated":
     "rate-limit bookkeeping on every turn; an 'approaching the limit' notice like Claude's needs the params shape recorded first",
 };
@@ -249,6 +284,12 @@ export class CodexEventMapper {
   // agentMessage.phase per item id, learned at item/started (verified live
   // 2026-08-30: started carries it), so every delta is tagged as it streams.
   private phaseOf = new Map<string, "commentary" | "final">();
+  // Subagent lane (TS.9): the collab call that first named a child thread is
+  // its anchor row; the child's activity groups under it via parentId.
+  private subagentAnchor = new Map<string, string>();
+  // Streamed tool output (TS.11): chars forwarded per running item, capped
+  // like the final output so a chatty command cannot flood the ring.
+  private streamed = new Map<string, number>();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -302,6 +343,7 @@ export class CodexEventMapper {
     this.checklist.reset();
     this.prose.clear();
     this.phaseOf.clear();
+    this.streamed.clear();
     this.thinkingStreamed.clear();
     this.announced.clear();
   }
@@ -335,6 +377,10 @@ export class CodexEventMapper {
         break;
       case "item/agentMessage/delta":
         this.onProseDelta(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
+        break;
+      case "item/commandExecution/outputDelta":
+      case "item/fileChange/outputDelta":
+        this.streamToolOutput(String(p["itemId"] ?? ""), String(p["delta"] ?? ""));
         break;
       case "item/plan/delta": {
         // The model's written plan streams like prose and is narration by
@@ -483,6 +529,29 @@ export class CodexEventMapper {
         this.phaseOf.set(item.id, "commentary");
         this.onAgentMessage(item, phase);
         break;
+      case "collabAgentToolCall":
+        this.onCollabCall(item, phase);
+        break;
+      case "subAgentActivity":
+        if (phase === "completed") this.onSubagentActivity(item);
+        break;
+      case "imageView":
+        if (phase === "completed") this.onImageView(item);
+        break;
+      case "imageGeneration":
+        if (phase === "completed") this.onImageGeneration(item);
+        break;
+      case "dynamicToolCall":
+        this.onDynamicToolCall(item, phase);
+        break;
+      case "sleep":
+        if (phase === "completed") {
+          const ms = typeof item.durationMs === "number" ? item.durationMs : undefined;
+          const detail = ms === undefined ? "" : ms >= 1000 ? `${Math.round(ms / 100) / 10} s` : `${ms} ms`;
+          this.announceTool(item.id, "sleep", detail, { durationMs: ms });
+          this.finishTool(item.id, { output: "(done)" });
+        }
+        break;
       case "enteredReviewMode":
         if (phase === "completed") this.options.emit({ type: "notice", text: "Codex entered review mode.", kind: "info" });
         break;
@@ -583,6 +652,112 @@ export class CodexEventMapper {
     this.finishTool(item.id, {
       output: declined ? "(declined)" : summary || "(no changes)",
       isError: item.status === "failed" || declined,
+    });
+  }
+
+  /** Streamed bytes of a running command or patch (TS.11): forwarded only
+   *  for a row already announced, capped at the same size as final output. */
+  private streamToolOutput(itemId: string, delta: string) {
+    if (!delta || !this.announced.has(itemId)) return;
+    const sent = this.streamed.get(itemId) ?? 0;
+    if (sent >= STREAM_CAP_CHARS) return;
+    const room = STREAM_CAP_CHARS - sent;
+    const text = delta.length > room ? delta.slice(0, room) : delta;
+    this.streamed.set(itemId, sent + text.length);
+    this.options.emit({ type: "tool_output_delta", id: itemId, text });
+  }
+
+  /** A collab call (spawn / wait / send…) is a tool row named by the engine's
+   *  own tool name; the first call naming a child thread anchors that
+   *  thread's later activity (TS.9). Inner child content still needs
+   *  per-thread subscriptions the adapter does not open — recorded. */
+  private onCollabCall(item: CodexItem, phase: ItemPhase) {
+    const name = typeof item.tool === "string" && item.tool ? item.tool : "collab";
+    const receivers = Array.isArray(item.receiverThreadIds)
+      ? item.receiverThreadIds.filter((t): t is string => typeof t === "string")
+      : [];
+    const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+    const detail = prompt ? firstLine(prompt, 96) : receivers.join(", ");
+    const input = {
+      ...(prompt ? { prompt } : {}),
+      ...(receivers.length ? { receiverThreadIds: receivers } : {}),
+      ...(typeof item.model === "string" ? { model: item.model } : {}),
+    };
+    for (const thread of receivers) if (!this.subagentAnchor.has(thread)) this.subagentAnchor.set(thread, item.id);
+    if (phase === "started") {
+      this.announceTool(item.id, name, detail, input);
+      return;
+    }
+    this.ensureAnnounced(item.id, name, detail, input);
+    const states =
+      typeof item.agentsStates === "object" && item.agentsStates !== null
+        ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
+        : [];
+    const lines = states.map(([thread, st]) => {
+      const status = typeof st?.status === "string" ? st.status : "?";
+      const message = typeof st?.message === "string" && st.message ? ` — ${firstLine(st.message, 160)}` : "";
+      return `${thread}: ${status}${message}`;
+    });
+    const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
+    this.finishTool(item.id, {
+      output: item.status === "declined" ? "(declined)" : lines.join("\n") || "(done)",
+      isError: item.status === "failed" || item.status === "declined" || failed,
+    });
+  }
+
+  /** A child agent's lifecycle, narrated under its spawn row when the anchor
+   *  is known, otherwise as commentary in the transcript. */
+  private onSubagentActivity(item: CodexItem) {
+    const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
+    const kind = typeof item.kind === "string" ? item.kind : "activity";
+    const who = typeof item.agentPath === "string" && item.agentPath ? item.agentPath : "subagent";
+    const parentId = this.subagentAnchor.get(thread);
+    const text = `${who} ${kind}`;
+    if (parentId) this.options.emit({ type: "text_delta", text: `${text}\n`, parentId });
+    else this.options.emit({ type: "text_delta", text: `Subagent ${text}.\n`, phase: "commentary" });
+  }
+
+  /** The model looked at an image: a row, plus the image itself painted
+   *  inline when it is a workspace file the image tool would accept (TS.10). */
+  private onImageView(item: CodexItem) {
+    const path = typeof item.path === "string" ? item.path : "";
+    const shown = path ? displayPath(path, this.options.workspaceDir) : "";
+    this.announceTool(item.id, "view_image", shown, { path: shown });
+    this.finishTool(item.id, { output: shown ? "(viewed)" : "(no path)" });
+    if (shown) this.paintWorkspaceImage(shown, "viewed by the agent");
+  }
+
+  private onImageGeneration(item: CodexItem) {
+    const saved = typeof item.savedPath === "string" ? displayPath(item.savedPath, this.options.workspaceDir) : "";
+    const prompt = typeof item.revisedPrompt === "string" ? item.revisedPrompt : "";
+    const failed = item.status === "failed" || Boolean(item.failure);
+    this.announceTool(item.id, "image_generation", firstLine(prompt, 96), { ...(prompt ? { prompt } : {}), ...(saved ? { savedPath: saved } : {}) });
+    this.finishTool(item.id, { output: failed ? String(item.failure ?? "failed") : saved || "(no file saved)", isError: failed });
+    if (saved && !failed) this.paintWorkspaceImage(saved, prompt || "generated image");
+  }
+
+  private paintWorkspaceImage(path: string, alt: string) {
+    const props = resolveImageProps(this.options.workspaceDir, { path, alt });
+    if (typeof props["error"] === "string") return; // outside the workspace, not an image, too big: the row stands alone
+    this.options.emit({ type: "render", component: "image", props, id: randomUUID() });
+  }
+
+  /** Codex apps / dynamic tools: a tool row named the way the engine names it. */
+  private onDynamicToolCall(item: CodexItem, phase: ItemPhase) {
+    const tool = typeof item.tool === "string" ? item.tool : "tool";
+    const name = typeof item.namespace === "string" && item.namespace ? `${item.namespace}.${tool}` : tool;
+    const args = typeof item.arguments === "object" && item.arguments !== null ? (item.arguments as Record<string, unknown>) : {};
+    const detail = firstLine(Object.values(args).find((v) => typeof v === "string") as string | undefined ?? "", 96);
+    if (phase === "started") {
+      this.announceTool(item.id, name, detail, args);
+      return;
+    }
+    this.ensureAnnounced(item.id, name, detail, args);
+    const capped = capOutput(mcpText(item.contentItems));
+    this.finishTool(item.id, {
+      output: capped.text,
+      truncatedBytes: capped.truncatedBytes,
+      isError: item.status === "failed" || item.success === false,
     });
   }
 

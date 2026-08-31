@@ -21,6 +21,7 @@ export const ToolBlock = memo(function ToolBlock({
   output,
   truncatedBytes,
   isError,
+  streamed,
   toggled,
   onToggle,
 }: {
@@ -31,6 +32,9 @@ export const ToolBlock = memo(function ToolBlock({
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  /** Output streamed while the call runs — the terminal shows it live; the
+   *  head carries its last line, the body the whole of it so far. */
+  streamed?: string;
   /** null = user hasn't touched it; errors then default to open. */
   toggled: boolean | null;
   onToggle: (id: number, expanded: boolean) => void;
@@ -50,10 +54,12 @@ export const ToolBlock = memo(function ToolBlock({
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>
         <span className="tool-name">{name}</span>
         {detail && <span className="tool-detail">{visibleControls(detail)}</span>}
+        {running && streamed && <span className="tool-live-tail">{visibleControls(lastLine(streamed))}</span>}
       </button>
       {expanded && (
         <div className="tool-body">
           {input && <ToolInput name={name} input={input} />}
+          {running && streamed && <pre className="tool-output tool-output-live">{streamed}</pre>}
           {!running && (
             <pre className="tool-output">
               {output || "(no output)"}
@@ -149,4 +155,11 @@ function EditDiff({ oldText, newText }: { oldText: string; newText: string }) {
       <DiffLines lines={diffLines(oldText, newText)} />
     </pre>
   );
+}
+
+/** The last non-empty line of streamed output, capped, for the running row's head. */
+export function lastLine(text: string): string {
+  const lines = text.split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  const line = lines[lines.length - 1] ?? "";
+  return line.length > 80 ? `…${line.slice(-79)}` : line;
 }

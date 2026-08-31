@@ -94,6 +94,18 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("text_delta"),
       text: z.string(),
       parentId: idSchema.optional(),
+      phase: z.enum(["commentary", "final"]).optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  // Streamed output of a running call (TS.11): kept so a reload mid-command
+  // still shows what had arrived.
+  z
+    .object({
+      type: z.literal("tool_output_delta"),
+      id: idSchema,
+      text: z.string(),
+      parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -207,7 +219,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("notice"),
       text: z.string(),
-      kind: z.enum(["retry", "compaction", "rate_limit", "refusal", "warning"]).optional(),
+      kind: z.enum(["retry", "compaction", "rate_limit", "refusal", "warning", "info"]).optional(),
       source: z.string().max(120).optional(),
       seq: sequenceSchema,
     })
