@@ -380,8 +380,14 @@ test("the render guidance rides thread/start as developerInstructions; turns car
   assert.equal(instructions, CODEX_DEVELOPER_INSTRUCTIONS);
   assert.ok(instructions.includes("## Generative UI"));
   assert.ok(instructions.includes(MIRAFOLD_CONTEXT), "the environment fact reaches Codex at thread start");
+  // The where-are-the-tools note leads, and it names every path Codex can
+  // hide an MCP tool behind: tool_search deferral and the exec runtime.
+  assert.ok(instructions.trimStart().startsWith("## Mirafold's render tools"));
+  assert.ok(instructions.indexOf("## Mirafold's render tools") < instructions.indexOf("## Generative UI"));
   assert.ok(instructions.includes("DEFERRED"));
-  assert.ok(instructions.includes("tool search"));
+  assert.ok(instructions.includes("tool_search"));
+  assert.ok(instructions.includes("tools.mcp__mirafold__render_table("));
+  assert.ok(instructions.includes("ALL_TOOLS"));
   assert.equal(starts[0].params.cwd, tmp);
   // Faithful skin: no sandbox / approval policy of our own.
   assert.equal(starts[0].params.sandbox, undefined);
