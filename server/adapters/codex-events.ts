@@ -3,7 +3,10 @@ import path from "node:path";
 import type { SessionMsg } from "../protocol";
 import { type TodoItem, capOutput, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
-import { ChecklistPainter } from "./wire-helpers";
+import { ChecklistPainter, UnknownKindReporter } from "./wire-helpers";
+import { createLogger } from "../log";
+
+const log = createLogger("codex-events");
 import { convertMermaidCharts } from "./mermaid-chart";
 
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
@@ -35,6 +38,98 @@ export type CodexItem = {
 };
 
 export type CodexMcpToolCall = Pick<CodexItem, "result" | "arguments">;
+
+// The adapter's ledger against Codex's protocol digest
+// (codex-protocol.digest.json, from `codex app-server generate-json-schema`;
+// codex-protocol.test.ts holds them equal). Every kind the engine can send is
+// either handled below, deliberately ignored here with its reason, or
+// reported by UnknownKindReporter the first time it arrives.
+export const CODEX_HANDLED_ITEMS = [
+  "agentMessage",
+  "reasoning",
+  "commandExecution",
+  "fileChange",
+  "mcpToolCall",
+  "webSearch",
+  "contextCompaction",
+] as const;
+export const CODEX_IGNORED_ITEMS: Record<string, string> = {
+  userMessage: "the engine's echo of the prompt; the registry already emitted user_prompt",
+  functionCallOutput: "the raw output of a call already represented by its own item",
+};
+export const CODEX_HANDLED_METHODS = [
+  "turn/started",
+  "turn/completed",
+  "item/started",
+  "item/completed",
+  "item/agentMessage/delta",
+  "item/reasoning/summaryTextDelta",
+  "item/reasoning/textDelta",
+  "turn/plan/updated",
+  "thread/tokenUsage/updated",
+  "error",
+  "warning",
+] as const;
+export const CODEX_IGNORED_METHODS: Record<string, string> = {
+  "thread/started": "the session consumes it on thread/start",
+  "thread/status/changed": "the registry derives status from the stream itself",
+  "thread/name/updated": "Mirafold names sessions by folder",
+  "thread/goal/updated": "goal bookkeeping for Codex's own UI",
+  "thread/goal/cleared": "goal bookkeeping for Codex's own UI",
+  "thread/queue/changed": "Mirafold serializes prompts itself",
+  "thread/archived": "thread lifecycle for Codex's own UI",
+  "thread/unarchived": "thread lifecycle for Codex's own UI",
+  "thread/deleted": "thread lifecycle for Codex's own UI",
+  "thread/closed": "thread lifecycle for Codex's own UI",
+  "thread/reverted": "thread lifecycle for Codex's own UI",
+  "thread/project/updated": "project bookkeeping for Codex's own UI",
+  "thread/settings/updated": "settings echo; the adapter owns its /model and /effort state",
+  "thread/environment/connected": "remote-environment plumbing Mirafold does not use",
+  "thread/environment/disconnected": "remote-environment plumbing Mirafold does not use",
+  "project/changed": "project bookkeeping for Codex's own UI",
+  "skills/changed": "the prompt-option refresh re-lists skills per turn",
+  "hook/started": "Codex hooks run silently in the terminal too",
+  "hook/completed": "Codex hooks run silently in the terminal too",
+  "item/autoApprovalReview/started": "internal review of an auto-approval; the approval itself is surfaced",
+  "item/autoApprovalReview/completed": "internal review of an auto-approval; the approval itself is surfaced",
+  "autoApprovalReview/strictReviewRequired": "internal review of an auto-approval; the approval itself is surfaced",
+  "item/reasoning/summaryPartAdded": "a paragraph boundary inside reasoning already streamed as deltas",
+  "item/mcpToolCall/progress": "progress ticks of a call whose completion is shown",
+  "serverRequest/resolved": "the answer to an ask the session itself resolved",
+  "command/exec/outputDelta": "the exec runtime's own streaming; the item completion is shown",
+  "process/outputDelta": "background process plumbing not represented in the transcript",
+  "process/exited": "background process plumbing not represented in the transcript",
+  "item/commandExecution/terminalInteraction": "interactive-terminal plumbing not represented in the transcript",
+  "mcpServer/oauthLogin/completed": "MCP server administration",
+  "mcpServer/startupStatus/updated": "MCP server administration",
+  "mcpServer/event/stream/notification": "MCP server administration",
+  "account/updated": "account administration",
+  "account/login/completed": "account administration",
+  "app/list/updated": "Codex apps administration",
+  "remoteControl/status/changed": "remote-control administration",
+  "externalAgentConfig/import/progress": "config import administration",
+  "externalAgentConfig/import/completed": "config import administration",
+  "fs/changed": "the Changes panel watches the tree itself",
+  "fuzzyFileSearch/sessionUpdated": "Codex's own file picker",
+  "fuzzyFileSearch/sessionCompleted": "Codex's own file picker",
+  "thread/realtime/started": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/itemAdded": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/item/started": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/item/transcript/delta": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/item/completed": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/transcript/delta": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/transcript/done": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/outputAudio/delta": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/sdp": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/error": "voice/realtime mode Mirafold does not drive",
+  "thread/realtime/closed": "voice/realtime mode Mirafold does not drive",
+  "windows/worldWritableWarning": "Windows-only setup diagnostics",
+  "windowsSandbox/setupCompleted": "Windows-only setup diagnostics",
+  "turn/moderationMetadata": "moderation bookkeeping with no user-facing text",
+  "model/safetyBuffering/updated": "moderation bookkeeping with no user-facing text",
+  "model/verification": "model bookkeeping with no user-facing text",
+  "item/plan/delta": "the plan item itself is reported until TS.8 maps it",
+};
 
 /** One file change on an apply_patch row, as the browser renders it. */
 export type PatchChange = {
@@ -160,7 +255,10 @@ export class CodexEventMapper {
     },
   ) {
     this.checklist = new ChecklistPainter(options.emit);
+    this.unknown = new UnknownKindReporter(options.emit, "Codex", (message) => log.warn(message));
   }
+
+  private readonly unknown: UnknownKindReporter;
 
   /** A turn is starting: usage is measured from here, paintings re-anchor. */
   beginTurn() {
@@ -273,6 +371,8 @@ export class CodexEventMapper {
           });
         }
         break;
+      default:
+        if (!(method in CODEX_IGNORED_METHODS)) this.unknown.report("event", method);
     }
   }
 
@@ -336,6 +436,8 @@ export class CodexEventMapper {
       case "contextCompaction":
         this.onContextCompaction(phase);
         break;
+      default:
+        if (phase === "completed" && !(item.type in CODEX_IGNORED_ITEMS)) this.unknown.report("item", item.type);
     }
   }
 

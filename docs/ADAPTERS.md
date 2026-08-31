@@ -344,6 +344,21 @@ for a tool rarely paints (Phase TS, 2026-08-30):
   point do not move this model's mid-session choice to paint, so treat it
   as an experiment on record, not a fix.
 
+**Nothing the engine sends is dropped silently (TS.7).** Each adapter's
+dispatcher has a default branch: an item, event, or message kind with no
+mapping is logged and surfaced once per session as a shell-voiced notice
+("Mirafold doesn't display this Codex item yet: …"), never swallowed. For
+Codex the ledger is held to the engine's own protocol: `scripts/
+codex-protocol-digest.mjs` distills `codex app-server generate-json-schema`
+into `server/adapters/codex-protocol.digest.json` (item kinds, notification
+methods, the field shapes the adapter reads); `codex-protocol.test.ts`
+asserts every kind is handled, deliberately ignored (with a reason), or
+unmapped with a plan step, and that the read fields still have the shapes the
+adapter assumes; the Tier-4 live test regenerates the digest from the
+installed Codex and fails on drift. Claude's ledger is compile-time
+(`CLAUDE_MESSAGE_LEDGER satisfies Record<SDKMessage["type"], …>`); OpenCode
+and Gemini carry explicit ignore lists and report the rest.
+
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in

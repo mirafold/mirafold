@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   query,
   type Query,
+  type SDKMessage,
   type SDKResultMessage,
   type SDKUserMessage,
   type Options,
@@ -14,6 +15,7 @@ import type { PromptOption, SessionMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import { ResumeIdState } from "./resume-id";
+import { UnknownKindReporter } from "./wire-helpers";
 import { ChecklistPainter, PermissionLedger } from "./wire-helpers";
 import {
   type AgentSession,
@@ -31,6 +33,30 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 import { createLogger, scrubSelectedEndpoint, verbose } from "../log";
 
 const log = createLogger("claude-code");
+
+/** Every SDK message kind, classified — `satisfies` makes an SDK bump that
+ *  adds a kind a compile error until it is placed here (Phase TS.12).
+ *  "unmapped" kinds are reported by UnknownKindReporter when they arrive. */
+export const CLAUDE_MESSAGE_LEDGER = {
+  assistant: "handled",
+  user: "handled",
+  system: "handled",
+  stream_event: "handled",
+  result: "handled",
+  rate_limit_event: "handled",
+  auth_status: "ignored", // login plumbing; the picker classifies credentials
+  status: "ignored", // the registry derives status from the stream itself
+  files_persisted: "ignored", // bookkeeping for the SDK's own file store
+  prompt_suggestion: "ignored", // a suggestion Mirafold's prompt box does not surface
+  hook_started: "ignored", // hooks run silently in the terminal too
+  hook_response: "ignored",
+  hook_progress: "ignored",
+  compact_boundary: "unmapped", // TS.12: surface as the compaction notice Codex gets
+  tool_progress: "unmapped", // TS.11 sibling: streamed tool progress
+  task_started: "unmapped", // background tasks
+  task_progress: "unmapped",
+  task_notification: "unmapped",
+} satisfies Record<SDKMessage["type"], "handled" | "ignored" | "unmapped">;
 
 // The in-process render-tools MCP server's registered name — the SDK exposes
 // its tools to the model as `mcp__<name>__<tool>`, so both spellings below
@@ -159,6 +185,7 @@ export class ClaudeCodeSession implements AgentSession {
   // arrive as buffered assistant text with zero deltas), the buffered text is
   // the ONLY copy and must be emitted, or the command runs but nothing paints.
   private streamedText = false;
+  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Claude Code", (m) => log.warn(m));
   // Per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
   private permissions = new PermissionLedger((msg) => this.emit(msg));
@@ -610,6 +637,14 @@ export class ClaudeCodeSession implements AgentSession {
           case "result":
             this.handleResultMsg(msg);
             break;
+          default: {
+            // Exhaustive above by the SDK's union; a kind that reaches here is
+            // one the ledger classifies as unmapped (or one newer than the
+            // SDK types this build knows).
+            const kind = (msg as { type: string }).type;
+            const placed = (CLAUDE_MESSAGE_LEDGER as Record<string, string>)[kind];
+            if (placed !== "handled" && placed !== "ignored") this.unknown.report("message", kind);
+          }
         }
       }
     } catch (err) {

@@ -1772,3 +1772,26 @@ test("apply_patch changes normalize from the wire shape and the rollout shape al
   assert.deepEqual(normalizePatchChanges(undefined, ws), []);
   assert.deepEqual(normalizePatchChanges("garbage", ws), []);
 });
+
+
+test("an item kind or notification the adapter cannot map is reported once, never dropped silently (TS.7)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t2", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t2", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "userMessage", id: "u1", content: [] } }], // deliberately ignored
+    ["model/rerouted", { fromModel: "a", toModel: "b" }],
+    ["thread/name/updated", { name: "x" }], // deliberately ignored
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const notices = msgs.filter((m) => m.type === "notice").map((m) => m.text);
+  assert.deepEqual(notices, [
+    "Mirafold doesn't display this Codex item yet: subAgentActivity",
+    "Mirafold doesn't display this Codex event yet: model/rerouted",
+  ]);
+  // Shell-voiced: no `source` badge on Mirafold's own sentence.
+  assert.ok(msgs.filter((m) => m.type === "notice").every((m) => m.source === undefined));
+  s.close();
+});

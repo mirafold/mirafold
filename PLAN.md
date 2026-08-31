@@ -3845,7 +3845,7 @@ command output not streamed; a dozen notification kinds unhandled.
   carries `{path, kind, diff}` and the browser draws hunks for updates and
   the whole file for adds/deletes with the same diff rows an Edit gets.
   Fixtures use the REAL captured shape. Live-checked against the engine.
-- [ ] **TS.7 — Never silent + schema conformance.** Every adapter's item
+- [x] **TS.7 — Never silent + schema conformance** — done 2026-08-30 (all four adapters report an unmapped kind once per session as a shell notice + log; `scripts/codex-protocol-digest.mjs` → vendored `codex-protocol.digest.json`; `codex-protocol.test.ts` holds handled ∪ ignored ∪ planned == the digest and pins the field shapes the adapter reads; the Tier-4 test regenerates the digest from the installed Codex and fails on drift; Claude's message ledger is compile-time exhaustive — the TS.12 Claude/OpenCode/Gemini never-silent halves landed here too). Every adapter's item
   dispatcher gets a default branch: log + one shell-voiced notice per
   session per kind ("Codex sent something Mirafold doesn't display yet:
   …"). Codex: a small protocol digest (variant names, notification methods,

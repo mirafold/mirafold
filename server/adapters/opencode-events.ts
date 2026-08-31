@@ -3,6 +3,11 @@ import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./typ
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter } from "./wire-helpers";
 import type { OpenCodeEvent } from "./opencode-client";
+import { UnknownKindReporter } from "./wire-helpers";
+import { createLogger } from "../log";
+
+const log = createLogger("opencode-events");
+
 
 // OpenCode advertises MCP tools as `<server>_<tool>` (live capture:
 // `mirafold_render_card`), so this prefix is the recognition test.
@@ -32,7 +37,40 @@ type TurnTokens = { input: number; output: number; cost: number };
  * in opencode.spike.md) into WireMsg. Session-scoped state only;
  * the owning OpenCodeSession supplies turn lifecycle and permission plumbing.
  */
+// OpenCode event kinds and part kinds the mapper deliberately does not show;
+// anything else it does not handle is reported once per session (TS.7).
+export const OPENCODE_IGNORED_EVENTS: Record<string, string> = {
+  "server.connected": "transport bookkeeping",
+  "server.heartbeat": "transport bookkeeping",
+  "installation.updated": "OpenCode self-update bookkeeping",
+  "installation.update-available": "OpenCode self-update bookkeeping",
+  "session.updated": "metadata the registry derives itself",
+  "session.deleted": "lifecycle the session owns",
+  "session.diff": "the Changes panel watches the tree itself",
+  "session.compacted": "TS.12: surface as the compaction notice",
+  "message.removed": "editing bookkeeping",
+  "message.part.removed": "editing bookkeeping",
+  "file.edited": "the Changes panel watches the tree itself",
+  "file.watcher.updated": "the Changes panel watches the tree itself",
+  "storage.write": "OpenCode's own persistence",
+  "lsp.client.diagnostics": "editor diagnostics not shown in the terminal transcript either",
+  "ide.installed": "IDE plumbing",
+  "pty.created": "OpenCode's own terminal panes",
+  "pty.updated": "OpenCode's own terminal panes",
+  "pty.exited": "OpenCode's own terminal panes",
+  "pty.deleted": "OpenCode's own terminal panes",
+  "vcs.branch.updated": "the status bar reads git itself",
+  "command.executed": "slash-command bookkeeping",
+  "todo.updated": "handled",
+};
+export const OPENCODE_IGNORED_PARTS: Record<string, string> = {
+  "step-finish": "a step boundary; usage arrives on session.idle",
+  snapshot: "OpenCode's own undo snapshots",
+  "step-start": "handled",
+};
+
 export class OpenCodeEventMapper {
+  private readonly unknown: UnknownKindReporter;
   private parts = new Map<string, PartTrack>();
   // messageID → role. The stream echoes the USER message's parts exactly like
   // assistant ones (observed live); without this the user's own
@@ -88,6 +126,7 @@ export class OpenCodeEventMapper {
       endTurn: () => void;
     },
   ) {
+    this.unknown = new UnknownKindReporter(options.emit, "OpenCode", (m) => log.warn(m));
     this.checklist = new ChecklistPainter(options.emit);
   }
 
@@ -200,6 +239,8 @@ export class OpenCodeEventMapper {
         // the fleet status "working").
         this.options.onEngineIdle();
         break;
+      default:
+        if (!(event.type in OPENCODE_IGNORED_EVENTS)) this.unknown.report("event", event.type);
     }
   }
 
@@ -320,6 +361,8 @@ export class OpenCodeEventMapper {
       case "tool":
         this.onToolPart(partID, part, parentId);
         break;
+      default:
+        if (!fromUser && !(type in OPENCODE_IGNORED_PARTS)) this.unknown.report("message part", type);
     }
   }
 

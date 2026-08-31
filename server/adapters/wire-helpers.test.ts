@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { SessionMsg } from "../protocol";
 import type { WireMsg } from "../protocol";
-import { ChecklistPainter, PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
+import { UnknownKindReporter, ChecklistPainter, PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 
 const recorder = () => {
   const msgs: WireMsg[] = [];
@@ -102,4 +103,22 @@ test("PermissionLedger: an ask resolved from inside another ask's resolution hoo
   assert.deepEqual(hows, ["answer"], "one resolution, not answer-then-teardown");
   assert.equal(resolvedFor(msgs, secondId).length, 1);
   assert.equal(ledger.size, 0);
+});
+
+
+test("UnknownKindReporter logs and notices once per kind per session", () => {
+  const emitted: SessionMsg[] = [];
+  const warned: string[] = [];
+  const r = new UnknownKindReporter((m) => emitted.push(m), "Codex", (m) => warned.push(m));
+  r.report("item", "imageView");
+  r.report("item", "imageView");
+  r.report("event", "imageView"); // same kind, different category — distinct
+  assert.equal(warned.length, 2);
+  assert.deepEqual(
+    emitted.map((m) => (m.type === "notice" ? [m.text, m.kind, m.source] : m.type)),
+    [
+      ["Mirafold doesn't display this Codex item yet: imageView", "warning", undefined],
+      ["Mirafold doesn't display this Codex event yet: imageView", "warning", undefined],
+    ],
+  );
 });

@@ -151,3 +151,32 @@ export async function runSlashTurn(emit: Emit, body: () => Promise<void> | void)
     emit({ type: "turn_end" });
   }
 }
+
+/**
+ * An engine event kind the adapter has no mapping for is reported — once per
+ * kind per session — as a log line and a shell-voiced notice, instead of
+ * being dropped. Silence was the failure mode: the Codex app-server rewrite
+ * shipped with 12 of 19 item kinds unmapped and nothing said so for a month
+ * (Phase TS.7). The notice is Mirafold's own sentence, so it carries no
+ * `source`.
+ */
+export class UnknownKindReporter {
+  private readonly seen = new Set<string>();
+  constructor(
+    private readonly emit: Emit,
+    private readonly engine: string,
+    private readonly warn: (message: string) => void,
+  ) {}
+
+  report(category: string, kind: string) {
+    const key = `${category}\u0000${kind}`;
+    if (this.seen.has(key)) return;
+    this.seen.add(key);
+    this.warn(`${this.engine} ${category} "${kind}" has no Mirafold mapping — not displayed`);
+    this.emit({
+      type: "notice",
+      text: `Mirafold doesn't display this ${this.engine} ${category} yet: ${kind}`,
+      kind: "warning",
+    });
+  }
+}

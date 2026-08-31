@@ -1,5 +1,6 @@
 import path from "node:path";
 import { createLogger, verbose } from "../log";
+import { UnknownKindReporter } from "./wire-helpers";
 import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -71,6 +72,7 @@ export class GeminiCliSession implements AgentSession {
   // Non-render tool ids we announced, and buffered Mirafold render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
+  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Gemini CLI", (m) => createLogger("gemini-cli").warn(m));
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
   // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
@@ -660,6 +662,8 @@ export class GeminiCliSession implements AgentSession {
         });
         break;
       }
+      default:
+        if (typeof eventType === "string") this.unknown.report("event", eventType);
     }
   }
 
