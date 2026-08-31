@@ -3961,6 +3961,31 @@ here, not chased on this branch.
   **1/1** (14.4 s); installed OpenCode OpenAPI conformance **1/1** (5.2 s);
   installed Codex protocol-digest conformance **1/1**; `git diff --check`
   clean. No finding was deferred.
+- [x] **TS.AU — branch security audit** — 2026-08-31, delta-scoped
+  (`next..HEAD`). No exploitable finding; one hardening family, fixed across
+  three cold-reviewed batches with 12 pinned tests: engine/model-chosen
+  strings were reaching shell-composed surfaces raw. Unknown-kind notices are
+  now clamped and control-visible (`inertToken`, the server twin of the web's
+  `visibleControls`; Unicode tag characters added to BOTH regexes) with a
+  25-report session cap; Codex subagent lanes — anchored and unanchored —
+  share the narration budget and the anchor map is bounded (5,000); Codex
+  MCP/dynamic/collab names are clamped at the source; the tool-name,
+  apply_patch path label, activity line, and fleet label render through
+  `visibleControls` with bidi isolation. Third cold review: no findings.
+  Accepted and documented at the code site: patch labels are not
+  length-clamped (truncation would hide the very path the row audits); a lone
+  surrogate already in engine input passes through (JSON-safe, renders U+FFFD).
+- [x] **TS.TA — branch test audit** — 2026-08-31. Baselines all green: Tier 1
+  ×5 (18–21 s), Tier 2 ×2 161/161 (~245 s), Tier 3 ×3 127/127 (~455 s — the
+  recorded CR.2 environment-sensitive failure did not recur), visual gate
+  11/11; Tier 4 not run (drives installed engines). Fifteen product mutations
+  falsified; the ten aimed at the delta's tests were all CAUGHT. Three proven
+  gaps closed with load-bearing tests (each fails when the wiring it names is
+  deleted): the TS.7 never-silent default branch was untested in OpenCode,
+  Gemini, and Claude Code. Cold review of those additions surfaced two
+  surviving mutations — a per-turn reporter reset and Gemini's non-string
+  kind guard — both now probed and falsified. No test repaired or deleted;
+  no product bug found.
 - [ ] **TS.4 — Honest notice when tools are hidden** (parked idea): when a
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.
