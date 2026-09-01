@@ -4030,6 +4030,18 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   bughunt found and fixed the dead-session key leak. Gates on the final
   tree: typecheck; Tier 1 1,097/1,097; visual 11/11; Tier 3 130/130.
 
+- [x] **CF.REL — released as v0.8.0 (2026-09-01)** with Phase TS. Runbook
+  flow b: `release/0.8.0` off next; the Codex reviewer's five P2s on the
+  release PR (#82) verified — four fixed on `fix/release-review-0.8.0` (PR
+  #83 → next, then that branch alone into the release: ring keeps only the
+  latest `tool_update` per row; the live-output ceiling is said once on the
+  stream; collab fan-out bounded before it is built; orphaned subagent
+  narration shown inline after its turn, reasoning as a thinking row) and
+  one false (the SDK has no top-level `compact_boundary`). Tag signed with
+  the release key (no prompt), release workflow green, `npm view` 0.8.0,
+  registry sha256 == tag message, packaged smoke 9/9 against the published
+  package; main → next synced (#84); merged branches deleted.
+
 **Open records (Kyle's calls):**
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
   full-suite runs (never in isolation; the failing assertion was not
