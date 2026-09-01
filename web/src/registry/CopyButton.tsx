@@ -1,21 +1,14 @@
-import { useState } from "react";
+import { useCopyFeedback } from "../use-copy-feedback";
 
-/** The registry's copy-to-clipboard affordance: "copy" flips to "copied" for
- *  a beat. Copies `text` verbatim — for clipped bodies (console) that's the
- *  WHOLE payload, which is the point. */
+const LABEL = { idle: "copy", copied: "copied", failed: "copy failed" } as const;
+
+/** The registry's copy-to-clipboard affordance. Copies `text` verbatim — for
+ *  clipped bodies (console) that's the WHOLE payload, which is the point. */
 export function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const { state, copy } = useCopyFeedback();
   return (
-    <button
-      className="rc-copy"
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? "copied" : "copy"}
+    <button className={state === "failed" ? "rc-copy rc-copy-failed" : "rc-copy"} onClick={() => copy(text)}>
+      {LABEL[state]}
     </button>
   );
 }

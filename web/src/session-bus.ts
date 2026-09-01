@@ -2,6 +2,7 @@ import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 import { createDaemonClient, mintId, type SubscriptionAct } from "./daemon-client";
 import { sessionIdFromPath, sessionPath } from "./session-url";
+import { savePins } from "./pin-store";
 
 export type { SubscriptionAct } from "./daemon-client";
 export { sendSubscriptionRequest } from "./daemon-client";
@@ -99,7 +100,9 @@ export function createSessionBus(): SessionBus {
     }
     if (m.type === "session_ended") {
       // The session is gone (ended here, from the fleet, or another tab)
-      // — leave to mission control; there's nothing left to attach to.
+      // — its stored pins go with it, and this viewport leaves to mission
+      // control; there's nothing left to attach to.
+      if (sessionId) savePins(sessionId, []);
       location.assign("/");
       return;
     }

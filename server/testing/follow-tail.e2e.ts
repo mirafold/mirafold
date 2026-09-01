@@ -6,7 +6,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { type Browser, type Page } from "playwright-core";
-import { launchChrome, withFreshMockSession, waitTurnIdle, PHONE_CONTEXT, assertAxeClean } from "./e2e-harness";
+import { launchChrome, withFreshMockSession, waitTurnIdle, typePrompt, PHONE_CONTEXT, assertAxeClean } from "./e2e-harness";
 
 let browser: Browser;
 before(async () => {
@@ -23,7 +23,10 @@ const bottomGap = (page: Page) =>
  *  shuffled deck with randomized details, so a fixed three turns can come up
  *  short (it did, 2026-08-29: overflow=0 on a compact draw); send until the
  *  overflow is really there, bounded by one full deck. */
-const fillTranscript = async (page: Page, send: (text: string) => Promise<void>) => {
+const fillTranscript = async (
+  page: Page,
+  send: (text: string) => Promise<void> = async (text) => void (await typePrompt(page, text)),
+) => {
   const overflow = () =>
     page.locator(".output-zone").evaluate((el) => el.scrollHeight - el.clientHeight);
   let n = 0;
@@ -126,4 +129,54 @@ test("phone: the pill is centered for the thumb and still jumps to the tail", as
     },
     { context: PHONE_CONTEXT },
   );
+});
+
+test("switching to a session with a transcript lands at the tail with no top-to-bottom flash", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-switch-9d21", async (page) => {
+    await fillTranscript(page);
+
+    // A cockpit-panel switch is a plain link: full navigation, fresh mount,
+    // whole-buffer replay. Reload takes the identical path. Sample the
+    // scroller's geometry from a MutationObserver microtask after every DOM
+    // change: a scroll correction that runs inside the commit (layout
+    // effect) is already applied when the microtask looks, while one
+    // deferred to a later task (passive effect) leaves the frame visibly
+    // anchored away from the tail — the reader's top-to-bottom flash,
+    // observable without real rendering (headless produces no animation
+    // frames unless forced). Observed on the Document node: at
+    // document-start, documentElement is still null.
+    await page.addInitScript(() => {
+      const frames: { top: number; h: number; c: number }[] = [];
+      (window as unknown as { __mfFrames: typeof frames }).__mfFrames = frames;
+      new MutationObserver(() => {
+        const el = document.querySelector(".output-zone");
+        if (el && frames.length < 5_000) {
+          frames.push({ top: el.scrollTop, h: el.scrollHeight, c: el.clientHeight });
+        }
+      }).observe(document, { childList: true, subtree: true, characterData: true });
+    });
+    await page.reload();
+    await page.locator(".output-zone .turn-user").first().waitFor({ timeout: 15_000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector(".output-zone") as HTMLElement | null;
+        return el ? el.scrollHeight - el.scrollTop - el.clientHeight <= 24 : false;
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+
+    const frames = await page.evaluate(
+      () => (window as unknown as { __mfFrames: { top: number; h: number; c: number }[] }).__mfFrames,
+    );
+    assert.ok(frames.length > 0, "the sampler observed the zone on the reloaded page");
+    // Overflowing content painted with the viewport in the top half of the
+    // scroll range is exactly the flash the reader sees.
+    const awayFromTail = frames.filter((f) => f.h - f.c > 200 && f.top < (f.h - f.c) * 0.5);
+    assert.equal(
+      awayFromTail.length,
+      0,
+      `replay painted ${awayFromTail.length} of ${frames.length} frames away from the tail: ${JSON.stringify(awayFromTail.slice(0, 3))}`,
+    );
+  });
 });
