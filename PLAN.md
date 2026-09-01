@@ -4035,7 +4035,7 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   bughunt found and fixed the dead-session key leak. Gates on the final
   tree: typecheck; Tier 1 1,097/1,097; visual 11/11; Tier 3 130/130.
 
-- [x] **CF.HF — v0.8.0 cross-agent startup/event corrective pass
+- [x] **CF.HF — v0.8.1 cross-agent startup/event hotfix
   (2026-09-01, complete)** — branch
   `fix/codex-mcp-startup-handshake` from current `next`. Verified against the
   captured Codex rollout and installed Codex 0.152 / Gemini CLI 0.57 /
@@ -4072,6 +4072,13 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   error. The required fresh-agent cold review covered all 13 changed files
   and the surrounding lifecycles against the exact installed protocol
   contracts; it returned no confirmed findings and changed nothing.
+
+- [ ] **CF.HF.REL — publish v0.8.1 (2026-09-01, in progress)** — PR #86
+  merged the reviewed repair into `next`; `release/0.8.1` was cut from the
+  v0.8.0 `main` tip and contains only that repair plus the package-version
+  bump. Release-branch gates, the PR into `main`, signed tag, registry-byte
+  verification, published-package smoke, and fixed-snapshot `main` → `next`
+  sync remain.
 
 **Open records (Kyle's calls):**
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
