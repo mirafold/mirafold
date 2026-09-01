@@ -11,6 +11,7 @@ import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-ser
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
 import { OUTPUT_CAP_BYTES } from "./types";
+import { STREAM_CAP_MARKER } from "./codex-events";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -1954,9 +1955,30 @@ test("streamed command output applies the final-output ceiling in UTF-8 bytes, n
     .filter((m) => m.type === "tool_output_delta" && m.id === "bytes")
     .map((m) => m.text)
     .join("");
-  assert.ok(Buffer.byteLength(streamed, "utf8") <= OUTPUT_CAP_BYTES);
-  assert.ok(Buffer.byteLength(streamed, "utf8") >= OUTPUT_CAP_BYTES - 3);
+  // The ceiling holds for the bytes, and crossing it is said exactly once —
+  // an interrupted command settles from this stream (release review 2026-09-01).
+  const body = streamed.replace(STREAM_CAP_MARKER, "");
+  assert.ok(Buffer.byteLength(body, "utf8") <= OUTPUT_CAP_BYTES);
+  assert.ok(Buffer.byteLength(body, "utf8") >= OUTPUT_CAP_BYTES - 3);
+  assert.equal(streamed.split(STREAM_CAP_MARKER).length - 1, 1, "the cap marker appears once");
   assert.doesNotMatch(streamed, /must not pass/);
+  s.close();
+});
+
+test("a stream that lands exactly on the ceiling is marked too, and stays silent after", async () => {
+  const exact = "a".repeat(OUTPUT_CAP_BYTES);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "exact", command: "x", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "exact", delta: exact }],
+    ["item/commandExecution/outputDelta", { itemId: "exact", delta: "after the ceiling" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const streamed = msgs.filter((m) => m.type === "tool_output_delta" && m.id === "exact").map((m) => m.text).join("");
+  assert.equal(streamed.split(STREAM_CAP_MARKER).length - 1, 1);
+  assert.doesNotMatch(streamed, /after the ceiling/);
   s.close();
 });
 
@@ -2051,7 +2073,12 @@ test("engine-sized completion text is capped on every result path (PR #80 review
     const res = msgs.find((m) => m.type === "tool_result" && m.id === id);
     assert.ok(res && res.type === "tool_result", `${id} resolved`);
     assert.ok(Buffer.byteLength(res.output, "utf8") <= OUTPUT_CAP_BYTES + 64, `${id} capped`);
-    assert.ok((res.truncatedBytes ?? 0) > 0, `${id} reports the elision`);
+    // The elision is reported either way: capOutput's byte count, or the
+    // collab fan-out's own "… N more" line (it stops materializing states at
+    // the ceiling rather than building them all first).
+    assert.ok((res.truncatedBytes ?? 0) > 0 || /… \d+ more$/.test(res.output), `${id} reports the elision`);
   }
+  const collab = msgs.find((m) => m.type === "tool_result" && m.id === "cb1");
+  assert.ok(collab && collab.type === "tool_result" && /… \d+ more$/.test(collab.output), "the fan-out was bounded before it was built");
   s.close();
 });

@@ -142,6 +142,14 @@ export class ReplayRing {
    *  tool input) stay shared, so an adapter must not mutate a message after
    *  emitting it. Returns the stamped copy. */
   push(msg: SessionMsg): SessionMsg {
+    // A tool_update replaces its row's structured input wholesale, so only
+    // the latest per row is worth retaining: a burst of growing patch
+    // snapshots must not multiply through the ring and evict the very row
+    // it refreshes (release review 2026-09-01). Live delivery is untouched.
+    if (msg.type === "tool_update") {
+      const stale = this.buffer.findIndex((m) => m.type === "tool_update" && m.id === msg.id);
+      if (stale >= 0) this.bytes -= msgBytes(this.buffer.splice(stale, 1)[0]);
+    }
     const stamped = { ...msg, seq: this.nextSeq++ };
     this.buffer.push(stamped);
     this.bytes += msgBytes(stamped);

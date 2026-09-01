@@ -11,6 +11,11 @@ import { convertMermaidCharts } from "./mermaid-chart";
 
 const log = createLogger("codex-events");
 
+// Reaching the live-output ceiling is said once on the stream itself: an
+// interrupted command settles from that stream, and a silent cut would read
+// as "that was all the output" (release review 2026-09-01).
+export const STREAM_CAP_MARKER = `\n(… live output capped at ${Math.round(OUTPUT_CAP_BYTES / 1000)} KB — the settled result reports how much was cut …)`;
+
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
 // `thread/*`) normalized into SessionMsg. Shapes come from the binary's own
 // schema (`codex app-server generate-json-schema`); the CA.1 spike in
@@ -517,10 +522,12 @@ export class CodexEventMapper {
     const room = OUTPUT_CAP_BYTES - sent;
     const bytes = Buffer.from(delta, "utf8");
     const truncated = bytes.length > room;
+    const reached = bytes.length >= room;
     const text = truncated ? utf8Prefix(bytes, room) : delta;
-    this.streamed.set(itemId, truncated ? OUTPUT_CAP_BYTES : sent + bytes.length);
-    if (!text) return;
-    this.options.emit({ type: "tool_output_delta", id: itemId, text });
+    this.streamed.set(itemId, reached ? OUTPUT_CAP_BYTES : sent + bytes.length);
+    const marker = reached ? STREAM_CAP_MARKER : "";
+    if (!text && !marker) return;
+    this.options.emit({ type: "tool_output_delta", id: itemId, text: text + marker });
   }
 
   /** A collab call (spawn / wait / send…) is a tool row named by the engine's
@@ -552,11 +559,20 @@ export class CodexEventMapper {
       typeof item.agentsStates === "object" && item.agentsStates !== null
         ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
         : [];
-    const lines = states.map(([thread, st]) => {
+    // Engine-sized fan-out: build lines only up to the output ceiling and
+    // say how many were left, instead of materializing every state first
+    // (release review 2026-09-01).
+    const lines: string[] = [];
+    let budget = OUTPUT_CAP_BYTES - 32; // room for the "… N more" line
+    for (const [thread, st] of states) {
       const status = typeof st?.status === "string" ? st.status : "?";
       const message = typeof st?.message === "string" && st.message ? ` — ${firstLine(st.message, 160)}` : "";
-      return `${thread}: ${status}${message}`;
-    });
+      const line = `${thread}: ${status}${message}`;
+      budget -= Buffer.byteLength(line, "utf8") + 1;
+      if (budget < 0) break;
+      lines.push(line);
+    }
+    if (lines.length < states.length) lines.push(`… ${states.length - lines.length} more`);
     const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
     // The state fan-out is engine-sized: capped like every other result.
     const capped = capOutput(lines.join("\n"));

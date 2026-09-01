@@ -110,3 +110,17 @@ test("review 2026-08-29: a cursor canResume accepts is one the replay can actual
     assert.equal(tail[0]?.seq, after + 1, `resume after ${after} must replay from ${after + 1}, no hole`);
   }
 });
+
+test("only the latest tool_update per row is retained; a snapshot burst cannot evict its own row (release review 2026-09-01)", () => {
+  const { r, delivered } = ring();
+  r.offer({ type: "tool_use", name: "apply_patch", id: "p1", input: { changes: [] } });
+  for (let i = 1; i <= 5; i++) {
+    r.offer({ type: "tool_update", id: "p1", input: { changes: [{ path: "a", kind: "update", diff: "x".repeat(i * 100) }] } });
+  }
+  r.offer({ type: "tool_update", id: "p2", input: {} });
+  const updates = r.buffer.filter((m) => m.type === "tool_update");
+  assert.deepEqual(updates.map((m) => m.id), ["p1", "p2"], "one retained update per row");
+  assert.ok(JSON.stringify(updates[0]).includes("x".repeat(500)), "the latest snapshot is the one kept");
+  assert.equal(r.bytes, r.buffer.reduce((n, m) => n + msgBytes(m), 0), "the byte ledger stays exact");
+  assert.equal(delivered.length, 7, "every update was still delivered live");
+});

@@ -65,6 +65,9 @@ export type SubagentProseRow = {
   parentId: string;
   variant: "text" | "thinking";
   text: string;
+  /** Its anchor row was still absent when its turn ended — the row was
+   *  evicted from the replay ring before this viewport attached. */
+  orphaned?: boolean;
 };
 
 export type ThinkingRow = {
@@ -295,6 +298,13 @@ function pickerRow(
   return { ...entry, active };
 }
 
+// A subagent's reasoning stays reasoning (collapsed, never the assistant's
+// voice); its narration reads as commentary.
+const orphanNarration = (entry: SubagentProseRow): TextRow | ThinkingRow =>
+  entry.variant === "thinking"
+    ? { kind: "thinking", id: entry.id, text: entry.text, done: true }
+    : { kind: "text", id: entry.id, role: "assistant", text: entry.text, done: true, phase: "commentary" };
+
 function buildSnapshot(
   entries: readonly TranscriptEntry[],
   previous: TranscriptSnapshot,
@@ -335,7 +345,17 @@ function buildSnapshot(
 
   const rows: OutputZoneRow[] = [];
   for (const entry of entries) {
-    if (entry.kind === "subtext") continue;
+    if (entry.kind === "subtext") {
+      // Anchorless when its turn ended: the anchor is never coming (evicted
+      // from the replay ring before attach) — narrate inline rather than
+      // nowhere. Before the turn ends it stays hidden, since an anchor may
+      // still be on its way.
+      if (entry.orphaned) {
+        const prev = previousById.get(entry.id);
+        rows.push(prev && (prev.kind === "text" || prev.kind === "thinking") && prev.text === entry.text ? prev : orphanNarration(entry));
+      }
+      continue;
+    }
     if (entry.kind === "thinking" || entry.kind === "text") {
       if (!compactedTools.hidden.has(entry.id)) rows.push(entry);
       continue;
@@ -661,8 +681,12 @@ export function createTranscriptProjection(): TranscriptProjection {
         streamingId = null;
         subtextIds.clear();
         const batchId = openToolBatches.shift() ?? orphanToolBatch--;
+        const anchoredToolIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
         entries = entries.map((entry) => {
           if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
+          if (entry.kind === "subtext" && !entry.orphaned && !anchoredToolIds.has(entry.parentId)) {
+            return { ...entry, orphaned: true };
+          }
           if (entry.kind === "tool" && entry.batchId === batchId) {
             return {
               ...entry,
