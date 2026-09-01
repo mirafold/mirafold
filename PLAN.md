@@ -4085,7 +4085,7 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   and the surrounding lifecycles against the exact installed protocol
   contracts; it returned no confirmed findings and changed nothing.
 
-- [ ] **CF.HF.REL — publish v0.8.1 (2026-09-01, in progress)** — PR #86
+- [x] **CF.HF.REL — published v0.8.1 (2026-09-01, complete)** — PR #86
   merged the reviewed repair into `next`; `release/0.8.1` was cut from the
   v0.8.0 `main` tip and contains only that repair plus the package-version
   bump. Release PR #87 passed DCO, CodeQL, Tier 1, Tier 2+3, Cloudflare, and
@@ -4094,8 +4094,11 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   passed the main-tip, signature, version, test, pack-hash, and provenance
   gates; npm serves 0.8.1; the registry tarball SHA-256 equals the signed tag
   (`a5bd80d28968cd62232daf0bb76c6fdd174d4eceb07f96565fceb228f769d994`);
-  published-package smoke passed 9/9. Only fixed-snapshot sync PR #88 into
-  `next` and merged-branch cleanup remain.
+  published-package smoke passed 9/9 and the machine now uses the registry
+  build. Fixed-snapshot sync PR #88 passed DCO, Tier 1, Tier 2+3, Cloudflare,
+  and a head-specific Codex review with no findings, then merged into `next`
+  as `48629c7`; `main` and `next` both carry 0.8.1, and the merged fix,
+  release, and sync branches were deleted.
 
 **Open records (Kyle's calls):**
 - **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
