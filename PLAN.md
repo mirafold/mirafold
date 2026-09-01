@@ -4047,7 +4047,7 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   registry sha256 == tag message, packaged smoke 9/9 against the published
   package; main → next synced (#84); merged branches deleted.
 
-- [x] **CF.HF — v0.8.0 cross-agent startup/event corrective pass
+- [x] **CF.HF — v0.8.1 cross-agent startup/event hotfix
   (2026-09-01, complete)** — branch
   `fix/codex-mcp-startup-handshake` from current `next`. Verified against the
   captured Codex rollout and installed Codex 0.152 / Gemini CLI 0.57 /
@@ -4085,7 +4085,24 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   and the surrounding lifecycles against the exact installed protocol
   contracts; it returned no confirmed findings and changed nothing.
 
+- [ ] **CF.HF.REL — publish v0.8.1 (2026-09-01, in progress)** — PR #86
+  merged the reviewed repair into `next`; `release/0.8.1` was cut from the
+  v0.8.0 `main` tip and contains only that repair plus the package-version
+  bump. Release PR #87 passed DCO, CodeQL, Tier 1, Tier 2+3, Cloudflare, and
+  a completed Codex review with no findings, then merged as `72f6031`.
+  Signed tag `v0.8.1` points exactly there; release workflow #33547726085
+  passed the main-tip, signature, version, test, pack-hash, and provenance
+  gates; npm serves 0.8.1; the registry tarball SHA-256 equals the signed tag
+  (`a5bd80d28968cd62232daf0bb76c6fdd174d4eceb07f96565fceb228f769d994`);
+  published-package smoke passed 9/9. Only fixed-snapshot sync PR #88 into
+  `next` and merged-branch cleanup remain.
+
 **Open records (Kyle's calls):**
+- **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
+  #33547726085 passed, but GitHub annotated the pinned
+  `actions/upload-artifact` v4 commit because its declared Node 20 runtime is
+  deprecated and was forcibly run on Node 24. Review/update that action on a
+  normal branch; it is not part of the emergency runtime hotfix.
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
   full-suite runs (never in isolation; the failing assertion was not
   captured). Same load-sensitive family as IH.F / CR.2; recorded, not
