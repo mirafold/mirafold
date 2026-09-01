@@ -124,3 +124,15 @@ test("only the latest tool_update per row is retained; a snapshot burst cannot e
   assert.equal(r.bytes, r.buffer.reduce((n, m) => n + msgBytes(m), 0), "the byte ledger stays exact");
   assert.equal(delivered.length, 7, "every update was still delivered live");
 });
+
+test("superseding keeps fields an earlier partial tool_update carried (review 2026-09-01)", () => {
+  const { r } = ring();
+  r.offer({ type: "tool_use", name: "apply_patch", id: "p1", input: { changes: [] } });
+  r.offer({ type: "tool_update", id: "p1", detail: "Updated a.ts" });
+  r.offer({ type: "tool_update", id: "p1", input: { changes: [{ path: "a.ts", kind: "update", diff: "+x" }] } });
+  const updates = r.buffer.filter((m) => m.type === "tool_update");
+  assert.equal(updates.length, 1);
+  const kept = updates[0] as Extract<WireMsg, { type: "tool_update" }>;
+  assert.equal(kept.detail, "Updated a.ts", "the earlier update's detail survives");
+  assert.deepEqual(kept.input, { changes: [{ path: "a.ts", kind: "update", diff: "+x" }] }, "the later update's input wins");
+});

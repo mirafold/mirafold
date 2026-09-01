@@ -14,7 +14,9 @@ const log = createLogger("codex-events");
 // Reaching the live-output ceiling is said once on the stream itself: an
 // interrupted command settles from that stream, and a silent cut would read
 // as "that was all the output" (release review 2026-09-01).
-export const STREAM_CAP_MARKER = `\n(… live output capped at ${Math.round(OUTPUT_CAP_BYTES / 1000)} KB — the settled result reports how much was cut …)`;
+export const streamCapMarker = (cap: number) =>
+  `\n(… live output capped at ${Math.round(cap / 1000)} KB — the settled result reports how much was cut …)`;
+export const STREAM_CAP_MARKER = streamCapMarker(OUTPUT_CAP_BYTES);
 
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
 // `thread/*`) normalized into SessionMsg. Shapes come from the binary's own
@@ -125,6 +127,7 @@ export class CodexEventMapper {
   // Streamed tool output (TS.11): UTF-8 bytes forwarded per running item, capped
   // like the final output so a chatty command cannot flood the ring.
   private streamed = new Map<string, number>();
+  private capMarked = new Set<string>();
   // Latest normalized fileChange snapshot per running item. Codex publishes
   // full structured snapshots, not textual patch deltas; the signature keeps
   // duplicate completion snapshots from repainting the same row.
@@ -151,6 +154,8 @@ export class CodexEventMapper {
       workspaceDir: string;
       modelName: () => string | undefined;
       providerDiagnostic: (value: unknown) => string;
+      /** Live-output ceiling per running item; tests set it, production inherits the env cap. */
+      outputCapBytes?: number;
     },
   ) {
     this.checklist = new ChecklistPainter(options.emit);
@@ -187,6 +192,7 @@ export class CodexEventMapper {
     this.prose.clear();
     this.phaseOf.clear();
     this.streamed.clear();
+    this.capMarked.clear();
     this.fileChangeSnapshots.clear();
     this.subagentProse.clear();
     this.thinkingStreamed.clear();
@@ -517,17 +523,26 @@ export class CodexEventMapper {
    *  for a row already announced, capped at the same size as final output. */
   private streamToolOutput(itemId: string, delta: string) {
     if (!delta || !this.announced.has(itemId)) return;
+    const cap = this.options.outputCapBytes ?? OUTPUT_CAP_BYTES;
     const sent = this.streamed.get(itemId) ?? 0;
-    if (sent >= OUTPUT_CAP_BYTES) return;
-    const room = OUTPUT_CAP_BYTES - sent;
+    // Past the ceiling nothing more streams — but the ceiling itself is said
+    // once, even when it was zero to begin with.
+    const marker = this.capMarked.has(itemId) ? "" : streamCapMarker(cap);
+    if (sent >= cap) {
+      if (marker) {
+        this.capMarked.add(itemId);
+        this.options.emit({ type: "tool_output_delta", id: itemId, text: marker });
+      }
+      return;
+    }
+    const room = cap - sent;
     const bytes = Buffer.from(delta, "utf8");
     const truncated = bytes.length > room;
     const reached = bytes.length >= room;
     const text = truncated ? utf8Prefix(bytes, room) : delta;
-    this.streamed.set(itemId, reached ? OUTPUT_CAP_BYTES : sent + bytes.length);
-    const marker = reached ? STREAM_CAP_MARKER : "";
-    if (!text && !marker) return;
-    this.options.emit({ type: "tool_output_delta", id: itemId, text: text + marker });
+    this.streamed.set(itemId, reached ? cap : sent + bytes.length);
+    if (reached) this.capMarked.add(itemId);
+    this.options.emit({ type: "tool_output_delta", id: itemId, text: text + (reached ? marker : "") });
   }
 
   /** A collab call (spawn / wait / send…) is a tool row named by the engine's

@@ -305,6 +305,18 @@ const orphanNarration = (entry: SubagentProseRow): TextRow | ThinkingRow =>
     ? { kind: "thinking", id: entry.id, text: entry.text, done: true }
     : { kind: "text", id: entry.id, role: "assistant", text: entry.text, done: true, phase: "commentary" };
 
+/** At a turn's end, narration whose anchor row is still absent is never
+ *  getting one (evicted before this viewport attached): mark it orphaned so
+ *  the snapshot narrates it inline. Entries already anchored are untouched. */
+function orphanAnchorless(entries: readonly TranscriptEntry[]): TranscriptEntry[] {
+  const anchoredToolIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
+  return entries.map((entry) =>
+    entry.kind === "subtext" && !entry.orphaned && !anchoredToolIds.has(entry.parentId)
+      ? { ...entry, orphaned: true }
+      : entry,
+  );
+}
+
 function buildSnapshot(
   entries: readonly TranscriptEntry[],
   previous: TranscriptSnapshot,
@@ -681,12 +693,8 @@ export function createTranscriptProjection(): TranscriptProjection {
         streamingId = null;
         subtextIds.clear();
         const batchId = openToolBatches.shift() ?? orphanToolBatch--;
-        const anchoredToolIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
-        entries = entries.map((entry) => {
+        entries = orphanAnchorless(entries).map((entry) => {
           if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
-          if (entry.kind === "subtext" && !entry.orphaned && !anchoredToolIds.has(entry.parentId)) {
-            return { ...entry, orphaned: true };
-          }
           if (entry.kind === "tool" && entry.batchId === batchId) {
             return {
               ...entry,
@@ -711,9 +719,11 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "error": {
+        // A terminal error ends the turn without a turn_end (the adapter-crash
+        // path): anchorless narration is just as orphaned here.
         streamingId = null;
         entries = [
-          ...entries,
+          ...orphanAnchorless(entries),
           {
             kind: "text",
             id: nextTranscriptId++,

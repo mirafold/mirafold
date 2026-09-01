@@ -11,7 +11,7 @@ import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-ser
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
 import { OUTPUT_CAP_BYTES } from "./types";
-import { STREAM_CAP_MARKER } from "./codex-events";
+import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -2081,4 +2081,23 @@ test("engine-sized completion text is capped on every result path (PR #80 review
   const collab = msgs.find((m) => m.type === "tool_result" && m.id === "cb1");
   assert.ok(collab && collab.type === "tool_result" && /… \d+ more$/.test(collab.output), "the fan-out was bounded before it was built");
   s.close();
+});
+
+test("a zero live-output budget still says the ceiling was hit, once (review 2026-09-01)", () => {
+  const emitted: WireMsg[] = [];
+  const mapper = new CodexEventMapper({
+    emit: (m) => emitted.push(m as WireMsg),
+    workspaceDir: tmp,
+    modelName: () => undefined,
+    providerDiagnostic: (v) => String(v),
+    outputCapBytes: 0,
+  });
+  mapper.handle("turn/started", {});
+  mapper.handle("item/started", { item: { type: "commandExecution", id: "c0", command: "x", status: "inProgress" } });
+  mapper.handle("item/commandExecution/outputDelta", { itemId: "c0", delta: "first bytes" });
+  mapper.handle("item/commandExecution/outputDelta", { itemId: "c0", delta: "more bytes" });
+  const deltas = emitted
+    .filter((m): m is Extract<WireMsg, { type: "tool_output_delta" }> => m.type === "tool_output_delta" && m.id === "c0")
+    .map((m) => m.text);
+  assert.deepEqual(deltas, [streamCapMarker(0)], "exactly one marker, no output bytes");
 });

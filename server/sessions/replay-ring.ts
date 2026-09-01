@@ -146,11 +146,21 @@ export class ReplayRing {
     // the latest per row is worth retaining: a burst of growing patch
     // snapshots must not multiply through the ring and evict the very row
     // it refreshes (release review 2026-09-01). Live delivery is untouched.
+    let retained: SessionMsg = msg;
     if (msg.type === "tool_update") {
-      const stale = this.buffer.findIndex((m) => m.type === "tool_update" && m.id === msg.id);
-      if (stale >= 0) this.bytes -= msgBytes(this.buffer.splice(stale, 1)[0]);
+      const id = msg.id;
+      const stale = this.buffer.findIndex((m) => m.type === "tool_update" && m.id === id);
+      if (stale >= 0) {
+        const [prior] = this.buffer.splice(stale, 1);
+        this.bytes -= msgBytes(prior);
+        // `detail` and `input` are independently optional on the wire, so the
+        // one retained update carries every field the row has been told,
+        // latest value winning — a late attacher sees what a live viewport saw.
+        const { seq: _seq, ...carried } = prior as SessionMsg & { seq?: number };
+        retained = { ...carried, ...msg } as SessionMsg;
+      }
     }
-    const stamped = { ...msg, seq: this.nextSeq++ };
+    const stamped = { ...retained, seq: this.nextSeq++ };
     this.buffer.push(stamped);
     this.bytes += msgBytes(stamped);
     this.trim();

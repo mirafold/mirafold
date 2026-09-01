@@ -637,3 +637,16 @@ test("an orphaned subagent's reasoning is a thinking row, never the assistant sp
   assert.equal(rows.filter((r) => r.kind === "text" && r.role === "assistant").length, 0, "reasoning never reads as prose");
   assert.deepEqual(rows.filter((r) => r.kind === "thinking").map((r) => r.kind === "thinking" && r.text), ["secret child reasoning"]);
 });
+
+test("a turn that dies by error orphans anchorless narration the same as turn_end (review 2026-09-01)", () => {
+  const result = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "text_delta", text: "child says hi\n", parentId: "evicted-task" },
+      { type: "error", message: "adapter crashed" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const texts = result.snapshot.rows.filter((r): r is TextRow => r.kind === "text" && r.role === "assistant").map((r) => r.text);
+  assert.deepEqual(texts, ["child says hi\n", "**Error:** adapter crashed"]);
+});
