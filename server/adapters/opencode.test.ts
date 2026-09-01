@@ -1174,7 +1174,7 @@ test("BUGFIX: one transport start per engine, even across policy-failure retries
 });
 
 test("BUGFIX: an interrupt during startup cancels the send — no ghost turn", async () => {
-  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  const { session, fake, feed, awaitTurnEnd } = makeSession();
   let releaseStart: () => void = () => {};
   const origStart = fake.start.bind(fake);
   fake.start = async (cb) => {

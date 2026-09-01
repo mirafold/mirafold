@@ -9,7 +9,7 @@ import type { ConnectionContext } from "./handler-context";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ClientMsg, WireMsg } from "../protocol";
+import type { ClientMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { CLIENT_ID_RE } from "./fs-handlers";
 import { spawnBang } from "../pty/pty";

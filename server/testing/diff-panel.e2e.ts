@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
-import type { ClientMsg } from "../protocol";
 import { assertApartOnScreen, assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 import { fixtureGit as git, startDaemon, type Daemon, createSession as seedSession } from "./itest-harness";
 
