@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentName, PromptOption } from "@protocol";
-import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
+import { ActivityLine, activityLabel } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
 import { FolderTreeGlyph } from "./FolderTreeGlyph";

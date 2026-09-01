@@ -61,5 +61,3 @@ export function createDaemonClient(socket: SocketClient) {
     },
   };
 }
-
-export type DaemonClient = ReturnType<typeof createDaemonClient>;

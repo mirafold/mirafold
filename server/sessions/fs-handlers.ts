@@ -17,8 +17,7 @@ import path from "node:path";
 import { createLogger } from "../log";
 import type { ConnectionContext } from "./handler-context";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../throttle";
-import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
-import type { SessionEntry } from "./registry";
+import type { ClientMsg, FsDirEntry, FsEntry } from "../protocol";
 import {
   capBuffer,
   contentRevision,

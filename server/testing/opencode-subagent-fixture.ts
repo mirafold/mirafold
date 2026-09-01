@@ -18,12 +18,6 @@
 //  - child session.idle fires BEFORE the parent task part completes and
 //    long before parent session.idle
 
-/** The two session ids the capture uses. */
-export const SUBAGENT_FIXTURE_IDS = {
-  root: "ses_sa0probe00000000000root",
-  child: "ses_sa0probe0000000000child",
-} as const;
-
 /** The captured sequence, in arrival order. */
 export const OPENCODE_SUBAGENT_EVENTS: {
   type: string;
