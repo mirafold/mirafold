@@ -3996,6 +3996,56 @@ here, not chased on this branch.
 
 ---
 
+## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)
+
+Branch `fix/cockpit-follow-ups`, cut from `next` at 2411d35. Five items Kyle
+named from daily use, each pinned in Tier 3 and falsified both ways:
+
+- [x] **CF.1 — No flash on a session switch** — the transcript catch-up
+  scroll runs in a layout effect (inside the commit, before paint); a
+  switched-to session appears already at the tail. `follow-tail.e2e.ts`
+  samples the scroller from a MutationObserver across the reload path.
+- [x] **CF.2 — Pins survive leaving and returning** — `pin-store.ts`, one
+  localStorage key per session, restored from the URL's id at mount and
+  saved once Shell's session key arrives; the dock exists only for
+  paintings actually present; a fallback attach never inherits a dead
+  session's pins and drops that key; `session_ended` drops the key.
+- [x] **CF.3 — Rename in the cockpit panel** — one shared `SessionName`
+  component serves FleetView and the cockpit (pencil → input; Enter/blur
+  commit, Escape cancel; the id-addressed `rename` message).
+- [x] **CF.4 — Transcript gutter beside open panels** — `.zone-outer >
+  .zone-row:not(:first-child)` adds the frame's `--content-air`
+  (12 → 24 px from the panel edge).
+- [x] **CF.5 — Copy buttons on paintings** — the frame's pin button sat
+  over the copy button (hit-testable while faded out) and swallowed every
+  click, in every build; frames now publish `--pin-reserve` and the code/
+  console heads consume it. Separately, Mirafold Desktop's default-deny
+  permission policy refuses the async clipboard write, so `copyText`
+  falls back to the gesture-gated selection copy and every copy surface
+  shows "copied" / "copy failed" (`useCopyFeedback`), never a dead click.
+- [x] **CF.R — quality pass + bughunt (2026-08-31)** — four-angle simplify
+  review applied (shared component, structural selectors, token
+  inversion, lazy-initializer restore, one copy hook); its cold review
+  caught a stuck-empty-dock class (fixed, CF.2 wording above); the
+  bughunt found and fixed the dead-session key leak. Gates on the final
+  tree: typecheck; Tier 1 1,097/1,097; visual 11/11; Tier 3 130/130.
+
+**Open records (Kyle's calls):**
+- **Intermittent:** the artifact-pin e2e failed once in eight clean
+  full-suite runs (never in isolation; the failing assertion was not
+  captured). Same load-sensitive family as IH.F / CR.2; recorded, not
+  chased. A deterministic same-task pin+reload probe disproved the
+  "passive save lost to navigation" mechanism.
+- **Residual leak (bounded):** a session ended while no tab of this
+  browser is attached keeps its pin key until that id is next visited
+  (the fallback cleanup then drops it). Closing it fully needs a
+  fleet-side sweep — "key whose id is absent from the sessions snapshot"
+  — on the watcher socket; a separate design step.
+- **Mirafold Desktop:** granting `clipboard-sanitized-write` for the
+  trusted daemon frame (the way it grants notifications) would let the
+  modern API work there directly instead of via the fallback. Its own
+  repo, its own permission tests.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
