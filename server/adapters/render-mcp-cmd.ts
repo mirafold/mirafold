@@ -133,15 +133,43 @@ export function generativeUIMsg(
 
 /**
  * How to spawn the stdio render-MCP server (server/render-mcp.ts) for engines
- * that load MCP servers as subprocesses (Codex, Gemini CLI). Two homes:
+ * that load MCP servers as subprocesses (Codex, Gemini CLI, OpenCode). Two homes:
  * - Packaged install: the esbuild bundle emits render-mcp.js BESIDE this
  *   code (dist-server/) — run it with the daemon's own node binary.
  * - Dev checkout: no compiled twin exists — run the TS source under the
  *   repo's tsx.
  */
-export function renderMcpCommand(): { command: string; args: string[] } {
+export type RenderMcpLaunch = {
+  command: string;
+  args: string[];
+  /** Added by each engine to this MCP subprocess only, never to the engine. */
+  childEnv?: Record<string, string>;
+};
+
+type RenderMcpRuntime = {
+  execPath: string;
+  electron?: string;
+  compiledExists: (file: string) => boolean;
+};
+
+export function renderMcpCommand(
+  runtime: RenderMcpRuntime = {
+    execPath: process.execPath,
+    electron: process.versions.electron,
+    compiledExists: existsSync,
+  },
+): RenderMcpLaunch {
   const compiled = path.join(HERE, "render-mcp.js");
-  if (existsSync(compiled)) return { command: process.execPath, args: [compiled] };
+  if (runtime.compiledExists(compiled)) {
+    const launch: RenderMcpLaunch = { command: runtime.execPath, args: [compiled] };
+    // Desktop's daemon runs under Electron-as-Node, then deliberately removes
+    // the ambient switch before agents start. Re-enable Node mode only for the
+    // compiled render-MCP child that reuses that Electron executable.
+    if (runtime.electron && launch.command === runtime.execPath) {
+      launch.childEnv = { ELECTRON_RUN_AS_NODE: "1" };
+    }
+    return launch;
+  }
   return {
     command: path.resolve(HERE, "..", "..", "node_modules", ".bin", "tsx"),
     args: [path.resolve(HERE, "..", "render-mcp.ts")],

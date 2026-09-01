@@ -9,7 +9,7 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
 import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
-import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
+import { renderMcpCommand, MIRAFOLD_MCP, type RenderMcpLaunch } from "./render-mcp-cmd";
 import {
   OpenCodeServerProcess,
   type OpenCodeCommandEntry,
@@ -38,6 +38,16 @@ const MAX_PENDING_PERMISSIONS = 64;
 // prompt-option limit (session-store MAX_PROMPT_OPTIONS) so a user config
 // with a huge /command list can't advertise more than survives a restart.
 const MAX_ENGINE_COMMANDS = 500;
+
+/** OpenCode's native local-MCP schema calls its child environment `environment`. */
+export function openCodeRenderMcpConfig(render: RenderMcpLaunch = renderMcpCommand()) {
+  return {
+    type: "local",
+    command: [render.command, ...render.args],
+    ...(render.childEnv ? { environment: render.childEnv } : {}),
+    enabled: true,
+  };
+}
 
 /**
  * The OpenCode adapter: the opencode engine driven through its own
@@ -184,14 +194,9 @@ export class OpenCodeSession implements AgentSession {
     this.resumeIdState = new ResumeIdState(opts.resumeId);
     this.permissionTimeoutMs = opts.permissionTimeoutMs ?? PERMISSION_TIMEOUT_MS;
     this.interruptGraceMs = opts.interruptGraceMs ?? INTERRUPT_GRACE_MS;
-    const render = renderMcpCommand();
     const configContent = {
       mcp: {
-        [MIRAFOLD_MCP]: {
-          type: "local",
-          command: [render.command, ...render.args],
-          enabled: true,
-        },
+        [MIRAFOLD_MCP]: openCodeRenderMcpConfig(),
       },
     };
     this.transport =
