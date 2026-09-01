@@ -255,6 +255,29 @@ export class CodexEventMapper {
           this.options.emit({ type: "notice", text: this.options.providerDiagnostic(p["message"]), kind: "warning", source: "codex" });
         }
         break;
+      case "mcpServer/startupStatus/updated":
+        // User-configured MCP servers remain Codex's administration. The one
+        // server Mirafold itself injects is different: without it the model
+        // cannot honor the render guidance, so surface Codex's exact startup
+        // diagnostic instead of leaving the user with missing tools.
+        if (
+          p["name"] === MIRAFOLD_MCP &&
+          p["status"] === "failed"
+        ) {
+          const detail =
+            typeof p["error"] === "string" && p["error"]
+              ? this.options.providerDiagnostic(p["error"])
+              : "Codex reported no diagnostic.";
+          this.options.emit({
+            type: "notice",
+            text:
+              "Mirafold render tools failed to start: " +
+              inertToken(detail, 500),
+            kind: "warning",
+            source: "codex",
+          });
+        }
+        break;
       case "model/rerouted": {
         const to = typeof p["toModel"] === "string" ? p["toModel"] : typeof p["model"] === "string" ? p["model"] : "";
         const from = typeof p["fromModel"] === "string" ? p["fromModel"] : "";

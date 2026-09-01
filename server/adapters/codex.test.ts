@@ -410,6 +410,10 @@ test("the render guidance rides thread/start as developerInstructions; turns car
   assert.ok(instructions.includes("tool_search"));
   assert.ok(instructions.includes("tools.mcp__mirafold__render_table("));
   assert.ok(instructions.includes("ALL_TOOLS"));
+  assert.match(instructions, /only after the\s+`mirafold` MCP server starts/);
+  assert.ok(instructions.includes("Never use `list_mcp_resources`"));
+  assert.ok(instructions.includes("do not retry discovery"));
+  assert.doesNotMatch(instructions, /ALWAYS available|never missing/);
   assert.equal(starts[0].params.cwd, tmp);
   // Faithful skin: no sandbox / approval policy of our own.
   assert.equal(starts[0].params.sandbox, undefined);
@@ -982,6 +986,25 @@ test("a retried engine error and a warning are attributed notices; the turn keep
   s.close();
 });
 
+test("a failed Mirafold MCP startup surfaces Codex's exact diagnostic", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["mcpServer/startupStatus/updated", {
+      name: MIRAFOLD_MCP,
+      status: "failed",
+      error: "handshaking with MCP server failed: connection closed",
+    }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const notice = msgs.find((m) => m.type === "notice");
+  assert.equal(notice?.kind, "warning");
+  assert.equal(notice?.source, "codex");
+  assert.match(notice?.text ?? "", /Mirafold render tools failed to start/);
+  assert.match(notice?.text ?? "", /connection closed/);
+  s.close();
+});
+
 test("app-server dies mid-turn: one error, one turn_end, and the next prompt respawns and RESUMES the thread", async () => {
   const { s, msgs, server, turnEnds, awaitTurnEnd } = makeSession(
     async (ctx) => {
@@ -1240,16 +1263,14 @@ function withEnvVar(name: string, value: string | undefined, fn: () => void) {
 const withOpenAiKey = (value: string | undefined, fn: () => void) =>
   withEnvVar("OPENAI_API_KEY", value, fn);
 
-test("F.10: the installed Codex executable runs the app-server", () => {
+test("F.10: the installed Codex executable runs app-server with a required, stable renderer", () => {
   withEnvVar("MIRAFOLD_CODEX_BIN", "/operator/chosen/codex", () => {
     const spec = capturedSpawn({ kind: "subscription" });
     assert.equal(spec.command, "/operator/chosen/codex");
     assert.equal(spec.args[0], "app-server");
-    assert.equal(
-      configOf(spec).features?.apply_patch_streaming_events,
-      true,
-      "the process must enable current Codex's structured live patch snapshots",
-    );
+    const config = configOf(spec);
+    assert.equal(config.features?.apply_patch_streaming_events, undefined);
+    assert.equal(config.mcp_servers?.[MIRAFOLD_MCP]?.required, true);
   });
 });
 
@@ -1568,6 +1589,7 @@ test("a failed engine start does not burn anything: the retry spawns afresh and 
   await waitForTurnEnds(msgs, 1);
   assert.ok(msgs.some((m) => m.type === "error" && m.message.includes("codex binary missing")), "the failure itself surfaced");
   assert.equal(server.prompts().length, 0);
+  assert.equal(server.clients[0]?.exited, true, "the failed app-server is killed before retry");
 
   s.pushPrompt("second ask");
   // This fake fails every start the same way; what must hold is the shape:

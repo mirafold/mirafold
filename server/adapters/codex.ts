@@ -488,8 +488,11 @@ export class CodexSession implements AgentSession {
     })();
     this.threadReady.catch(() => {
       // A failed start is reported by the turn that needed it; the next turn
-      // tries again from a fresh process.
-      if (this.client === client) this.threadReady = undefined;
+      // tries again from a fresh process. Kill this attempt before clearing
+      // the reference: initialize/thread-start rejection does not imply the
+      // app-server process exited, and overwriting a live client would orphan
+      // it for the rest of the Mirafold session.
+      this.abandonAppServer(client);
     });
     return this.threadReady;
   }

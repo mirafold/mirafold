@@ -74,6 +74,10 @@ export class GeminiCliSession implements AgentSession {
   private announced = new Set<string>();
   private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Gemini CLI", (m) => createLogger("gemini-cli").warn(m));
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
+  // The latest nonfatal stream-json error event in this turn. Gemini 0.57
+  // can repeat it as a terminal result error (or omit result.error entirely),
+  // so retain it long enough to report the outcome once and with real words.
+  private streamErrorMessage?: string;
   // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
   // yes is remembered on disk, so later turns never reach it.
@@ -443,6 +447,7 @@ export class GeminiCliSession implements AgentSession {
 
   private spawnTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
+      this.streamErrorMessage = undefined;
       // The headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
       // ahead of the first turn instead — the only injection point this engine
@@ -455,7 +460,12 @@ export class GeminiCliSession implements AgentSession {
       // the prompt (no stdout event: the exit-42 id-mode collision, a spawn
       // failure, bad auth).
       if (inject) this.guidance.delivered();
-      const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
+      // Do not pass --allowed-mcp-server-names here. Despite its approval-
+      // sounding name, Gemini 0.57 uses it as a server allowlist; naming only
+      // Mirafold silently removes every MCP server the user configured. Our
+      // injected entry is already the only one we mark `trust: true`; all
+      // other servers keep the user's own settings and terminal behavior.
+      const args = ["-p", prompt, "-o", "stream-json"];
       if (this.model) args.push("-m", this.model);
       // `resumed` is THIS turn's mode; `started` is optimistic (set before the
       // child confirms anything) and self-corrected on close below.
@@ -662,9 +672,42 @@ export class GeminiCliSession implements AgentSession {
         break;
       }
       case "error":
-        if (typeof ev["message"] === "string") this.emit({ type: "error", message: ev["message"] as string });
+        if (typeof ev["message"] === "string" && ev["message"]) {
+          const message = ev["message"] as string;
+          if (ev["severity"] === "warning") {
+            // Gemini explicitly continues after these (loop detection,
+            // blocked agent work, quota advisories). A terminal error would
+            // close the browser's turn while later output is still arriving.
+            this.emit({
+              type: "notice",
+              text: message,
+              kind: "warning",
+              source: "gemini-cli",
+            });
+          } else {
+            // Severity "error" is still an in-stream diagnostic in Gemini's
+            // contract. The eventual result/child close owns the turn end.
+            this.streamErrorMessage = message;
+            this.emit({ type: "error", message, terminal: false });
+          }
+        }
         break;
       case "result": {
+        if (ev["status"] === "error") {
+          const error = (ev["error"] ?? {}) as Record<string, unknown>;
+          const message =
+            typeof error["message"] === "string" && error["message"]
+              ? (error["message"] as string)
+              : this.streamErrorMessage;
+          // A preceding severity:error already painted the useful text as a
+          // nonterminal error; turn_end will settle it. Fatal 0.57 failures
+          // arrive only here, after init made the old stderr fallback inert.
+          if (message && message !== this.streamErrorMessage) {
+            this.emit({ type: "error", message });
+          } else if (!message) {
+            this.emit({ type: "error", message: "Gemini CLI ended the turn with an error." });
+          }
+        }
         const stats = (ev["stats"] ?? {}) as Record<string, unknown>;
         const model = this.honestModel(stats["models"]);
         // The refinement must land on modelLabel too — modelName is what the

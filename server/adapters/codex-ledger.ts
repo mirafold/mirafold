@@ -47,6 +47,7 @@ export const CODEX_HANDLED_METHODS = [
   "configWarning",
   "guardianWarning",
   "model/rerouted",
+  "mcpServer/startupStatus/updated",
 ] as const;
 export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "thread/started": "the session consumes it on thread/start",
@@ -79,7 +80,6 @@ export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "process/exited": "background process plumbing not represented in the transcript",
   "item/commandExecution/terminalInteraction": "interactive-terminal plumbing not represented in the transcript",
   "mcpServer/oauthLogin/completed": "MCP server administration",
-  "mcpServer/startupStatus/updated": "MCP server administration",
   "mcpServer/event/stream/notification": "MCP server administration",
   "account/updated": "account administration",
   "account/login/completed": "account administration",

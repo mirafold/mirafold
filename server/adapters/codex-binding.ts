@@ -61,9 +61,9 @@ export function codexEngineDefaultModel(
 }
 
 /** The per-process config every Codex session passes as `-c` overrides:
- *  Mirafold's render MCP server, live structured patch snapshots, the
- *  provider the pick promised, and — for an API-key pick — the auth mode
- *  that makes app-server honor the env key.
+ *  Mirafold's required render MCP server, the provider the pick promised,
+ *  and — for an API-key pick — the auth mode that makes app-server honor the
+ *  env key.
  *  Everything else (sandbox, approvals, model defaults, the user's own MCP
  *  servers) is inherited from `~/.codex/config.toml` untouched. */
 export function codexSessionConfig(
@@ -71,14 +71,15 @@ export function codexSessionConfig(
   binding: Record<string, unknown>,
 ): Record<string, unknown> {
   return {
-    // Current app-server keeps structured patchUpdated notifications behind
-    // this feature. Process-local only: completion remains the authoritative
-    // fallback, and no value is persisted into the user's config.toml.
-    features: { apply_patch_streaming_events: true },
     mcp_servers: {
       [MIRAFOLD_MCP]: {
         command: RENDER_MCP.command,
         args: RENDER_MCP.args,
+        // A turn whose renderer never initialized cannot honor Mirafold's
+        // structured-output contract. Codex's stable `required` setting makes
+        // thread/start wait for this server and reject before model inference
+        // if startup fails; the next prompt can retry with a fresh process.
+        required: true,
         // Mirafold's own render tools only emit validated UI messages; the
         // headless engine cannot prompt for their approval.
         default_tools_approval_mode: "approve",
