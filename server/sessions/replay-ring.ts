@@ -142,7 +142,29 @@ export class ReplayRing {
    *  tool input) stay shared, so an adapter must not mutate a message after
    *  emitting it. Returns the stamped copy. */
   push(msg: SessionMsg): SessionMsg {
-    const stamped = { ...msg, seq: this.nextSeq++ };
+    // A tool_update replaces its row's structured input wholesale, so only
+    // the latest per row is worth retaining: a burst of growing patch
+    // snapshots must not multiply through the ring and evict the very row
+    // it refreshes (release review 2026-09-01). A live viewport receives the
+    // same merged copy — idempotent for it, since it applies only present fields.
+    let retained: SessionMsg = msg;
+    if (msg.type === "tool_update") {
+      const id = msg.id;
+      const stale = this.buffer.findIndex((m) => m.type === "tool_update" && m.id === id);
+      if (stale >= 0) {
+        const [prior] = this.buffer.splice(stale, 1);
+        this.bytes -= msgBytes(prior);
+        // `detail` and `input` are independently optional on the wire, so the
+        // one retained update carries every field the row has been told,
+        // latest value winning — a late attacher sees what a live viewport saw.
+        const { seq: _seq, ...carried } = prior as SessionMsg & { seq?: number };
+        // An explicitly-undefined field in the newer update is "unchanged",
+        // never "erase what the earlier one carried".
+        const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
+        retained = { ...carried, ...present } as SessionMsg;
+      }
+    }
+    const stamped = { ...retained, seq: this.nextSeq++ };
     this.buffer.push(stamped);
     this.bytes += msgBytes(stamped);
     this.trim();
