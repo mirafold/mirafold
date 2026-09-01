@@ -129,6 +129,28 @@ test("Gemini remains supported without a Mirafold retirement notice", async () =
   s.close();
 });
 
+test("Gemini inherits the user's MCP server set instead of allowlisting only Mirafold", async () => {
+  const argsLog = path.join(tmp, "mcp-inheritance-args.txt");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  fixture("mcp-inheritance.jsonl", [
+    { type: "result", status: "success", stats: { input_tokens: 1, output_tokens: 1 } },
+  ]);
+  const { s, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("hello");
+    await awaitTurnEnd();
+    const args = spawnArgs(argsLog);
+    assert.equal(
+      args.includes("--allowed-mcp-server-names"),
+      false,
+      "the CLI flag is an allowlist that blocks every user-configured MCP server not named Mirafold",
+    );
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    s.close();
+  }
+});
+
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
   // Unparseable: construction touches NOTHING. Only once a turn actually runs
   // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.
@@ -294,6 +316,7 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
 
   assert.equal(msgs.filter((m) => m.type === "render" || m.type === "artifact").length, 2);
   assert.equal(msgs.find((m) => m.type === "error")!.message, "minor complaint");
+  assert.equal(msgs.find((m) => m.type === "error")!.terminal, false);
 
   const usage = msgs.find((m) => m.type === "usage")!;
   assert.equal(usage.model, "gemini-2.5-pro"); // init set the label
@@ -302,6 +325,51 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
 
   assert.equal(turnEnds(), 1);
   assert.equal(msgs[msgs.length - 1].type, "turn_end");
+  s.close();
+});
+
+test("Gemini 0.57 warnings stay nonfatal and attributed while the turn continues", async () => {
+  fixture("warning.jsonl", [
+    { type: "init", model: "gemini-2.5-pro" },
+    { type: "error", severity: "warning", message: "Loop detected, stopping execution" },
+    { type: "message", role: "assistant", content: "the reply still arrived" },
+    { type: "result", status: "success", stats: { input_tokens: 2, output_tokens: 3 } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.equal(msgs.some((m) => m.type === "error"), false);
+  const notice = msgs.find((m) => m.type === "notice");
+  assert.deepEqual(
+    notice && { text: notice.text, kind: notice.kind, source: notice.source },
+    {
+      text: "Loop detected, stopping execution",
+      kind: "warning",
+      source: "gemini-cli",
+    },
+  );
+  assert.equal(msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join(""), "the reply still arrived");
+  s.close();
+});
+
+test("Gemini 0.57 fatal result errors surface even after stdout init", async () => {
+  fixture("fatal-result.jsonl", [
+    { type: "init", model: "gemini-2.5-pro" },
+    {
+      type: "result",
+      status: "error",
+      error: { type: "FatalAuthenticationError", message: "Authentication required." },
+      stats: { input_tokens: 0, output_tokens: 0 },
+    },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const errors = msgs.filter((m) => m.type === "error");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].message, "Authentication required.");
+  assert.equal(errors[0].terminal, undefined);
+  assert.equal(msgs.filter((m) => m.type === "usage").length, 1);
   s.close();
 });
 
