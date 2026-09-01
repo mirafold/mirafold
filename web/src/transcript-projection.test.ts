@@ -650,3 +650,20 @@ test("a turn that dies by error orphans anchorless narration the same as turn_en
   const texts = result.snapshot.rows.filter((r): r is TextRow => r.kind === "text" && r.role === "assistant").map((r) => r.text);
   assert.deepEqual(texts, ["child says hi\n", "**Error:** adapter crashed"]);
 });
+
+test("a request-scoped error (terminal: false) ends no turn, so it orphans nothing (cold review 2026-09-01)", () => {
+  const result = createTranscriptProjection().apply(
+    [
+      { type: "user_prompt", text: "go" },
+      { type: "text_delta", text: "child hi\n", parentId: "task" },
+      { type: "error", message: "requests are arriving too fast", terminal: false },
+      { type: "tool_use", name: "Agent", detail: "delegate", id: "task", input: {} },
+      { type: "tool_result", output: "done", id: "task" },
+      { type: "turn_end" },
+    ] as ZoneMsg[],
+    () => 0,
+  );
+  const rows = result.snapshot.rows;
+  assert.equal(rows.filter((r) => r.kind === "text" && r.role === "assistant" && r.text.startsWith("child")).length, 0, "not narrated inline");
+  assert.equal(rows.filter((r) => r.kind === "subagent-deck").length, 1, "grouped under its anchor once it lands");
+});

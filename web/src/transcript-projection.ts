@@ -720,10 +720,12 @@ export function createTranscriptProjection(): TranscriptProjection {
       }
       case "error": {
         // A terminal error ends the turn without a turn_end (the adapter-crash
-        // path): anchorless narration is just as orphaned here.
+        // path): anchorless narration is just as orphaned here. A
+        // request-scoped error (terminal: false) ends nothing — same reading
+        // as turn-busy and the daemon's session state.
         streamingId = null;
         entries = [
-          ...orphanAnchorless(entries),
+          ...(msg.terminal === false ? entries : orphanAnchorless(entries)),
           {
             kind: "text",
             id: nextTranscriptId++,

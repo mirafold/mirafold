@@ -145,7 +145,8 @@ export class ReplayRing {
     // A tool_update replaces its row's structured input wholesale, so only
     // the latest per row is worth retaining: a burst of growing patch
     // snapshots must not multiply through the ring and evict the very row
-    // it refreshes (release review 2026-09-01). Live delivery is untouched.
+    // it refreshes (release review 2026-09-01). A live viewport receives the
+    // same merged copy — idempotent for it, since it applies only present fields.
     let retained: SessionMsg = msg;
     if (msg.type === "tool_update") {
       const id = msg.id;
@@ -157,7 +158,10 @@ export class ReplayRing {
         // one retained update carries every field the row has been told,
         // latest value winning — a late attacher sees what a live viewport saw.
         const { seq: _seq, ...carried } = prior as SessionMsg & { seq?: number };
-        retained = { ...carried, ...msg } as SessionMsg;
+        // An explicitly-undefined field in the newer update is "unchanged",
+        // never "erase what the earlier one carried".
+        const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
+        retained = { ...carried, ...present } as SessionMsg;
       }
     }
     const stamped = { ...retained, seq: this.nextSeq++ };

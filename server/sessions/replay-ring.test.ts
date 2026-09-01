@@ -136,3 +136,13 @@ test("superseding keeps fields an earlier partial tool_update carried (review 20
   assert.equal(kept.detail, "Updated a.ts", "the earlier update's detail survives");
   assert.deepEqual(kept.input, { changes: [{ path: "a.ts", kind: "update", diff: "+x" }] }, "the later update's input wins");
 });
+
+test("an explicitly-undefined field in a superseding tool_update does not erase the carried value (cold review 2026-09-01)", () => {
+  const { r } = ring();
+  r.offer({ type: "tool_use", name: "apply_patch", id: "p1", input: {} });
+  r.offer({ type: "tool_update", id: "p1", detail: "Updated a.ts" });
+  r.offer({ type: "tool_update", id: "p1", detail: undefined, input: { changes: [] } });
+  const kept = r.buffer.find((m) => m.type === "tool_update") as Extract<WireMsg, { type: "tool_update" }>;
+  assert.equal(kept.detail, "Updated a.ts");
+  assert.deepEqual(kept.input, { changes: [] });
+});
