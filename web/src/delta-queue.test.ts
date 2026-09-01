@@ -53,6 +53,28 @@ test("SA.2: a different parentId never merges — parallel subagents keep their 
   ]);
 });
 
+test("TS.8: phase survives batching and commentary never merges into a final answer", () => {
+  const q: QueuedDelta[] = [];
+  queueDelta(q, { type: "text_delta", text: "check", phase: "commentary" });
+  queueDelta(q, { type: "text_delta", text: "ing", phase: "commentary" });
+  queueDelta(q, { type: "text_delta", text: "answer", phase: "final" });
+  assert.deepEqual(q, [
+    { type: "text_delta", text: "checking", phase: "commentary" },
+    { type: "text_delta", text: "answer", phase: "final" },
+  ]);
+});
+
+test("TS.11: tool output batches by call id without crossing subagent lanes", () => {
+  const q: QueuedDelta[] = [];
+  queueDelta(q, { type: "tool_output_delta", id: "one", text: "a", parentId: "task" });
+  queueDelta(q, { type: "tool_output_delta", id: "one", text: "b", parentId: "task" });
+  queueDelta(q, { type: "tool_output_delta", id: "two", text: "c", parentId: "task" });
+  assert.deepEqual(q, [
+    { type: "tool_output_delta", id: "one", text: "ab", parentId: "task" },
+    { type: "tool_output_delta", id: "two", text: "c", parentId: "task" },
+  ]);
+});
+
 class ManualIngressRuntime implements TranscriptIngressRuntime {
   frame: (() => void) | undefined;
   fallback: (() => void) | undefined;
@@ -96,6 +118,20 @@ test("the first frame publishes one coalesced delta batch and cancels the fallba
   assert.deepEqual(batches, [[{ type: "text_delta", text: "hello" }]]);
   assert.equal(runtime.frame, undefined);
   assert.equal(runtime.fallback, undefined);
+});
+
+test("running tool output waits for one frame instead of repainting per chunk", () => {
+  const runtime = new ManualIngressRuntime();
+  const batches: Array<readonly ZoneMsg[]> = [];
+  const ingress = createTranscriptIngress((batch) => batches.push(batch), runtime);
+
+  ingress.accept({ type: "tool_output_delta", id: "c1", text: "one\n" });
+  ingress.accept({ type: "tool_output_delta", id: "c1", text: "two\n" });
+  assert.equal(batches.length, 0);
+  runtime.runFrame();
+  assert.deepEqual(batches, [
+    [{ type: "tool_output_delta", id: "c1", text: "one\ntwo\n" }],
+  ]);
 });
 
 test("the 50 ms fallback publishes when no animation frame arrives", () => {

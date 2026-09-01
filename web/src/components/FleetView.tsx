@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionMeta } from "@protocol";
 import { AgentPicker } from "./AgentPicker";
 import { visibleControls } from "../visible-controls";
+import { SessionName } from "./SessionName";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice } from "./ConnectDevice";
 import { createDaemonClient } from "../daemon-client";
@@ -61,7 +62,7 @@ function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
           <GearGlyph size="1em" />{" "}
         </>
       )}
-      {thinking ? "✳ thinking" : a.label} · {elapsed(a.since)}
+      {thinking ? "✳ thinking" : visibleControls(a.label)} · {elapsed(a.since)}
     </>
   );
 }
@@ -390,6 +391,8 @@ function FleetRow({
         <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
         <SessionName
           s={s}
+          surface="fleet"
+          wrapClass="fleet-name"
           renaming={renaming === s.sessionId}
           onStart={() => setRenaming(s.sessionId)}
           onCommit={(name) => commitRename(s.sessionId, name)}
@@ -490,50 +493,6 @@ function FleetRow({
         />
       )}
     </div>
-  );
-}
-
-/** The row's name slot: the session link + rename pencil, or — mid-rename —
- *  the input (Enter/blur commits, Escape cancels). */
-function SessionName({
-  s,
-  renaming,
-  onStart,
-  onCommit,
-  onCancel,
-}: {
-  s: SessionMeta;
-  renaming: boolean;
-  onStart: () => void;
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  return renaming ? (
-    <input
-      className="fleet-rename"
-      defaultValue={s.name}
-      autoFocus
-      spellCheck={false}
-      onBlur={(e) => onCommit(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onCommit(e.currentTarget.value);
-        else if (e.key === "Escape") onCancel();
-      }}
-    />
-  ) : (
-    <span className="fleet-name">
-      <a className="fleet-link" href={sessionPath(s.sessionId)}>
-        {s.name}
-      </a>
-      <button
-        className="fleet-edit"
-        title="Rename this session"
-        aria-label={`Rename session ${s.name}`}
-        onClick={onStart}
-      >
-        ✎
-      </button>
-    </span>
   );
 }
 

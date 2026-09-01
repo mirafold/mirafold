@@ -748,6 +748,10 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
         true,
         "older movement never reached its endpoint",
       );
+      // Whether a touch-activated button loses focus when React disables it
+      // is browser-timing dependent. Own the BODY-focus premise explicitly so
+      // this regression tests turn-completion behavior, not that side effect.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       assert.equal(
         await page.evaluate(() => document.activeElement === document.body),
         true,

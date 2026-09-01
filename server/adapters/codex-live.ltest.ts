@@ -290,3 +290,30 @@ test(
       }
     }),
 );
+
+
+test("the vendored protocol digest matches the installed Codex (TS.7)", { skip: !HAVE_CODEX && "codex not installed" }, async () => {
+  type Digest = { items: Record<string, unknown>; notifications: string[]; fields: Record<string, unknown> };
+  // A plain .mjs script with no declaration file; the specifier is widened so
+  // TypeScript does not try to type it.
+  const { generateDigest } = (await import("../../scripts/codex-protocol-digest.mjs" as string)) as {
+    generateDigest: () => Digest;
+  };
+  const { readFileSync } = await import("node:fs");
+  const live = generateDigest();
+  const vendored = JSON.parse(readFileSync(new URL("./codex-protocol.digest.json", import.meta.url), "utf8"));
+  const diff = (a: Record<string, unknown>, b: Record<string, unknown>, label: string) => {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => `${label}.${k}`);
+  };
+  const drift = [
+    ...diff(live.items, vendored.items, "items"),
+    ...diff(live.fields, vendored.fields, "fields"),
+    ...(JSON.stringify(live.notifications) === JSON.stringify(vendored.notifications) ? [] : ["notifications"]),
+  ];
+  assert.deepEqual(
+    drift,
+    [],
+    `Codex's protocol moved under the adapter — re-run \`node scripts/codex-protocol-digest.mjs --write\` and reclassify: ${drift.join(", ")}`,
+  );
+});

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   query,
   type Query,
+  type SDKMessage,
   type SDKResultMessage,
   type SDKUserMessage,
   type Options,
@@ -14,6 +15,7 @@ import type { PromptOption, SessionMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import { ResumeIdState } from "./resume-id";
+import { UnknownKindReporter } from "./wire-helpers";
 import { ChecklistPainter, PermissionLedger } from "./wire-helpers";
 import {
   type AgentSession,
@@ -31,6 +33,30 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 import { createLogger, scrubSelectedEndpoint, verbose } from "../log";
 
 const log = createLogger("claude-code");
+
+/** Every SDK message kind, classified — `satisfies` makes an SDK bump that
+ *  adds a kind a compile error until it is placed here (Phase TS.12).
+ *  "unmapped" kinds are reported by UnknownKindReporter when they arrive. */
+export const CLAUDE_MESSAGE_LEDGER = {
+  assistant: "handled",
+  user: "handled",
+  system: "handled",
+  stream_event: "handled",
+  result: "handled",
+  rate_limit_event: "handled",
+  auth_status: "ignored", // login plumbing; the picker classifies credentials
+  status: "ignored", // the registry derives status from the stream itself
+  files_persisted: "ignored", // bookkeeping for the SDK's own file store
+  prompt_suggestion: "ignored", // a suggestion Mirafold's prompt box does not surface
+  hook_started: "ignored", // hooks run silently in the terminal too
+  hook_response: "ignored",
+  hook_progress: "ignored",
+  compact_boundary: "handled", // the compaction notice, via handleSystemMsg (it also arrives as a system subtype)
+  tool_progress: "unmapped", // TS.11 sibling: streamed tool progress
+  task_started: "unmapped", // background tasks
+  task_progress: "unmapped",
+  task_notification: "unmapped",
+} satisfies Record<SDKMessage["type"], "handled" | "ignored" | "unmapped">;
 
 // The in-process render-tools MCP server's registered name — the SDK exposes
 // its tools to the model as `mcp__<name>__<tool>`, so both spellings below
@@ -146,6 +172,13 @@ export class ClaudeCodeSession implements AgentSession {
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
+  // Successful render calls are represented by the painting emitted by the
+  // in-process server. Keep their call metadata only until the result so a
+  // FAILED render can fall back to an honest error row instead of vanishing.
+  private pendingRenderTools = new Map<
+    string,
+    { name: string; input?: Record<string, unknown>; parentId?: string }
+  >();
   // The live checklist. `tasks` is the session task list (id → item),
   // built from Task*/TodoWrite calls and persisted across turns like the SDK's
   // own list; `checklist` paints it (one render block per turn). `taskSeq`
@@ -159,6 +192,7 @@ export class ClaudeCodeSession implements AgentSession {
   // arrive as buffered assistant text with zero deltas), the buffered text is
   // the ONLY copy and must be emitted, or the command runs but nothing paints.
   private streamedText = false;
+  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Claude Code", (m) => log.warn(m));
   // Per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
   private permissions = new PermissionLedger((msg) => this.emit(msg));
@@ -555,8 +589,21 @@ export class ClaudeCodeSession implements AgentSession {
                 continue;
               }
               if (block.type !== "tool_use") continue;
-              // Render tools already paint their own component block.
-              if (block.name.startsWith(`mcp__${UI_MCP}__`)) continue;
+              // Successful render tools already paint their own component
+              // block. Remember the call until its result so failure still
+              // gets an ordinary, visible tool record.
+              if (block.name.startsWith(`mcp__${UI_MCP}__`)) {
+                const input =
+                  typeof block.input === "object" && block.input !== null
+                    ? (block.input as Record<string, unknown>)
+                    : undefined;
+                this.pendingRenderTools.set(block.id, {
+                  name: block.name,
+                  input,
+                  parentId,
+                });
+                continue;
+              }
               // The agent's task list becomes one live checklist
               // component (updated in place), not raw tool rows. This SDK
               // manages it via the Task* family (TaskCreate/TaskUpdate,
@@ -588,6 +635,31 @@ export class ClaudeCodeSession implements AgentSession {
             if (!Array.isArray(content)) break; // plain prompt echo, not tool results
             for (const block of content) {
               if (block.type !== "tool_result") continue;
+              const pendingRender = this.pendingRenderTools.get(block.tool_use_id);
+              if (pendingRender) {
+                this.pendingRenderTools.delete(block.tool_use_id);
+                if (block.is_error === true) {
+                  const detail = toolDetail(pendingRender.input);
+                  this.emit({
+                    type: "tool_use",
+                    name: pendingRender.name,
+                    ...(detail ? { detail } : {}),
+                    id: block.tool_use_id,
+                    ...(pendingRender.input ? { input: pendingRender.input } : {}),
+                    ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
+                  });
+                  const capped = capOutput(resultText(block.content));
+                  this.emit({
+                    type: "tool_result",
+                    output: capped.text,
+                    truncatedBytes: capped.truncatedBytes,
+                    isError: true,
+                    id: block.tool_use_id,
+                    ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
+                  });
+                }
+                continue;
+              }
               if (!this.announcedTools.delete(block.tool_use_id)) continue;
               const capped = capOutput(resultText(block.content));
               this.emit({
@@ -602,6 +674,7 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "system":
+          case "compact_boundary":
             this.handleSystemMsg(msg);
             break;
           case "rate_limit_event":
@@ -610,6 +683,14 @@ export class ClaudeCodeSession implements AgentSession {
           case "result":
             this.handleResultMsg(msg);
             break;
+          default: {
+            // Exhaustive above by the SDK's union; a kind that reaches here is
+            // one the ledger classifies as unmapped (or one newer than the
+            // SDK types this build knows).
+            const kind = (msg as { type: string }).type;
+            const placed = (CLAUDE_MESSAGE_LEDGER as Record<string, string>)[kind];
+            if (placed !== "handled" && placed !== "ignored") this.unknown.report("message", kind);
+          }
         }
       }
     } catch (err) {
@@ -675,6 +756,7 @@ export class ClaudeCodeSession implements AgentSession {
     // boundary is the safe clear point (a stale cross-turn straggler is
     // dropped rather than completing an old row).
     this.announcedTools.clear();
+    this.pendingRenderTools.clear();
     this.emit({ type: "turn_end" });
   }
 

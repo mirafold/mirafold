@@ -18,6 +18,9 @@ export type TextRow = {
   role: "user" | "assistant";
   text: string;
   done: boolean;
+  /** The engine's own classification (text_delta.phase): commentary is
+   *  narration, final is the answer. Unset → the length heuristic decides. */
+  phase?: "commentary" | "final";
 };
 
 export type RenderRow = {
@@ -51,6 +54,9 @@ export type ToolRow = {
   isError?: boolean;
   startedAt: number;
   replayed?: boolean;
+  /** Output streamed while the call runs (tool_output_delta); `output` is
+   *  still the engine's authoritative text once the call completes. */
+  streamed?: string;
 };
 
 export type SubagentProseRow = {
@@ -59,6 +65,9 @@ export type SubagentProseRow = {
   parentId: string;
   variant: "text" | "thinking";
   text: string;
+  /** Its anchor row was still absent when its turn ended — the row was
+   *  evicted from the replay ring before this viewport attached. */
+  orphaned?: boolean;
 };
 
 export type ThinkingRow = {
@@ -118,6 +127,10 @@ export const NARRATION_MAX_LINES = 2;
 export const NARRATION_MAX_CHARS = 160;
 export function isShortNarration(row: TextRow): boolean {
   if (row.role !== "assistant") return false;
+  // An engine that declares the phase settles it: commentary is narration
+  // whatever its length; the answer never folds.
+  if (row.phase === "commentary") return row.text.trim().length > 0;
+  if (row.phase === "final") return false;
   const text = row.text.trim();
   if (!text) return false;
   const lines = text.split("\n").filter((line) => line.trim()).length;
@@ -285,6 +298,25 @@ function pickerRow(
   return { ...entry, active };
 }
 
+// A subagent's reasoning stays reasoning (collapsed, never the assistant's
+// voice); its narration reads as commentary.
+const orphanNarration = (entry: SubagentProseRow): TextRow | ThinkingRow =>
+  entry.variant === "thinking"
+    ? { kind: "thinking", id: entry.id, text: entry.text, done: true }
+    : { kind: "text", id: entry.id, role: "assistant", text: entry.text, done: true, phase: "commentary" };
+
+/** At a turn's end, narration whose anchor row is still absent is never
+ *  getting one (evicted before this viewport attached): mark it orphaned so
+ *  the snapshot narrates it inline. Entries already anchored are untouched. */
+function orphanAnchorless(entries: readonly TranscriptEntry[]): TranscriptEntry[] {
+  const anchoredToolIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
+  return entries.map((entry) =>
+    entry.kind === "subtext" && !entry.orphaned && !anchoredToolIds.has(entry.parentId)
+      ? { ...entry, orphaned: true }
+      : entry,
+  );
+}
+
 function buildSnapshot(
   entries: readonly TranscriptEntry[],
   previous: TranscriptSnapshot,
@@ -325,7 +357,17 @@ function buildSnapshot(
 
   const rows: OutputZoneRow[] = [];
   for (const entry of entries) {
-    if (entry.kind === "subtext") continue;
+    if (entry.kind === "subtext") {
+      // Anchorless when its turn ended: the anchor is never coming (evicted
+      // from the replay ring before attach) — narrate inline rather than
+      // nowhere. Before the turn ends it stays hidden, since an anchor may
+      // still be on its way.
+      if (entry.orphaned) {
+        const prev = previousById.get(entry.id);
+        rows.push(prev && (prev.kind === "text" || prev.kind === "thinking") && prev.text === entry.text ? prev : orphanNarration(entry));
+      }
+      continue;
+    }
     if (entry.kind === "thinking" || entry.kind === "text") {
       if (!compactedTools.hidden.has(entry.id)) rows.push(entry);
       continue;
@@ -389,6 +431,9 @@ function buildSnapshot(
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
   let streamingId: number | null = null;
+  // The phase the open prose row was started with (text_delta.phase); a
+  // delta declaring a different phase closes the row and opens a new one.
+  let streamingPhase: "commentary" | "final" | undefined;
   let thinkingId: number | null = null;
   const subtextIds = new Map<string, number>();
   let openToolBatches: number[] = [];
@@ -482,6 +527,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "text_delta": {
+        // A phase change (commentary → final answer) starts a new row so the
+        // narration and the answer never share one block.
+        if (streamingId !== null && msg.phase !== undefined && msg.phase !== streamingPhase) {
+          const closing = streamingId;
+          entries = entries.map((entry) => (entry.id === closing ? { ...entry, done: true } : entry));
+          streamingId = null;
+        }
         if (streamingId !== null) {
           const id = streamingId;
           entries = entries.map((entry) =>
@@ -492,9 +544,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         } else {
           const id = nextTranscriptId++;
           streamingId = id;
+          streamingPhase = msg.phase;
           entries = [
             ...entries,
-            { kind: "text", id, role: "assistant", text: msg.text, done: false },
+            { kind: "text", id, role: "assistant", text: msg.text, done: false, ...(msg.phase ? { phase: msg.phase } : {}) },
           ];
         }
         return true;
@@ -599,12 +652,35 @@ export function createTranscriptProjection(): TranscriptProjection {
         ];
         return true;
       }
+      case "tool_update": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? {
+                ...entry,
+                ...(msg.detail !== undefined ? { detail: msg.detail } : {}),
+                ...(msg.input !== undefined ? { input: msg.input } : {}),
+              }
+            : entry,
+        );
+        return true;
+      }
+      case "tool_output_delta": {
+        entries = entries.map((entry) =>
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+            ? { ...entry, streamed: (entry.streamed ?? "") + msg.text }
+            : entry,
+        );
+        return true;
+      }
       case "tool_result": {
         entries = entries.map((entry) =>
           entry.kind === "tool" && entry.toolId === msg.id
             ? {
                 ...entry,
                 output: msg.output,
+                // The authoritative output subsumes the streamed copy —
+                // release it (PR #80 review).
+                streamed: undefined,
                 truncatedBytes: msg.truncatedBytes,
                 isError: msg.isError,
               }
@@ -617,17 +693,25 @@ export function createTranscriptProjection(): TranscriptProjection {
         streamingId = null;
         subtextIds.clear();
         const batchId = openToolBatches.shift() ?? orphanToolBatch--;
-        entries = entries.map((entry) => {
+        entries = orphanAnchorless(entries).map((entry) => {
           if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
           if (entry.kind === "tool" && entry.batchId === batchId) {
             return {
               ...entry,
               settled: true,
               // A pending call at turn end was interrupted. Keep it expanded
-              // and explicit instead of folding it as successful activity.
+              // and explicit instead of folding it as successful activity —
+              // and keep the output observed before the stop; the streamed
+              // copy is released either way (PR #80 review).
               ...(entry.output === undefined
-                ? { output: "(interrupted — no result)", isError: true }
+                ? {
+                    output: entry.streamed
+                      ? `${entry.streamed}\n(interrupted — no result)`
+                      : "(interrupted — no result)",
+                    isError: true,
+                  }
                 : {}),
+              streamed: undefined,
             };
           }
           return entry;
@@ -635,9 +719,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "error": {
+        // A terminal error ends the turn without a turn_end (the adapter-crash
+        // path): anchorless narration is just as orphaned here. A
+        // request-scoped error (terminal: false) ends nothing — same reading
+        // as turn-busy and the daemon's session state.
         streamingId = null;
         entries = [
-          ...entries,
+          ...(msg.terminal === false ? entries : orphanAnchorless(entries)),
           {
             kind: "text",
             id: nextTranscriptId++,

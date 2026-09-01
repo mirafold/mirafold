@@ -5,10 +5,13 @@ import os from "node:os";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
+import { describePatchChange, normalizePatchChanges } from "./codex-patch";
 import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
+import { OUTPUT_CAP_BYTES } from "./types";
+import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -268,7 +271,19 @@ const HAPPY: Notification[] = [
     "item/completed",
     { item: { type: "commandExecution", id: "c1", command: "ls -la", aggregatedOutput: "file.txt", exitCode: 0, status: "completed" } },
   ],
-  ["item/completed", { item: { type: "fileChange", id: "f1", status: "completed", changes: [{ kind: "update", path: "src/a.ts", diff: "" }] } }],
+  // The REAL wire shape (captured from app-server 2026-08-30): `kind` is an
+  // object, `diff` a unified diff, paths absolute.
+  [
+    "item/completed",
+    {
+      item: {
+        type: "fileChange",
+        id: "f1",
+        status: "completed",
+        changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }],
+      },
+    },
+  ],
   ["item/started", { item: { type: "mcpToolCall", id: "mc1", server: "docs", tool: "search", arguments: { q: "x" }, status: "inProgress" } }],
   [
     "item/completed",
@@ -304,7 +319,14 @@ test("happy stream: full notification→WireMsg mapping, exactly one turn_end", 
   const results = msgs.filter((m) => m.type === "tool_result");
   assert.deepEqual(results.map((r) => r.id), ["c1", "f1", "mc1", "w1"]);
   assert.equal(results[0].output, "file.txt");
-  assert.equal(results[1].output, "update src/a.ts");
+  assert.equal(results[1].output, "Updated src/a.ts");
+  // The row's input carries the normalized change so the browser draws the
+  // patch: workspace-relative path, kind as a plain string, the diff intact.
+  const patchRow = msgs.find((m) => m.type === "tool_use" && m.name === "apply_patch")!;
+  assert.equal(patchRow.detail, "Updated src/a.ts");
+  assert.deepEqual(patchRow.input, {
+    changes: [{ path: "src/a.ts", kind: "update", diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }],
+  });
   assert.equal(results[2].output, "3 hits");
   assert.equal(uses[0].detail, "ls -la");
   assert.deepEqual(uses[0].input, { command: "ls -la" });
@@ -380,8 +402,14 @@ test("the render guidance rides thread/start as developerInstructions; turns car
   assert.equal(instructions, CODEX_DEVELOPER_INSTRUCTIONS);
   assert.ok(instructions.includes("## Generative UI"));
   assert.ok(instructions.includes(MIRAFOLD_CONTEXT), "the environment fact reaches Codex at thread start");
+  // The where-are-the-tools note leads, and it names every path Codex can
+  // hide an MCP tool behind: tool_search deferral and the exec runtime.
+  assert.ok(instructions.trimStart().startsWith("## Mirafold's render tools"));
+  assert.ok(instructions.indexOf("## Mirafold's render tools") < instructions.indexOf("## Generative UI"));
   assert.ok(instructions.includes("DEFERRED"));
-  assert.ok(instructions.includes("tool search"));
+  assert.ok(instructions.includes("tool_search"));
+  assert.ok(instructions.includes("tools.mcp__mirafold__render_table("));
+  assert.ok(instructions.includes("ALL_TOOLS"));
   assert.equal(starts[0].params.cwd, tmp);
   // Faithful skin: no sandbox / approval policy of our own.
   assert.equal(starts[0].params.sandbox, undefined);
@@ -743,7 +771,7 @@ test("a declined command (the user said no) is an error row that says so", async
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/started", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", status: "inProgress" } }],
     ["item/completed", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", aggregatedOutput: "", status: "declined" } }],
-    ["item/completed", { item: { type: "fileChange", id: "f2", status: "declined", changes: [{ kind: "add", path: "/etc/x", diff: "" }] } }],
+    ["item/completed", { item: { type: "fileChange", id: "f2", status: "declined", changes: [{ path: "/etc/x", kind: { type: "add" }, diff: "root:x\n" }] } }],
     DONE,
   ]);
   s.pushPrompt("go");
@@ -755,7 +783,7 @@ test("a declined command (the user said no) is an error row that says so", async
   s.close();
 });
 
-test("mirafold MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
+test("mirafold MCP calls paint on success and fall back to honest rows on failure or an unknown tool", async () => {
   const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}): Notification => [
     "item/completed",
     {
@@ -782,9 +810,6 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
   s.pushPrompt("go");
   await awaitTurnEnd();
 
-  // Suppression: our own UI tools never appear as tool_use/tool_result rows.
-  assert.equal(msgs.filter((m) => m.type === "tool_use" || m.type === "tool_result").length, 0);
-
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");
   assert.deepEqual(render.props, { title: "T", body: "b" }); // id stripped from props
@@ -794,8 +819,20 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
   assert.equal(art.html, "<b>x</b>");
   assert.equal(art.title, "demo");
 
-  // failed render_table + unknown render_bogus → exactly the two paints above.
+  // The two successful calls are represented by their paintings only.
   assert.equal(msgs.filter((m) => m.type === "render" || m.type === "artifact").length, 2);
+  // A failed or unknown call cannot disappear: each gets its ordinary MCP
+  // row, while the successful render/artifact calls still get none.
+  const uses = msgs.filter((m) => m.type === "tool_use");
+  assert.deepEqual(uses.map((m) => [m.id, m.name]), [
+    ["g-render_table", `${MIRAFOLD_MCP}.render_table`],
+    ["g-render_bogus", `${MIRAFOLD_MCP}.render_bogus`],
+  ]);
+  const results = msgs.filter((m) => m.type === "tool_result");
+  assert.deepEqual(results.map((m) => [m.id, m.isError]), [
+    ["g-render_table", true],
+    ["g-render_bogus", false],
+  ]);
   assert.equal(turnEnds(), 1);
   s.close();
 });
@@ -1208,6 +1245,11 @@ test("F.10: the installed Codex executable runs the app-server", () => {
     const spec = capturedSpawn({ kind: "subscription" });
     assert.equal(spec.command, "/operator/chosen/codex");
     assert.equal(spec.args[0], "app-server");
+    assert.equal(
+      configOf(spec).features?.apply_patch_streaming_events,
+      true,
+      "the process must enable current Codex's structured live patch snapshots",
+    );
   });
 });
 
@@ -1666,4 +1708,396 @@ test("describePermissionProfile: the special kinds that carry a literal path or 
     }),
     "grant for this turn: write /etc/cron.d, read secrets inside each project root, read /var/x/y",
   );
+});
+
+
+test("apply_patch changes normalize from the wire shape and the rollout shape alike (TS.6)", () => {
+  const ws = "/home/u/proj";
+  const wire = normalizePatchChanges(
+    [
+      { path: `${ws}/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-a\n+b\n" },
+      { path: `${ws}/new.md`, kind: { type: "add" }, diff: "hello\n" },
+      { path: `${ws}/old.md`, kind: { type: "delete" }, diff: "bye\n" },
+      { path: `${ws}/x.ts`, kind: { type: "update", move_path: `${ws}/y.ts` }, diff: "" },
+      { path: "/etc/hosts", kind: { type: "update" }, diff: "" },
+    ],
+    ws,
+  );
+  assert.deepEqual(wire.map(describePatchChange), [
+    "Updated a.ts",
+    "Added new.md",
+    "Deleted old.md",
+    "Moved x.ts → y.ts",
+    "Updated /etc/hosts", // outside the workspace stays absolute
+  ]);
+  assert.deepEqual(wire[0], { path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" });
+  const rollout = normalizePatchChanges(
+    { [`${ws}/a.ts`]: { type: "update", unified_diff: "@@ -1 +1 @@\n-a\n+b\n", move_path: null }, [`${ws}/n.md`]: { type: "add", content: "hi\n" } },
+    ws,
+  );
+  assert.deepEqual(rollout, [
+    { path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" },
+    { path: "n.md", kind: "add", diff: "hi\n" },
+  ]);
+  // The guessed shape that hid a month of diffs must never come back:
+  // an object kind is never stringified.
+  assert.ok(!JSON.stringify(wire).includes("[object Object]"));
+  assert.deepEqual(normalizePatchChanges(undefined, ws), []);
+  assert.deepEqual(normalizePatchChanges("garbage", ws), []);
+});
+
+
+test("an item kind or notification the adapter cannot map is reported once, never dropped silently (TS.7)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/completed", { item: { type: "futureItemKind", id: "fx1", payload: 1 } }],
+    ["item/completed", { item: { type: "futureItemKind", id: "fx2", payload: 2 } }],
+    ["item/completed", { item: { type: "userMessage", id: "u1", content: [] } }], // deliberately ignored
+    ["thread/somethingNewer", { detail: "a kind this build has never heard of" }],
+    ["thread/name/updated", { name: "x" }], // deliberately ignored
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const notices = msgs.filter((m) => m.type === "notice").map((m) => m.text);
+  assert.deepEqual(notices, [
+    "Mirafold doesn't display this Codex item yet: futureItemKind",
+    "Mirafold doesn't display this Codex event yet: thread/somethingNewer",
+  ]);
+  // Shell-voiced: no `source` badge on Mirafold's own sentence.
+  assert.ok(msgs.filter((m) => m.type === "notice").every((m) => m.source === undefined));
+  s.close();
+});
+
+
+test("agent-message prose carries the engine's phase; a plan streams as commentary (TS.8)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "agentMessage", id: "c1", text: "", phase: "commentary" } }],
+    ["item/agentMessage/delta", { itemId: "c1", delta: "Checking the watcher. " }],
+    ["item/completed", { item: { type: "agentMessage", id: "c1", text: "Checking the watcher. Done.", phase: "commentary" } }],
+    ["item/started", { item: { type: "plan", id: "p1", text: "" } }],
+    ["item/plan/delta", { itemId: "p1", delta: "1. read 2. fix" }],
+    ["item/completed", { item: { type: "plan", id: "p1", text: "1. read 2. fix" } }],
+    ["item/started", { item: { type: "agentMessage", id: "f1", text: "", phase: "final_answer" } }],
+    ["item/agentMessage/delta", { itemId: "f1", delta: "Fixed: " }],
+    ["item/completed", { item: { type: "agentMessage", id: "f1", text: "Fixed: the flush waits.", phase: "final_answer" } }],
+    ["item/completed", { item: { type: "enteredReviewMode", id: "r1", review: {} } }],
+    ["model/rerouted", { fromModel: "gpt-a", toModel: "gpt-b" }],
+    ["configWarning", { message: "config key x is unknown" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.phase]),
+    [
+      ["Checking the watcher. ", "commentary"],
+      ["Done.", "commentary"],
+      ["1. read 2. fix", "commentary"],
+      ["Fixed: ", "final"],
+      ["the flush waits.", "final"],
+    ],
+  );
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.kind, m.source]),
+    [
+      ["Codex entered review mode.", "info", undefined],
+      ["Codex rerouted the model from gpt-a to gpt-b.", "info", undefined],
+      ["config key x is unknown", "warning", "codex"],
+    ],
+  );
+  s.close();
+});
+
+
+test("subagent collab calls are rows, child activity narrates under its spawn; sleep and dynamic tools are rows (TS.9)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "running", message: null } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa3", kind: "started", agentThreadId: "t-unknown", agentPath: "stray" } }],
+    ["item/completed", { item: { type: "sleep", id: "sl1", durationMs: 1500 } }],
+    ["item/started", { item: { type: "dynamicToolCall", id: "dt1", tool: "lookup", namespace: "crm", arguments: { query: "acme" }, status: "inProgress" } }],
+    ["item/completed", { item: { type: "dynamicToolCall", id: "dt1", tool: "lookup", namespace: "crm", arguments: { query: "acme" }, status: "completed", success: true, contentItems: [{ type: "text", text: "2 accounts" }] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const uses = msgs.filter((m) => m.type === "tool_use").map((m) => [m.name, m.detail, m.id]);
+  assert.deepEqual(uses, [
+    ["spawn_agent", "Audit the watcher", "cb1"],
+    ["sleep", "1.5 s", "sl1"],
+    ["crm.lookup", "acme", "dt1"],
+  ]);
+  const results = msgs.filter((m) => m.type === "tool_result").map((m) => [m.id, m.output, m.isError]);
+  assert.deepEqual(results, [
+    ["cb1", "t-child: running", false],
+    ["sl1", "(done)", undefined],
+    ["dt1", "2 accounts", false],
+  ]);
+  // The child's lifecycle groups under the spawn row; a thread no call named
+  // is narrated in the transcript instead of dropped.
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.parentId, m.phase]),
+    [
+      ["worker started\n", "cb1", undefined],
+      ["worker completed\n", "cb1", undefined],
+      ["Subagent stray started.\n", undefined, "commentary"],
+    ],
+  );
+  assert.equal(msgs.filter((m) => m.type === "notice").length, 0, "nothing was reported as unmapped");
+  s.close();
+});
+
+test("an image the model viewed is a row plus the picture inline; outside the workspace the row stands alone (TS.10)", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  writeFileSync(path.join(tmp, "shot.png"), png);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/completed", { item: { type: "imageView", id: "iv1", path: `${tmp}/shot.png` } }],
+    ["item/completed", { item: { type: "imageView", id: "iv2", path: "/etc/hostname" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_use").map((m) => [m.name, m.detail]),
+    [["view_image", "shot.png"], ["view_image", "/etc/hostname"]],
+  );
+  const paintings = msgs.filter((m) => m.type === "render");
+  assert.equal(paintings.length, 1);
+  assert.equal(paintings[0].component, "image");
+  assert.match(String(paintings[0].props["src"]), /^data:image\/png;base64,/);
+  s.close();
+});
+
+test("command output streams while the call runs, capped, and the result still closes the row (TS.11)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "c1", command: "yarn test", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "running 1\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "running 2\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "never-announced", delta: "orphan" }],
+    ["item/completed", { item: { type: "commandExecution", id: "c1", command: "yarn test", aggregatedOutput: "running 1\nrunning 2\nok\n", exitCode: 0, status: "completed" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "tool_output_delta").map((m) => [m.id, m.text]),
+    [["c1", "running 1\n"], ["c1", "running 2\n"]],
+  );
+  assert.equal(msgs.find((m) => m.type === "tool_result")!.output, "running 1\nrunning 2\nok\n");
+  s.close();
+});
+
+test("current file-change snapshots repaint one apply_patch row through completion", async () => {
+  const firstChanges = [
+    {
+      path: `${tmp}/a.ts`,
+      kind: { type: "update", move_path: null },
+      diff: "@@ -1 +1 @@\n-a\n+b\n",
+    },
+  ];
+  const finalChanges = [
+    {
+      path: `${tmp}/a.ts`,
+      kind: { type: "update", move_path: null },
+      diff: "@@ -1 +1 @@\n-a\n+c\n",
+    },
+  ];
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "fileChange", id: "p1", status: "inProgress", changes: [] } }],
+    ["item/fileChange/patchUpdated", { itemId: "p1", changes: firstChanges }],
+    ["item/fileChange/patchUpdated", { itemId: "p1", changes: finalChanges }],
+    ["item/completed", { item: { type: "fileChange", id: "p1", status: "completed", changes: finalChanges } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const uses = msgs.filter((m) => m.type === "tool_use" && m.id === "p1");
+  assert.equal(uses.length, 1);
+  assert.equal(uses[0].name, "apply_patch");
+  assert.deepEqual(uses[0].input?.changes, []);
+  const updates = msgs.filter((m) => m.type === "tool_update" && m.id === "p1");
+  assert.equal(updates.length, 2, "the identical completion snapshot is not repainted");
+  assert.deepEqual(
+    updates.map((m) => m.input?.changes),
+    [
+      [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+b\n" }],
+      [{ path: "a.ts", kind: "update", diff: "@@ -1 +1 @@\n-a\n+c\n" }],
+    ],
+  );
+  assert.equal(updates[1].detail, "Updated a.ts");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "p1")?.output, "Updated a.ts");
+  s.close();
+});
+
+test("streamed command output applies the final-output ceiling in UTF-8 bytes, not characters", async () => {
+  const unicode = "€".repeat(OUTPUT_CAP_BYTES);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "bytes", command: "unicode", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "bytes", delta: unicode }],
+    ["item/commandExecution/outputDelta", { itemId: "bytes", delta: "must not pass the exhausted budget" }],
+    ["item/completed", { item: { type: "commandExecution", id: "bytes", command: "unicode", aggregatedOutput: unicode, exitCode: 0, status: "completed" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const streamed = msgs
+    .filter((m) => m.type === "tool_output_delta" && m.id === "bytes")
+    .map((m) => m.text)
+    .join("");
+  // The ceiling holds for the bytes, and crossing it is said exactly once —
+  // an interrupted command settles from this stream (release review 2026-09-01).
+  const body = streamed.replace(STREAM_CAP_MARKER, "");
+  assert.ok(Buffer.byteLength(body, "utf8") <= OUTPUT_CAP_BYTES);
+  assert.ok(Buffer.byteLength(body, "utf8") >= OUTPUT_CAP_BYTES - 3);
+  assert.equal(streamed.split(STREAM_CAP_MARKER).length - 1, 1, "the cap marker appears once");
+  assert.doesNotMatch(streamed, /must not pass/);
+  s.close();
+});
+
+test("a stream that lands exactly on the ceiling is marked too, and stays silent after", async () => {
+  const exact = "a".repeat(OUTPUT_CAP_BYTES);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "commandExecution", id: "exact", command: "x", status: "inProgress" } }],
+    ["item/commandExecution/outputDelta", { itemId: "exact", delta: exact }],
+    ["item/commandExecution/outputDelta", { itemId: "exact", delta: "after the ceiling" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const streamed = msgs.filter((m) => m.type === "tool_output_delta" && m.id === "exact").map((m) => m.text).join("");
+  assert.equal(streamed.split(STREAM_CAP_MARKER).length - 1, 1);
+  assert.doesNotMatch(streamed, /after the ceiling/);
+  s.close();
+});
+
+test("subagent activity lines are clamped and share the narration budget", async () => {
+  const events: [string, Record<string, unknown>][] = [
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-child"], status: "inProgress", agentsStates: {} } }],
+  ];
+  // An engine-chosen path at engine-chosen length, with a direction override.
+  const noisyPath = `${"p".repeat(10)}\u202e${"p".repeat(300)}`;
+  for (let i = 0; i < 800; i++) {
+    events.push(["item/completed", { item: { type: "subAgentActivity", id: `sa${i}`, kind: "working", agentThreadId: "t-child", agentPath: noisyPath } }]);
+  }
+  events.push(DONE);
+  const { s, msgs, awaitTurnEnd } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === "cb1");
+  assert.ok(lines.length > 0);
+  assert.ok(lines[0].text.length <= 120, "agentPath is clamped");
+  assert.ok(lines[0].text.includes("‹U+202E›"), "direction controls are marked, not merely dropped");
+  assert.ok(!lines[0].text.includes("\u202e"), "no raw direction control passes through");
+  const markers = lines.filter((m) => m.text.includes("narration cap reached"));
+  assert.equal(markers.length, 1, "the budget's elision marker fires exactly once");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, "the lane is byte-bounded");
+});
+
+test("unanchored subagent activity is budgeted too", async () => {
+  const events: [string, Record<string, unknown>][] = [["turn/started", {}]];
+  for (let i = 0; i < 800; i++) {
+    events.push(["item/completed", { item: { type: "subAgentActivity", id: `sx${i}`, kind: "working", agentThreadId: "t-stray", agentPath: "p".repeat(96) } }]);
+  }
+  events.push(DONE);
+  const { s, msgs, awaitTurnEnd } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === undefined && m.phase === "commentary");
+  assert.ok(lines.length > 0 && lines.length < 800, "the budget stops the stream");
+  const markers = lines.filter((m) => m.text.includes("narration cap reached"));
+  assert.equal(markers.length, 1, "the elision marker fires exactly once");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, "the unanchored lane is byte-bounded");
+});
+
+test("an MCP call's engine-chosen server/tool names are clamped and control-visible", async () => {
+  const hugeTool = `t\u202e${"t".repeat(10_000)}`;
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "mcpToolCall", id: "m1", server: "srv", tool: hugeTool, status: "inProgress" } }],
+    ["item/completed", { item: { type: "mcpToolCall", id: "m1", server: "srv", tool: hugeTool, status: "completed", result: { content: [{ type: "text", text: "ok" }] } } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const use = msgs.find((m) => m.type === "tool_use" && m.id === "m1");
+  assert.ok(use && use.type === "tool_use");
+  assert.ok(use.name.length <= 140, "the name is clamped");
+  assert.ok(use.name.includes("‹U+202E›") && !use.name.includes("\u202e"), "controls are marked");
+  assert.ok((use.detail ?? "").length <= 110, "the detail is clamped");
+});
+
+test("the subagent anchor map is bounded; overflow threads fall to the budgeted lane", async () => {
+  const many = Array.from({ length: 5_010 }, (_, i) => `t-${i}`);
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: many, status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-10", agentPath: "early" } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "started", agentThreadId: "t-5005", agentPath: "late" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const deltas = msgs.filter((m) => m.type === "text_delta");
+  assert.ok(deltas.some((m) => m.parentId === "cb1" && m.text.includes("early")), "a thread under the cap anchors");
+  assert.ok(deltas.some((m) => m.parentId === undefined && m.text.includes("late")), "a thread past the cap is narrated, not dropped");
+});
+
+test("engine-sized completion text is capped on every result path (PR #80 review)", async () => {
+  const states: Record<string, { status: string; message: string }> = {};
+  for (let i = 0; i < 3_000; i++) states[`t-${i}`] = { status: "running", message: "m".repeat(150) };
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["turn/started", {}],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-0"], status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawn_agent", prompt: "go", receiverThreadIds: ["t-0"], status: "completed", agentsStates: states } }],
+    ["item/completed", { item: { type: "imageGeneration", id: "ig1", status: "failed", failure: "f".repeat(200_000) } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  for (const id of ["cb1", "ig1"]) {
+    const res = msgs.find((m) => m.type === "tool_result" && m.id === id);
+    assert.ok(res && res.type === "tool_result", `${id} resolved`);
+    assert.ok(Buffer.byteLength(res.output, "utf8") <= OUTPUT_CAP_BYTES + 64, `${id} capped`);
+    // The elision is reported either way: capOutput's byte count, or the
+    // collab fan-out's own "… N more" line (it stops materializing states at
+    // the ceiling rather than building them all first).
+    assert.ok((res.truncatedBytes ?? 0) > 0 || /… \d+ more$/.test(res.output), `${id} reports the elision`);
+  }
+  const collab = msgs.find((m) => m.type === "tool_result" && m.id === "cb1");
+  assert.ok(collab && collab.type === "tool_result" && /… \d+ more$/.test(collab.output), "the fan-out was bounded before it was built");
+  s.close();
+});
+
+test("a zero live-output budget still says the ceiling was hit, once (review 2026-09-01)", () => {
+  const emitted: WireMsg[] = [];
+  const mapper = new CodexEventMapper({
+    emit: (m) => emitted.push(m as WireMsg),
+    workspaceDir: tmp,
+    modelName: () => undefined,
+    providerDiagnostic: (v) => String(v),
+    outputCapBytes: 0,
+  });
+  mapper.handle("turn/started", {});
+  mapper.handle("item/started", { item: { type: "commandExecution", id: "c0", command: "x", status: "inProgress" } });
+  mapper.handle("item/commandExecution/outputDelta", { itemId: "c0", delta: "first bytes" });
+  mapper.handle("item/commandExecution/outputDelta", { itemId: "c0", delta: "more bytes" });
+  const deltas = emitted
+    .filter((m): m is Extract<WireMsg, { type: "tool_output_delta" }> => m.type === "tool_output_delta" && m.id === "c0")
+    .map((m) => m.text);
+  assert.deepEqual(deltas, [streamCapMarker(0)], "exactly one marker, no output bytes");
 });

@@ -1113,7 +1113,7 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   assert.equal(await frame!.textContent("#n"), "1");
 });
 
-test("an artifact pins to the dock via its chrome control, and unpins back", () => withFreshMockSession(browser, TOKEN, async (page) => {
+test("an artifact pins to the dock via its chrome control, and unpins back", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   // The pin rides the shell-drawn chrome bar (outside the iframe). This
   // test paints its own artifact — its fresh session holds nothing else.
   await typePrompt(page, "show me an artifact");
@@ -1123,6 +1123,12 @@ test("an artifact pins to the dock via its chrome control, and unpins back", () 
   // The dock holds the live iframe; a stub holds its place in the flow.
   assert.equal(await page.locator(".pin-dock iframe").count(), 1);
   assert.match(await page.locator(".pin-stub").innerText(), /pinned/);
+  // Leaving and returning keeps the pin: a cockpit switch is a plain
+  // navigation, and pins are per-session viewer state restored on mount
+  // (cockpit follow-up 2, 2026-08-31).
+  await page.reload();
+  await page.waitForSelector(".pin-dock iframe", { timeout: 15_000 });
+  assert.match(await page.locator(".pin-stub").innerText(), /pinned/);
   // Unpin from the dock chrome → dock closes, the artifact returns inline.
   // (Anchored to the artifact's frame class: the transcript can hold other
   // sandboxed iframes by now — diagram components.)
@@ -1130,6 +1136,21 @@ test("an artifact pins to the dock via its chrome control, and unpins back", () 
   await page.waitForSelector(".pin-dock", { state: "detached" });
   assert.equal(await page.locator(".pin-stub").count(), 0);
   assert.equal(await page.locator(".output-zone iframe.artifact-frame").count(), 1);
+  // The unpin persists the same way.
+  await page.reload();
+  await page.waitForSelector("iframe.artifact-frame", { timeout: 15_000 });
+  assert.equal(await page.locator(".pin-dock").count(), 0);
+  // Ending the session drops its stored pins with it (bughunt 2026-08-31:
+  // nothing else ever removes a dead session's key).
+  const sessionId = await page.evaluate(() => location.pathname.slice("/s/".length));
+  await page.locator(".artifact-pin").click();
+  await page.waitForSelector(".pin-dock");
+  await page.waitForFunction((id) => localStorage.getItem(`mirafold-pins-${id}`) !== null, sessionId);
+  const end = page.locator(".sb-end");
+  await end.click();
+  await end.click();
+  await page.waitForURL(`${base}/`);
+  assert.equal(await page.evaluate((id) => localStorage.getItem(`mirafold-pins-${id}`), sessionId), null, "an ended session keeps no pins");
 }));
 
 test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", () => withFreshMockSession(browser, TOKEN, async (page) => {
@@ -2520,3 +2541,96 @@ test("an uncaught front-end error lands in the daemon's log (client_error path)"
   }
   assert.match(d.logs(), /error: client error: Error: e2e-client-error-probe/);
 });
+
+test("copy works when the async Clipboard API is refused or absent — never a dead click (Desktop, 2026-08-31)", () => withFreshMockSession(browser, TOKEN, async (page) => {
+  // Headless Chromium grants clipboard writes, so Mirafold Desktop's
+  // default-deny policy is simulated: writeText rejects with the same
+  // NotAllowedError Electron's permission gate produces. Record what the
+  // gesture-gated fallback actually copies: execCommand("copy") fires a copy
+  // event over the selection it wrote.
+  await page.evaluate(() => {
+    const copies: string[] = [];
+    (window as unknown as { __mfCopies: string[] }).__mfCopies = copies;
+    document.addEventListener("copy", () => copies.push(document.getSelection()?.toString() ?? ""));
+  });
+  // A string, not a function: the test transpiler's function-naming helper
+  // would otherwise ride into the page (`__name is not defined`).
+  await page.evaluate(
+    "Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: function () { return Promise.reject(new DOMException('Write permission denied.', 'NotAllowedError')); } })",
+  );
+  await typePrompt(page, "show a snippet");
+  const block = page.locator(".rc-code", { hasText: "loadConfig" });
+  await block.waitFor({ timeout: 15_000 });
+  await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
+
+  await block.locator(".rc-copy").click();
+  await block.locator(".rc-copy", { hasText: /^copied$/ }).waitFor({ timeout: 5_000 });
+  const readCopies = () => page.evaluate(() => (window as unknown as { __mfCopies: string[] }).__mfCopies);
+  let copies = await readCopies();
+  assert.equal(copies.length, 1, "the fallback path wrote the clipboard once");
+  // The raw source, not the rendered gutter: six lines, the snippet's own tokens.
+  assert.equal(copies[0].trim().split("\n").length, 6, `copied text: ${JSON.stringify(copies[0])}`);
+  assert.match(copies[0], /loadConfig/);
+  assert.match(copies[0], /readFile\(path/);
+
+  // The API can also be entirely absent (no secure context): same outcome.
+  await block.locator(".rc-copy", { hasText: /^copy$/ }).waitFor({ timeout: 5_000 });
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true }));
+  await block.locator(".rc-copy").click();
+  await block.locator(".rc-copy", { hasText: /^copied$/ }).waitFor({ timeout: 5_000 });
+  copies = await readCopies();
+  assert.equal(copies.length, 2);
+  assert.equal(copies[1], copies[0], "the absent-API path copies the same text");
+  // Focus went back where it was: the fallback's off-screen textarea never keeps it.
+  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), "TEXTAREA");
+
+  // Both paths refused: the button SAYS so — a dead click is the bug this
+  // test exists for, and silence is its quietest form (test-audit 2026-08-31).
+  await block.locator(".rc-copy", { hasText: /^copy$/ }).waitFor({ timeout: 5_000 });
+  await page.evaluate("document.execCommand = function () { return false; }");
+  await block.locator(".rc-copy").click();
+  await block.locator(".rc-copy", { hasText: /^copy failed$/ }).waitFor({ timeout: 5_000 });
+  assert.equal((await readCopies()).length, 2, "nothing was written");
+  await page.evaluate("delete document.execCommand");
+
+  // The dock is a second frame with its own pin control in the same corner:
+  // a pinned painting's copy button must be clickable there too.
+  await block.locator(".rc-copy", { hasText: /^copy$/ }).waitFor({ timeout: 5_000 });
+  await page.locator(".turn-render", { has: block }).hover();
+  await page.locator(".turn-render", { has: block }).locator(".pin-btn").click();
+  const docked = page.locator(".pin-dock .rc-code", { hasText: "loadConfig" });
+  await docked.waitFor();
+  // The reservation itself, not a hit-test coincidence: the copy button
+  // ends before the dock's own pin control begins (cold review 2026-08-31
+  // measured the unreserved overlap at 0.02 px — a font away from passing).
+  const copyBox = (await docked.locator(".rc-copy").boundingBox())!;
+  const dockPinBox = (await page.locator(".pin-dock-item", { has: page.locator(".rc-code", { hasText: "loadConfig" }) }).locator(".pin-btn").boundingBox())!;
+  assert.ok(copyBox.x + copyBox.width <= dockPinBox.x, `dock copy button (ends ${copyBox.x + copyBox.width}) overlaps its pin control (starts ${dockPinBox.x})`);
+  await docked.locator(".rc-copy").click();
+  await docked.locator(".rc-copy", { hasText: /^copied$/ }).waitFor({ timeout: 5_000 });
+  assert.equal((await readCopies()).length, 3, "the docked copy button wrote the clipboard");
+}));
+
+test("a stored pin whose painting is gone opens no dock, and a fallback session inherits no pins (review 2026-08-31)", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
+  const sessionId = await page.evaluate(() => location.pathname.slice("/s/".length));
+  // Stale: an id the transcript will never carry again (a trimmed replay,
+  // an agent-chosen id that never repaints).
+  await page.evaluate((id) => localStorage.setItem(`mirafold-pins-${id}`, JSON.stringify(["gone-forever"])), sessionId);
+  await page.reload();
+  await page.locator(".prompt-box textarea").waitFor();
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".pin-dock, .pin-tab").count(), 0, "no dock for a painting that isn't there");
+
+  // Foreign: pins stored for a session the daemon no longer has. Attaching
+  // to that id falls back to a fresh session — which must start unpinned,
+  // and must not have the dead session's pins written under its own key.
+  await page.evaluate(() => localStorage.setItem("mirafold-pins-deadbeef", JSON.stringify(["from-a-dead-session"])));
+  await page.goto(`${base}/s/deadbeef`);
+  await page.waitForURL((url) => url.pathname.startsWith("/s/") && !url.pathname.endsWith("deadbeef"), { timeout: 15_000 });
+  await page.locator(".prompt-box textarea").waitFor();
+  const newId = await page.evaluate(() => location.pathname.slice("/s/".length));
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".pin-dock, .pin-tab").count(), 0);
+  assert.equal(await page.evaluate((id) => localStorage.getItem(`mirafold-pins-${id}`), newId), null, "the new session inherited no pins");
+  assert.equal(await page.evaluate(() => localStorage.getItem("mirafold-pins-deadbeef")), null, "the dead session's pins were dropped");
+}));

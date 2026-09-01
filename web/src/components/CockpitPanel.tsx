@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import type { SessionMeta } from "@protocol";
 import { cockpitPreviewText } from "../cockpit-preview";
 import { cockpitOrder } from "../fleet-order";
-import { sessionPath } from "../session-url";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { SocketClient } from "../ws";
 import { ArmedButton } from "./ArmedButton";
+import { SessionName } from "./SessionName";
 
 function retainLiveSession(sessionId: string | null, live: ReadonlySet<string>): string | null {
   return sessionId && live.has(sessionId) ? sessionId : null;
@@ -22,6 +22,7 @@ export function CockpitPanel({ currentSessionId }: { currentSessionId?: string }
   const [error, setError] = useState<string | null>(null);
   const [transcriptFor, setTranscriptFor] = useState<string | null>(null);
   const [promptFor, setPromptFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const stopConfirm = useArmedConfirm<string>();
   const endConfirm = useArmedConfirm<string>();
 
@@ -41,6 +42,7 @@ export function CockpitPanel({ currentSessionId }: { currentSessionId?: string }
         const live = new Set(message.sessions.map((session) => session.sessionId));
         setTranscriptFor((id) => retainLiveSession(id, live));
         setPromptFor((id) => retainLiveSession(id, live));
+        setRenaming((id) => retainLiveSession(id, live));
       } else if (message.type === "error") {
         setError(message.message);
       }
@@ -60,6 +62,11 @@ export function CockpitPanel({ currentSessionId }: { currentSessionId?: string }
       socket.close();
     };
   }, [socket]);
+
+  const commitRename = (sessionId: string, name: string) => {
+    setRenaming(null);
+    if (name.trim()) socket.send({ type: "rename", sessionId, name });
+  };
 
   const sendPrompt = (sessionId: string, text: string) => {
     if (text.trim()) socket.send({ type: "prompt_session", sessionId, text });
@@ -101,6 +108,10 @@ export function CockpitPanel({ currentSessionId }: { currentSessionId?: string }
             current={session.sessionId === currentSessionId}
             transcriptOpen={transcriptFor === session.sessionId}
             promptOpen={promptFor === session.sessionId}
+            renaming={renaming === session.sessionId}
+            onStartRename={() => setRenaming(session.sessionId)}
+            onCommitRename={(name) => commitRename(session.sessionId, name)}
+            onCancelRename={() => setRenaming(null)}
             stopConfirm={stopConfirm}
             endConfirm={endConfirm}
             onToggleTranscript={() => {
@@ -124,6 +135,10 @@ type CockpitRowProps = {
   current: boolean;
   transcriptOpen: boolean;
   promptOpen: boolean;
+  renaming: boolean;
+  onStartRename: () => void;
+  onCommitRename: (name: string) => void;
+  onCancelRename: () => void;
   stopConfirm: ReturnType<typeof useArmedConfirm<string>>;
   endConfirm: ReturnType<typeof useArmedConfirm<string>>;
   onToggleTranscript: () => void;
@@ -138,6 +153,10 @@ function CockpitRow({
   current,
   transcriptOpen,
   promptOpen,
+  renaming,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
   stopConfirm,
   endConfirm,
   onToggleTranscript,
@@ -153,14 +172,15 @@ function CockpitRow({
       data-session-id={session.sessionId}
     >
       <div className="cockpit-session-line">
-        <a
-          className="cockpit-session-name"
-          href={sessionPath(session.sessionId)}
-          title={session.name}
-          aria-current={current ? "page" : undefined}
-        >
-          {session.name}
-        </a>
+        <SessionName
+          s={session}
+          surface="cockpit"
+          renaming={renaming}
+          current={current}
+          onStart={onStartRename}
+          onCommit={onCommitRename}
+          onCancel={onCancelRename}
+        />
         <button
           className={`cockpit-disclosure cockpit-transcript-toggle${transcriptOpen ? " is-open" : ""}`}
           title="Show the latest transcript text"

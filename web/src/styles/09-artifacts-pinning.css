@@ -146,6 +146,16 @@
   opacity: 1;
 }
 
+/* The pin owns the frame's top-right corner and is hit-testable even while
+   faded out. The frames publish that footprint as a token; a painting head
+   that ends in its own control consumes it (07-registry.css), so a copy
+   button is never under the pin (a dead click, reported 2026-08-31) and
+   neither sheet names the other. Unframed paintings (a prose fence) see 0. */
+.turn-render,
+.pin-dock-item {
+  --pin-reserve: 40px;
+}
+
 .pin-btn:hover {
   border-color: var(--border-hover);
 }

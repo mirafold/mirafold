@@ -426,6 +426,14 @@
    turn runs, folds to one clickable line once real output starts.
    Collapsed is fine — invisible is not. */
 
+/* Engine-declared commentary (Codex's `phase: commentary`) that nothing
+   followed, so it never folded into an activity record: narration, not the
+   answer — dim and a touch smaller, the answer keeps full weight. */
+.turn-assistant.turn-narration {
+  color: var(--fg-dim);
+  font-size: 0.92em;
+}
+
 .thinking-block {
   /* flex-none: overflow:hidden (folded state) would otherwise let the
      zone's flex column squash this row to zero height */

@@ -182,7 +182,7 @@ export const PERMISSION_TIMEOUT_MS = envInt("PERMISSION_TIMEOUT_MS", 60_000);
 // honest: the elided amount is reported so the client marks it, never a
 // silent cut. Env-overridable (tuning; also lets tests trip it on demand).
 // Agent-neutral — any adapter's tool output flows through it.
-const OUTPUT_CAP_BYTES = envInt("TOOL_OUTPUT_CAP_BYTES", 64_000);
+export const OUTPUT_CAP_BYTES = envInt("TOOL_OUTPUT_CAP_BYTES", 64_000);
 
 export function capOutput(text: string): { text: string; truncatedBytes?: number } {
   const total = Buffer.byteLength(text, "utf8");

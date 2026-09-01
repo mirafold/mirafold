@@ -8,8 +8,11 @@
  * marked ‹U+XXXX› token (audit 2026-08-26). Pair with `unicode-bidi: isolate`
  * on the container so surrounding text cannot be re-ordered either.
  */
+// Also marks Unicode tag characters (U+E0001, U+E0020–E007F: invisible ASCII
+// smuggling) and interlinear annotation controls; variation selectors stay —
+// they alter a glyph's look, never hide or re-order other text.
 const CONTROL =
-  /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/gu;
+  /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\u{e0001}\u{e0020}-\u{e007f}]/gu;
 
 export function visibleControls(s: string): string {
   return s.replace(CONTROL, (c) => `‹U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}›`);

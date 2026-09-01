@@ -35,6 +35,7 @@
 }
 
 .tool-name {
+  unicode-bidi: isolate;
   font-weight: 600;
   color: var(--fg-mid);
   flex-shrink: 0;
@@ -79,6 +80,24 @@
   border-color: var(--err-border);
 }
 
+/* Streamed output of a running call: its last line rides the head, dim and
+   truncated from the left, so a long command shows its progress the way the
+   terminal scrolls it. */
+.tool-live-tail {
+  margin-left: 8px;
+  color: var(--fg-dimmer);
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40ch;
+}
+
+.tool-output.tool-output-live {
+  border-style: dashed;
+}
+
 /* Tool input: full args in the expansion — diff / code / JSON. */
 .tool-input {
   margin: 4px 0 2px 22px;
@@ -106,6 +125,20 @@
 
 .tool-code.tool-added {
   border-color: var(--diff-add-border);
+}
+
+/* One block per file on an apply_patch row: "Updated server/x.ts" then the
+   patch as diff rows. */
+.tool-patch + .tool-patch {
+  margin-top: 6px;
+}
+
+.tool-patch-path {
+  unicode-bidi: isolate;
+  margin: 0 0 3px 2px;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--fg-dim);
 }
 
 .tool-diff > div,

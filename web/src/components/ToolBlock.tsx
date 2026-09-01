@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { diffLines } from "../diff";
+import { diffLines, unifiedDiffLines, wholeFileLines, type DiffLine } from "../diff";
 import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 
@@ -21,6 +21,7 @@ export const ToolBlock = memo(function ToolBlock({
   output,
   truncatedBytes,
   isError,
+  streamed,
   toggled,
   onToggle,
 }: {
@@ -31,6 +32,9 @@ export const ToolBlock = memo(function ToolBlock({
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  /** Output streamed while the call runs — the terminal shows it live; the
+   *  head carries its last line, the body the whole of it so far. */
+  streamed?: string;
   /** null = user hasn't touched it; errors then default to open. */
   toggled: boolean | null;
   onToggle: (id: number, expanded: boolean) => void;
@@ -48,12 +52,14 @@ export const ToolBlock = memo(function ToolBlock({
         title={expanded ? "Collapse" : "Expand"}
       >
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>
-        <span className="tool-name">{name}</span>
+        <span className="tool-name">{visibleControls(name)}</span>
         {detail && <span className="tool-detail">{visibleControls(detail)}</span>}
+        {running && streamed && <span className="tool-live-tail">{visibleControls(lastLine(streamed))}</span>}
       </button>
       {expanded && (
         <div className="tool-body">
           {input && <ToolInput name={name} input={input} />}
+          {running && streamed && <pre className="tool-output tool-output-live">{streamed}</pre>}
           {!running && (
             <pre className="tool-output">
               {output || "(no output)"}
@@ -101,6 +107,41 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
       </div>
     );
   }
+  if (name === "apply_patch" && Array.isArray(input["changes"])) {
+    // Codex edits: one block per changed file, the patch drawn as diff rows
+    // (hunks for updates, the whole file for adds/deletes) — what the
+    // terminal prints for apply_patch.
+    return (
+      <div className="tool-input">
+        {(input["changes"] as unknown[]).map((raw, i) => {
+          const c = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+          const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
+          const diff = typeof c["diff"] === "string" ? c["diff"] : "";
+          const shownPath = String(c["path"] ?? "");
+          const movePath = typeof c["movePath"] === "string" ? c["movePath"] : undefined;
+          const label = movePath
+            ? `Moved ${shownPath} → ${movePath}`
+            : `${kind === "add" ? "Added" : kind === "delete" ? "Deleted" : "Updated"} ${shownPath}`;
+          const lines: DiffLine[] = kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-");
+          return (
+            <div className="tool-patch" key={i}>
+              {/* Marked but deliberately not length-clamped: truncating the
+                  path would hide exactly what this row exists to audit, and
+                  the diff body below it is already unbounded model content. */}
+              <div className="tool-patch-path">{visibleControls(label)}</div>
+              {lines.length > 0 ? (
+                <pre className="tool-diff">
+                  <DiffLines lines={lines} />
+                </pre>
+              ) : (
+                <pre className="tool-code">(no diff)</pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   if (name === "Write" && typeof input["content"] === "string") {
     return (
       <div className="tool-input">
@@ -121,4 +162,11 @@ function EditDiff({ oldText, newText }: { oldText: string; newText: string }) {
       <DiffLines lines={diffLines(oldText, newText)} />
     </pre>
   );
+}
+
+/** The last non-empty line of streamed output, capped, for the running row's head. */
+export function lastLine(text: string): string {
+  const lines = text.split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  const line = lines[lines.length - 1] ?? "";
+  return line.length > 80 ? `…${line.slice(-79)}` : line;
 }

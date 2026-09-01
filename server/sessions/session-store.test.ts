@@ -233,6 +233,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
       hint: "pick one",
     },
     { type: "tool_use", name: "Read", detail: "a.ts", id: "t1", input: { path: "a.ts" } },
+    { type: "tool_update", detail: "b.ts", id: "t1", input: { path: "b.ts" } },
     { type: "tool_result", output: "ok", isError: false, id: "t1", truncatedBytes: 0 },
     { type: "permission_request", tool: "Bash", detail: "echo ok", id: "p1" },
     { type: "permission_resolved", id: "p1", allow: false },

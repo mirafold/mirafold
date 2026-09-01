@@ -151,3 +151,77 @@ export async function runSlashTurn(emit: Emit, body: () => Promise<void> | void)
     emit({ type: "turn_end" });
   }
 }
+
+// Server-side twin of the web's visibleControls (web/src/visible-controls.ts),
+// for engine-chosen identifiers riding inside a shell-voiced sentence or a log
+// line: direction and invisible controls become marked ‹U+XXXX› tokens, and
+// the identifier is length-clamped, so no engine string can re-order the
+// sentence, hide inside it, or become the whole message. Unlike the web
+// version this also marks tab/newline — an identifier is single-line — and
+// Unicode tag characters (U+E0001, U+E0020–E007F: invisible ASCII smuggling)
+// plus interlinear annotation controls. Variation selectors stay: they alter
+// a glyph's look but cannot hide or re-order other text.
+const CONTROL =
+  /[\u0000-\u001f\u007f-\u009f\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\u{e0001}\u{e0020}-\u{e007f}]/gu;
+
+export function inertToken(value: string, max = 80): string {
+  // Clamp by code points BEFORE marking: the clamp itself creates no split
+  // surrogate and no half-cut ‹U+…› marker, and the marked result stays
+  // bounded. (A lone surrogate already present in the input passes through;
+  // JSON encodes it safely and the client renders U+FFFD.)
+  const points = Array.from(value);
+  const clamped = points.length > max ? `${points.slice(0, max - 1).join("")}…` : value;
+  return clamped.replace(
+    CONTROL,
+    (c) => `‹U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}›`,
+  );
+}
+
+// Distinct kinds one session will report before going quiet: enough for any
+// real version skew (Codex's whole item list is ~19), small enough that an
+// erratic engine minting kinds cannot grow the wire or the checkpoint.
+export const UNKNOWN_KIND_REPORT_CAP = 25;
+
+/**
+ * An engine event kind the adapter has no mapping for is reported — once per
+ * kind per session — as a log line and a shell-voiced notice, instead of
+ * being dropped. Silence was the failure mode: the Codex app-server rewrite
+ * shipped with 12 of 19 item kinds unmapped and nothing said so for a month
+ * (Phase TS.7). The notice is Mirafold's own sentence, so it carries no
+ * `source` — which is exactly why the kind riding inside it, an engine-chosen
+ * string, is clamped and control-visible (inertToken), and why the reporter
+ * stops at a hard cap instead of relaying kinds forever.
+ */
+export class UnknownKindReporter {
+  private readonly seen = new Set<string>();
+  private overflowed = false;
+  constructor(
+    private readonly emit: Emit,
+    private readonly engine: string,
+    private readonly warn: (message: string) => void,
+  ) {}
+
+  report(category: string, kind: string) {
+    const key = `${category}\u0000${kind}`;
+    if (this.seen.has(key)) return;
+    if (this.seen.size >= UNKNOWN_KIND_REPORT_CAP) {
+      if (this.overflowed) return;
+      this.overflowed = true;
+      this.warn(`${this.engine}: unknown-kind report cap (${UNKNOWN_KIND_REPORT_CAP}) reached — further kinds unreported`);
+      this.emit({
+        type: "notice",
+        text: `Mirafold has stopped listing unrecognized ${this.engine} events this session (cap reached).`,
+        kind: "warning",
+      });
+      return;
+    }
+    this.seen.add(key);
+    const shown = inertToken(kind);
+    this.warn(`${this.engine} ${category} "${shown}" has no Mirafold mapping — not displayed`);
+    this.emit({
+      type: "notice",
+      text: `Mirafold doesn't display this ${this.engine} ${category} yet: ${shown}`,
+      kind: "warning",
+    });
+  }
+}

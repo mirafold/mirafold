@@ -248,6 +248,63 @@ test("tool lifecycle: running announces, completed resolves, output is capped", 
   session.close();
 });
 
+test("OpenCode write/edit calls use the shared code and diff painter shapes", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    snap({
+      type: "tool",
+      id: "write-1",
+      tool: "write",
+      state: {
+        status: "completed",
+        input: { filePath: path.join(tmp, "new.txt"), content: "new file\n" },
+        output: "Wrote file successfully.",
+      },
+    }),
+    snap({
+      type: "tool",
+      id: "edit-1",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: {
+          filePath: path.join(tmp, "old.txt"),
+          oldString: "before\n",
+          newString: "after\n",
+          replaceAll: true,
+        },
+        output: "Edit applied successfully.",
+      },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+
+  const uses = msgs.filter((m) => m.type === "tool_use");
+  assert.deepEqual(
+    uses.map(({ name, detail, input }) => ({ name, detail, input })),
+    [
+      {
+        name: "Write",
+        detail: "new.txt",
+        input: { file_path: "new.txt", content: "new file\n" },
+      },
+      {
+        name: "Edit",
+        detail: "old.txt",
+        input: {
+          file_path: "old.txt",
+          old_string: "before\n",
+          new_string: "after\n",
+          replace_all: true,
+        },
+      },
+    ],
+  );
+  session.close();
+});
+
 test("tool error resolves as an isError result; completed-first still announces", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");
@@ -1475,4 +1532,31 @@ test("an untrusted folder asks before `opencode serve` starts; a no spawns nothi
   } finally {
     session.close();
   }
+});
+
+test("TS.7: an event or part kind the mapper cannot place is reported once per session, never dropped silently", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    ev("question.v3.asked", { sessionID: SES }),
+    ev("question.v3.asked", { sessionID: SES }), // once per kind
+    ev("server.heartbeat", {}), // deliberately ignored: no notice
+    snap({ type: "hologram", data: 1 }), // unknown message part
+    snap({ type: "text", text: "hi" }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const notices = () => msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]);
+  assert.deepEqual(notices(), [
+    ["Mirafold doesn't display this OpenCode event yet: question.v3.asked", undefined],
+    ["Mirafold doesn't display this OpenCode message part yet: hologram", undefined],
+  ]);
+  // The dedup is session-lifetime, not per turn: the same kind in a LATER
+  // turn stays silent (cold review 2026-08-31: a per-turn reporter reset
+  // survived every prior test).
+  await prompt("again");
+  feed(ev("question.v3.asked", { sessionID: SES }), idle());
+  await awaitTurnEnd(2);
+  assert.equal(notices().length, 2, "a later turn re-reports nothing");
+  session.close();
 });
