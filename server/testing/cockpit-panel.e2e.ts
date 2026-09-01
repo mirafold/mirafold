@@ -58,8 +58,29 @@ test("CP.2/3 cockpit panel previews, acts, follows a session switch, and closes 
 
   const width = await panel.evaluate((element) => element.getBoundingClientRect().width);
   assert.ok(width >= 220 && width <= 252, `cockpit width ${width}px is not the intended compact dock`);
+  // The transcript keeps real air from an open panel's edge — the frame's
+  // own gutter, not the scroller's 4px (cockpit follow-up 4, 2026-08-31).
+  const panelBox = (await panel.boundingBox())!;
+  const zoneBox = (await first.locator(".output-zone").boundingBox())!;
+  const panelGap = zoneBox.x - (panelBox.x + panelBox.width);
+  assert.ok(panelGap >= 22 && panelGap <= 36, `transcript sits ${panelGap}px from the open panel — wants ~24`);
   assert.equal(await row(first, firstId).locator(".cockpit-session-id").innerText(), firstId);
   assert.equal(await row(first, secondId).locator(".cockpit-session-id").innerText(), secondId);
+  // Rename in place, FleetView parity: ✎ opens the input; Enter commits and
+  // the new name arrives back through the server's sessions snapshot;
+  // Escape cancels without renaming.
+  const target = row(first, secondId);
+  await target.locator(".cockpit-edit").click();
+  const rename = target.locator(".cockpit-rename");
+  await rename.waitFor();
+  await rename.fill("renamed from the cockpit");
+  await rename.press("Enter");
+  await target.locator(".cockpit-session-name", { hasText: "renamed from the cockpit" }).waitFor({ timeout: 10_000 });
+  await target.locator(".cockpit-edit").click();
+  await rename.press("Escape");
+  await rename.waitFor({ state: "detached" });
+  assert.equal(await target.locator(".cockpit-session-name").innerText(), "renamed from the cockpit");
+
   const closedRowText = await row(first, secondId).innerText();
   assert.doesNotMatch(closedRowText, /claude-code|⧉|\btok\b|\bpair\b/i);
   assert.equal(await row(first, firstId).locator(".cockpit-session-name").getAttribute("aria-current"), "page");

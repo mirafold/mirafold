@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { ModalCard } from "./ModalCard";
 import { visibleControls } from "../visible-controls";
+import { useCopyFeedback, type CopyState } from "../use-copy-feedback";
+
+const COPY_LABEL = { idle: "copy link", copied: "copied", failed: "copy failed" } as const;
 import type { SubscriptionAct } from "../session-bus";
 import {
   acting,
@@ -254,7 +257,7 @@ export function PairCardBody({
   subReply,
   manage,
   setManage,
-  copied,
+  copyState,
   onCopy,
 }: {
   href?: string;
@@ -265,7 +268,7 @@ export function PairCardBody({
   subReply?: SubscriptionReply | null;
   manage: boolean;
   setManage: (on: boolean) => void;
-  copied: boolean;
+  copyState: CopyState;
   onCopy: (href: string) => void;
 }) {
   const manageLink = billing && subRequest && (
@@ -308,8 +311,8 @@ export function PairCardBody({
       {/* Can't scan? Copy the link and send it to your own phone. Copy is
           the one action, full width; the URL below it wraps to a couple of
           readable lines — a one-line box would scroll sideways. */}
-      <button className="pair-copy" onClick={() => onCopy(href)}>
-        {copied ? "copied" : "copy link"}
+      <button className={copyState === "failed" ? "pair-copy is-failed" : "pair-copy"} onClick={() => onCopy(href)}>
+        {COPY_LABEL[copyState]}
       </button>
       <code className="pair-url" tabIndex={0}>
         {href}
@@ -354,7 +357,7 @@ export function ConnectDevice({
   subReply?: SubscriptionReply | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const copyFeedback = useCopyFeedback();
   const [manage, setManage] = useState(false);
 
   if (!relay && !relayOff) return null;
@@ -402,13 +405,8 @@ export function ConnectDevice({
             subReply={subReply}
             manage={manage}
             setManage={setManage}
-            copied={copied}
-            onCopy={(h) => {
-              void navigator.clipboard?.writeText(h).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              });
-            }}
+            copyState={copyFeedback.state}
+            onCopy={copyFeedback.copy}
           />
         </ModalCard>
       )}

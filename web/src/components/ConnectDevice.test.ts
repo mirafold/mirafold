@@ -94,7 +94,7 @@ test("pairTitle sells only to the unentitled; an opt-out or a bad URL gets a pla
 // Review 2026-08-26: a subscriber whose relay is off still has exactly one
 // path to their subscription — the card the feature draws for them.
 test("the manage link rides every resting arm when the daemon runs on a key", () => {
-  const base = { billing: true, subRequest: () => "id", manage: false, setManage() {}, copied: false, onCopy() {} };
+  const base = { billing: true, subRequest: () => "id", manage: false, setManage() {}, copyState: "idle" as const, onCopy() {} };
   const offButBilled = renderToStaticMarkup(createElement(PairCardBody, { ...base, relayOff: "opt-out" }));
   assert.match(offButBilled, /MIRAFOLD_RELAY_URL=off/);
   assert.match(offButBilled, /manage subscription/);

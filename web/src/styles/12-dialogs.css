@@ -513,6 +513,11 @@
   cursor: pointer;
 }
 
+.pair-copy.is-failed {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
 .pair-copy:hover {
   background: var(--ok-bg);
 }

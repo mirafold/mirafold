@@ -4,7 +4,9 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
@@ -22,6 +24,8 @@ import { PickerBlock } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { ResponseDocument } from "./ResponseDocument";
 import { useFollowTail } from "../use-follow-tail";
+import { loadPins, savePins } from "../pin-store";
+import { sessionIdFromPath } from "../session-url";
 import { createTranscriptIngress } from "../delta-queue";
 import { deckElapsedSeconds } from "../subagent-deck";
 import { groupResponseDocuments } from "../response-document";
@@ -305,6 +309,8 @@ type OutputZoneProps = {
   workspaceRoot?: string;
   onOpenWorkspaceFile?: (path: string) => void;
   onInputNavigationChange?: (state: InputNavigationState) => void;
+  /** Session identity for per-session viewer state (pins); absent = don't persist. */
+  sessionKey?: string;
 };
 
 /**
@@ -320,10 +326,31 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   workspaceRoot,
   onOpenWorkspaceFile,
   onInputNavigationChange,
+  sessionKey,
 }, navigationRef) {
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
-  // order. The dock only exists while something is pinned.
-  const [pinned, setPinned] = useState<string[]>([]);
+  // order, kept per session (pin-store.ts) so a switch away and back keeps
+  // the dock. The URL names the session before any message arrives, so the
+  // restore is a plain initializer. Saving waits for Shell's session key,
+  // which arrives after mount — and if the daemon attached us to a DIFFERENT
+  // session than the URL named (its fallback for a dead id), the restored
+  // pins belong to the old one: load that session's own instead of saving
+  // a stranger's under it.
+  const restoredFor = useRef(sessionIdFromPath(location.pathname));
+  const [pinned, setPinned] = useState<string[]>(() =>
+    restoredFor.current ? loadPins(restoredFor.current) : [],
+  );
+  useEffect(() => {
+    if (!sessionKey) return;
+    if (restoredFor.current !== sessionKey) {
+      // The URL's session is gone for good: its stored pins go with it.
+      if (restoredFor.current) savePins(restoredFor.current, []);
+      restoredFor.current = sessionKey;
+      setPinned(loadPins(sessionKey));
+      return;
+    }
+    savePins(sessionKey, pinned);
+  }, [sessionKey, pinned]);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   // Streamed output scrolls you down only while you're already at the bottom
   // — terminal-scrollback behavior, in use-follow-tail.ts.
@@ -369,7 +396,12 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
     };
   }, [projection, subscribe]);
 
-  useEffect(tail.followTail, [transcript, expandedThinking, toolToggles]);
+  // Layout effect, not passive: the catch-up scroll must land inside the
+  // commit, before the browser can paint — a passive effect runs a task
+  // later, so a session switch's whole-buffer replay painted top-anchored
+  // for a frame and the reader saw the transcript flash-scroll to the
+  // bottom (cockpit follow-up, 2026-08-31; pinned in follow-tail.e2e.ts).
+  useLayoutEffect(tail.followTail, [transcript, expandedThinking, toolToggles]);
 
   const togglePin = useCallback(
     (renderId: string) =>
@@ -414,6 +446,8 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
 
   // Dock items reference the same painting objects the transcript holds, so an
   // update-in-place render/artifact (same wire id) keeps pinned blocks live.
+  // The dock exists for THESE — a stored id whose painting is not in the
+  // transcript (trimmed replay, another session's pin) renders nothing.
   const pinnedItems = useMemo(
     () => pinned.flatMap((id) => transcript.paintingsById.get(id) ?? []),
     [pinned, transcript.paintingsById],
@@ -578,14 +612,14 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
         ↓
       </button>
       </div>
-      {pinned.length > 0 &&
+      {pinnedItems.length > 0 &&
         (dockCollapsed ? (
           <button
             className="pin-tab"
             onClick={() => setDockCollapsed(false)}
             title="Expand pinned"
           >
-            📌 {pinned.length}
+            📌 {pinnedItems.length}
           </button>
         ) : (
           <PinDock

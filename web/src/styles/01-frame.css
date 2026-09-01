@@ -101,6 +101,14 @@ body {
   display: flex;
 }
 
+/* An open left panel ends in a hard border; give the transcript the frame's
+   own gutter from it — the scroller's 4px alone reads butted-up. Every panel
+   is absent from the DOM while closed, so "a panel is open" is exactly
+   "the transcript is not the first child". */
+.zone-outer > .zone-row:not(:first-child) {
+  padding-left: var(--content-air);
+}
+
 .output-zone {
   flex: 1;
   min-width: 0;

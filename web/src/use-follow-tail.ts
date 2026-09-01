@@ -8,10 +8,11 @@ import { useRef, useState } from "react";
  *
  * Wire up all five parts: `scrollerRef` on the scrolling element, and
  * `onScroll` / `onWheel` / `onTouchStart` / `onTouchMove` as its handlers.
- * Then call `followTail()` from an effect keyed on whatever changes the
- * content, `armFollow()` when the reader is conceptually back at the bottom
- * (they sent a message), and `resetTail()` when the content is replaced
- * wholesale. `detached` is the same fact as render state — true while the
+ * Then call `followTail()` from a LAYOUT effect keyed on whatever changes the
+ * content (it must land before the browser paints, or a whole-buffer replay
+ * paints top-anchored for a frame), `armFollow()` when the reader is
+ * conceptually back at the bottom (they sent a message), and `resetTail()`
+ * when the content is replaced wholesale. `detached` is the same fact as render state — true while the
  * reader is up in scrollback — so the shell can offer a way back
  * (`jumpToTail()`); the ref stays the source of truth for the handlers,
  * which run between renders.

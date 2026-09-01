@@ -566,6 +566,12 @@
   border-color: var(--border-hover);
 }
 
+.rc-copy-failed,
+.rc-copy-failed:hover {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
 /* Vertical clamp mirrors the diff body's (06-tools.css): a dumped whole file
    scrolls inside its panel instead of consuming the transcript; the copy
    button already guarantees nothing is lost. */
@@ -738,6 +744,13 @@
   border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 0.8em;
+}
+
+/* Heads whose right edge is a control keep clear of the frame's pin
+   (--pin-reserve, 09-artifacts-pinning.css). */
+.rc-code-head,
+.rc-console-head {
+  padding-right: calc(12px + var(--pin-reserve, 0px));
 }
 
 .rc-console-cmd {

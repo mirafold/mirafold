@@ -546,6 +546,7 @@ export function Shell() {
                 busy={busy}
                 focusPrompt={focusPrompt}
                 workspaceRoot={meta.cwd}
+                sessionKey={meta.sessionId}
                 onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
               />
