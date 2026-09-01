@@ -246,27 +246,54 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
    *  prompt sent immediately after health races it and the model is offered
    *  ZERO tools — observed live (request 1 carried no tools, so
    *  the scripted render call bounced). The injected render server reporting
-   *  "connected" is the readiness signal start() actually promises. On
-   *  deadline we proceed anyway: the engine still converses, renders just
-   *  arrive with a later turn — degraded, not dead. */
+   *  "connected" is therefore part of start()'s readiness contract. A known
+   *  failure or the shared startup deadline rejects before any model prompt;
+   *  silently conversing without Mirafold's promised renderer is not a valid
+   *  degraded mode. */
   private async waitForInjectedMcp(deadline: number): Promise<void> {
     const injected = Object.keys((this.options.configContent["mcp"] as object | undefined) ?? {});
     if (!injected.length) return;
     while (Date.now() <= deadline && !this.closed) {
+      let statuses: Record<string, { status?: unknown; error?: unknown }> | undefined;
       try {
         const res = await fetch(`${this.base}/mcp`, {
           headers: { authorization: this.auth },
           signal: AbortSignal.timeout(1_000),
         });
         if (res.ok) {
-          const statuses = (await res.json()) as Record<string, { status?: string }>;
-          if (injected.every((name) => statuses[name]?.status === "connected")) return;
+          statuses = (await res.json()) as Record<
+            string,
+            { status?: unknown; error?: unknown }
+          >;
         }
       } catch {
-        // poll again
+        // Transient HTTP/JSON failures poll until the shared startup deadline.
+      }
+      if (statuses && injected.every((name) => statuses[name]?.status === "connected")) return;
+      for (const name of injected) {
+        const state = statuses?.[name];
+        if (
+          state &&
+          (state.status === "failed" ||
+            state.status === "disabled" ||
+            state.status === "needs_auth" ||
+            state.status === "needs_client_registration")
+        ) {
+          const detail =
+            typeof state.error === "string" && state.error.trim()
+              ? `: ${state.error.trim().replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 500)}`
+              : "";
+          throw new Error(
+            `Mirafold render tools failed to start (${name}: ${String(state.status)}${detail})`,
+          );
+        }
       }
       await delay(250);
     }
+    if (this.closed) throw new Error("session closed while Mirafold render tools were starting");
+    throw new Error(
+      `Mirafold render tools did not connect within ${START_DEADLINE_MS}ms; no model prompt was sent`,
+    );
   }
 
   /** Read the SSE stream for this SPAWN's life, reconnecting on drops. */

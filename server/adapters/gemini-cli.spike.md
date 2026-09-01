@@ -77,12 +77,12 @@ user's own `~/.gemini/settings.json`, faithful):
 // <session cwd>/.gemini/settings.json
 { "mcpServers": { "genui": { "command": "<tsx>", "args": ["<render-mcp.ts>"] } } }
 ```
-Tool approval (headless can't prompt — same wall as Codex exec): allow our server
-specifically via `--allowed-mcp-server-names genui`, and/or a per-server `trust`
-in the settings block, rather than the blunt `--yolo`/`--approval-mode yolo`
-(which would also auto-approve the user's shell — not ours to force). Exact
-knob TBD live (see Open questions), but a scoped allow exists — same posture as
-Codex's per-server `default_tools_approval_mode: "approve"`.
+Tool approval (headless can't prompt — same wall as Codex exec): set per-server
+`trust: true` on our injected entry, rather than the blunt
+`--yolo`/`--approval-mode yolo` (which would also auto-approve the user's shell
+— not ours to force). Post-0.57 correction: `--allowed-mcp-server-names` is a
+server allowlist, not an approval grant; naming only Mirafold blocks every
+user-configured MCP server and must never be used for this purpose.
 
 ## Config we set per session (faithful, agent-scoped)
 
@@ -115,9 +115,9 @@ interactive OAuth (browser), like `codex login`. The CLI is already installed.
 2. **Warm-session mechanics**: confirm `--session-id` + `--resume` continues the
    conversation across separate headless invocations (vs. needing one long-lived
    `--acp`/interactive process).
-3. **Scoped MCP approval** in headless: confirm `--allowed-mcp-server-names genui`
-   (and/or per-server `trust`) makes our render tools run without a prompt, while
-   leaving the user's own tool approvals inherited.
+3. **Scoped MCP approval — resolved:** per-server `trust` runs our render tools
+   without a prompt while the user's MCP set remains inherited. The CLI
+   `--allowed-mcp-server-names` flag filters the server set and is not used.
 4. **OAuth creds path** for the `agentHasCredentials` check.
 
 One short live session answers all four; the adapter is then a mechanical write

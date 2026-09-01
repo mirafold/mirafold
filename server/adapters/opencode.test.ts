@@ -6,7 +6,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
-import type { OpenCodeEvent, OpenCodeTransport } from "./opencode-client";
+import { OpenCodeServerProcess, type OpenCodeEvent, type OpenCodeTransport } from "./opencode-client";
+import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { waitFor } from "../testing/wait-for";
 import { OPENCODE_SUBAGENT_EVENTS } from "../testing/opencode-subagent-fixture";
 
@@ -1428,6 +1429,71 @@ test("AUDIT: the minted server password is redacted from a stderr tail (pure)", 
   // Two occurrences both go; an empty secret is a no-op (pre-mint path).
   assert.equal(redactSecret(`${secret} and ${secret}`, secret), "[redacted] and [redacted]");
   assert.equal(redactSecret("nothing to redact", ""), "nothing to redact");
+});
+
+test("an explicit failure of the injected renderer aborts OpenCode startup", async () => {
+  const transport = new OpenCodeServerProcess({
+    bin: "unused",
+    cwd: tmp,
+    configContent: { mcp: { [MIRAFOLD_MCP]: { type: "local", command: ["unused"] } } },
+  });
+  const internals = transport as unknown as {
+    base: string;
+    auth: string;
+    waitForInjectedMcp(deadline: number): Promise<void>;
+  };
+  internals.base = "http://opencode.test";
+  internals.auth = "Basic test";
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        [MIRAFOLD_MCP]: {
+          status: "failed",
+          error: "handshaking with MCP server failed: connection closed",
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  try {
+    await assert.rejects(
+      internals.waitForInjectedMcp(Date.now() + 1_000),
+      /Mirafold render tools failed to start.*connection closed/,
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    transport.close();
+  }
+});
+
+test("an injected renderer that never connects fails OpenCode startup at the deadline", async () => {
+  const transport = new OpenCodeServerProcess({
+    bin: "unused",
+    cwd: tmp,
+    configContent: { mcp: { [MIRAFOLD_MCP]: { type: "local", command: ["unused"] } } },
+  });
+  const internals = transport as unknown as {
+    base: string;
+    auth: string;
+    waitForInjectedMcp(deadline: number): Promise<void>;
+  };
+  internals.base = "http://opencode.test";
+  internals.auth = "Basic test";
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ [MIRAFOLD_MCP]: { status: "connecting" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+  try {
+    await assert.rejects(
+      internals.waitForInjectedMcp(Date.now() + 10),
+      /Mirafold render tools did not connect/,
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    transport.close();
+  }
 });
 
 test("AUDIT: a permission-ask flood auto-denies past the cap — observable at the wire", async () => {

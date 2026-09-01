@@ -3863,15 +3863,17 @@ command output not streamed; a dozen notification kinds unhandled.
 - [x] **TS.10 — Image views** — done 2026-08-31 (`view_image`/`image_generation` rows, the picture painted inline through the image tool's own jail and byte cap; outside the workspace the row stands alone). `imageView` → a `view_image path` row plus
   the image itself painted inline (workspace-jailed, byte-capped, the
   existing render_image path) — faithful and better than the terminal.
-- [x] **TS.11 — Streamed command output** — done 2026-08-31 (additive `tool_output_delta`; the running row's head carries the last line, its body the stream; capped like final output; Mirafold process-locally enables current Codex's `apply_patch_streaming_events`, whose `patchUpdated` snapshots refresh a file-change row through additive `tool_update`; `turn/diff` remains classified ignored — the Codex ledger's unmapped lists are empty). Additive wire
+- [x] **TS.11 — Streamed command output** — done 2026-08-31 (additive `tool_output_delta`; the running row's head carries the last line, its body the stream; capped like final output; `patchUpdated` snapshots refresh a file-change row through additive `tool_update` when the engine emits them; the stable completed file-change item remains authoritative; `turn/diff` remains classified ignored — the Codex ledger's unmapped lists are empty). Additive wire
   `tool_output_delta { id, text, parentId? }` from
   `item/commandExecution/outputDelta`; the browser appends to the running
   row; `tool_result` still closes it. Current Codex no longer emits the
   deprecated `item/fileChange/outputDelta`: its full
   `item/fileChange/patchUpdated` snapshots replace one announced patch row's
   detail/input through `tool_update`, and completion closes that same row.
-  The feature-gated notification is enabled by a process-local `-c` override,
-  never by changing the user's Codex configuration.
+  The release initially enabled the feature-gated notification through a
+  process-local `-c` override. CF.HF removed that override after Codex 0.152
+  began intentionally warning about the under-development feature; stable
+  completion still carries and paints the full structured diff.
 - [x] **TS.12 — The other engines' guards** — done 2026-08-31, with one honest gap: Claude's ledger is compile-time exhaustive (`compact_boundary` was already surfaced; `tool_progress` and `task_*` stay unmapped → reported when they arrive); OpenCode: the adapter exports its handled/ignored ledgers and a Tier-4 test pulls the server's own OpenAPI document (`/doc`) and fails on any unclassified event/part kind — **not runnable on this machine: the global `opencode` install is broken (its postinstall never fetched the platform binary), so the test skips with that reason; Kyle's OpenCode sessions on 08-13/08-18 predate the break**; Gemini: the runtime guard only (sunset, no live tier). Claude: an exhaustive ledger
   `satisfies Record<SDKMessage["type"], "handled" | "ignored">` (compile
   error on an SDK bump that adds a kind) + `compact_boundary` surfaced as
@@ -3946,7 +3948,10 @@ here, not chased on this branch.
   additive, checkpointed `tool_update` messages (the retired textual event
   remains version-skew compatibility, not the live claim); (4) Mirafold now
   process-locally enables the installed engine's otherwise-disabled
-  `apply_patch_streaming_events`, so those current events actually arrive;
+  `apply_patch_streaming_events`, so those current events actually arrived
+  in 0.8.0; CF.HF later reversed that release choice because current Codex
+  correctly labels the feature unstable, while stable completion preserves
+  the final structured diff;
   (5) failed or unsynthesizable Mirafold render calls fall back to honest tool rows in
   Claude, Codex, and Gemini, matching OpenCode; (6) unified-diff hunk content
   beginning `--`/`++` is no longer mistaken for file headers; (7) expanded
@@ -4029,6 +4034,44 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   caught a stuck-empty-dock class (fixed, CF.2 wording above); the
   bughunt found and fixed the dead-session key leak. Gates on the final
   tree: typecheck; Tier 1 1,097/1,097; visual 11/11; Tier 3 130/130.
+
+- [x] **CF.HF — v0.8.0 cross-agent startup/event corrective pass
+  (2026-09-01, complete)** — branch
+  `fix/codex-mcp-startup-handshake` from current `next`. Verified against the
+  captured Codex rollout and installed Codex 0.152 / Gemini CLI 0.57 /
+  OpenCode 1.18.25 contracts. Seven confirmed classes are regression-pinned
+  and fixed: (1) remove Mirafold's forced under-development Codex
+  `apply_patch_streaming_events` flag and its startup warning while retaining
+  final structured diffs; (2) make the injected Codex renderer required and
+  surface its exact startup-status diagnostic; (3) replace the false
+  "ALWAYS available" prompt with one bounded, protocol-correct discovery pass
+  that forbids resource-list APIs; (4) kill a rejected Codex app-server before
+  a retry can orphan it; (5) map Gemini 0.57 warning/error severity without
+  ending a live turn and surface fatal `result(status:"error")` payloads;
+  (6) remove Gemini's `--allowed-mcp-server-names mirafold` flag, which was
+  excluding every user-configured MCP server rather than merely trusting ours;
+  (7) make OpenCode reject startup when its injected renderer reports failure
+  or misses the shared deadline instead of knowingly sending a model prompt
+  with zero render tools. Claude's in-process renderer and changed event paths
+  have no corresponding confirmed defect. Residual, named: Gemini's
+  `stream-json` protocol publishes no per-server MCP startup state and its
+  generic stderr hint becomes ambiguous once the user's MCP servers are
+  correctly inherited, so Mirafold cannot honestly hard-require only its
+  renderer without an upstream status channel. The captured renderer's
+  low-level connection closure did not recur in 30 fresh raw MCP handshakes
+  or 60 fresh Codex thread starts, so no speculative transport change was
+  made; required startup now prevents inference and retry spirals when that
+  failure does occur. Focused gates are green:
+  Codex/protocol 85/85, Gemini 36/36, OpenCode 63/63. Full gates are green:
+  typecheck, Tier 1 1113/1113, production build, and render-MCP integration
+  5/5, server integration 161/161, and production-browser end-to-end 130/130.
+  The exact branch tarball passed the global-install packaged smoke 9/9. One
+  real packaged Codex subscription turn repeated the captured graph-only
+  request: it completed with four charts and no unstable-feature warning,
+  renderer failure, resource-list retry, unexpected permission, or browser
+  error. The required fresh-agent cold review covered all 13 changed files
+  and the surrounding lifecycles against the exact installed protocol
+  contracts; it returned no confirmed findings and changed nothing.
 
 **Open records (Kyle's calls):**
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
