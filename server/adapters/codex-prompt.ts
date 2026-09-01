@@ -13,15 +13,18 @@ import { MIRAFOLD_MCP } from "./render-mcp-cmd";
  * prompts): 15 paintings — the model almost never went looking. So this
  * note rides at the TOP of the developer instructions, names all three
  * paths with the exact call shapes, and makes loading a render tool the
- * first step of any reply with a structured core. It is true in every
- * configuration and rides only on thread start.
+ * first step of any reply with a structured core. It also states the failure
+ * boundary literally: discovery is one pass, and resource-list APIs are not
+ * tool discovery. The note rides only on thread start.
  */
 export const CODEX_DEFERRED_TOOLS_ADDENDUM = `
 ## Mirafold's render tools: where they are, and load them first (important)
 
 The render_* tools and emit_artifact described below live on the
-\`${MIRAFOLD_MCP}\` MCP server. They are ALWAYS available, but Codex may hide
-them from your tool list. Check, in this order:
+\`${MIRAFOLD_MCP}\` MCP server. They are available only after the
+\`${MIRAFOLD_MCP}\` MCP server starts. Mirafold requires that server before
+this thread can run, but Codex may expose its tools through different surfaces.
+Check the surfaces relevant to this session once, in this order:
 1. If they appear in your tool list, call them directly.
 2. If your tool list has \`tool_search\`, they are DEFERRED behind it: call
    tool_search with the tool's name (for example {"query": "render_table"}),
@@ -32,8 +35,10 @@ them from your tool list. Check, in this order:
    call one like
    \`const r = await tools.mcp__${MIRAFOLD_MCP}__render_table({ columns, rows });\`
    and pass the returned \`r.content\` text to \`text(...)\`.
-Never conclude a render tool is unavailable without doing this. Absent from
-your tool list means not loaded yet, never missing.
+Never use \`list_mcp_resources\` or \`list_mcp_resource_templates\` to discover
+tools: those APIs list MCP resources, not callable tools. If the render tools
+are absent from every relevant surface above, stop; do not retry discovery.
+Report that the Mirafold renderer is unavailable for this turn.
 
 Do this in EVERY reply whose content has a structured core — a list, a table,
 a comparison, key→value facts, code, a diff, command output, test results, a

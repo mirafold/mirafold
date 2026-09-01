@@ -266,15 +266,16 @@ them. The rules, for the next adapter author:
 | Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; error output capped by `capOutput` like success) | ✅ | ✅ |
 | Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ⚠ partial (TS.9): collab calls (`spawn_agent`/`wait`/`send_message`…) are engine-named rows carrying the prompt and each child's state; a child's lifecycle (`subAgentActivity`) narrates under its spawn row via `parentId`; the child's INNER calls and prose still need per-thread `app-server` subscriptions the adapter does not open | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
-| Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ✅ full round-trip: `item/*/requestApproval` → the bar → `{decision}` / granted profile; fail-closed on timeout/close; PLUS a folder-trust ask before the first `thread/start` | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
+| Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ✅ full round-trip: `item/*/requestApproval` → the bar → `{decision}` / granted profile; fail-closed on timeout/close; PLUS a folder-trust ask before the first `thread/start` | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only the injected render-server entry carries `trust: true` | ✅ (`dangerous` keyword) |
 | Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |
 | Interrupt | SDK `interrupt()` | `turn/interrupt`; discovered-local turns also use it at the configurable eight-minute outer deadline | `POST /session/:id/abort`; the grace deadline starts independently of that finite HTTP call. If idle misses the deadline, fork the conversation to a new engine-session id before the next prompt so a late old idle cannot end it; bounded fork failure degrades to a disclosed fresh session | kill child process | clear timers |
-| Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | subprocess stdio MCP via `-c mcp_servers.*` on the app-server spawn (`render-mcp.ts`) | subprocess stdio MCP via the **`OPENCODE_CONFIG_CONTENT` env var** (additive merge; no file the user owns is read, written, or created) | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
+| Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | required subprocess stdio MCP via `-c mcp_servers.*` on the app-server spawn (`render-mcp.ts`); `thread/start` rejects before inference on failure | subprocess stdio MCP via the **`OPENCODE_CONFIG_CONTENT` env var** (additive merge; no file the user owns is read, written, or created); startup waits for `GET /mcp` to report it connected | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
 | Model override env | `DEFAULT_MODEL` | `CODEX_MODEL` | `OPENCODE_MODEL` (`provider/model`; a bare id can't name a provider so it pins nothing) | `GEMINI_MODEL` | — |
 | Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL` | `OPENAI_API_KEY` \|\| `$CODEX_HOME/auth.json` (ChatGPT login) | binary present: a stored `auth.json` → `api-key`, else the free Zen gateway → `gateway`; the TRUE per-provider kind is classified at session start from the running engine's catalog | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` (individual-account Google login stopped serving Gemini CLI requests in 2026) | none → mock is the fallback for every agent |
 
 Known asymmetries, accepted deliberately (each is I3 at work, not debt):
-Gemini has no thinking stream and pays a process spawn per turn. Codex moved to
+Gemini has no thinking stream, pays a process spawn per turn, and its
+`stream-json` surface exposes no per-server MCP startup status. Codex moved to
 the `app-server` protocol (Phase CA, 2026-08-25), which closed its two old
 gaps — it now streams token deltas and carries the interactive approval
 round-trip — so Codex's permission bar is live; what a headless Gemini still
@@ -330,7 +331,9 @@ for a tool rarely paints (Phase TS, 2026-08-30):
   `ALL_TOOLS` (≥0.147; custom/local providers still see them directly). The
   adapter's developer instructions therefore open with a where-are-the-tools
   note (`codex-prompt.ts`) that names all three paths with exact call shapes
-  and makes loading the tool the first step of any structured reply.
+  and makes loading the tool the first step of any structured reply. The note
+  also forbids resource-list APIs as tool discovery and stops after one failed
+  pass; it never tells the model that an absent tool is secretly present.
   A 16-turn replay of real prompts (PLAN TS.3) measured that note — and a
   per-turn paint reminder tried after it (TS.5, reverted) — as no-ops:
   Codex paints on early advisory turns and then answers in prose for the
@@ -387,19 +390,20 @@ ceiling is the same UTF-8 byte budget as final tool output—never JavaScript
 character count.
 
 Current Codex does not emit the deprecated `item/fileChange/outputDelta`.
-Instead, each `item/fileChange/patchUpdated` carries the latest complete
-structured patch snapshot when `features.apply_patch_streaming_events` is
-enabled. Mirafold enables that feature only for its app-server process through
-a `-c` override; it does not alter the user's Codex configuration. Additive
-`tool_update` replaces the announced row's detail/input in place, so an
-initially empty `fileChange` becomes the real multi-file diff as it evolves
-and the completed item closes that same row. The retired textual event remains
-accepted only for older Codex version skew; it is not the basis of the
-current-engine fidelity claim.
+Its stable `item/started` / `item/completed` file-change items carry structured
+changes, and the completed item is the authoritative full diff. Codex also has
+an intermediate `item/fileChange/patchUpdated` snapshot behind the
+under-development `apply_patch_streaming_events` feature. Mirafold does not
+enable that unstable feature: Codex 0.152 intentionally warns whenever a
+client does. The mapper still accepts `patchUpdated` if the user's own engine
+emits it, using additive `tool_update` to refresh the open row, but final diff
+painting never depends on it. The retired textual event remains accepted only
+for older Codex version skew.
 
 **Edit painting (TS.6).** `Write` shows the new content; `Edit` and the
 registry's `render_diff` share the line differ; Codex `apply_patch` shows one
-normalized block per file, refreshed from its live patch snapshots.
+normalized block per file from the stable completed item (and refreshes it
+earlier when the engine happens to emit live patch snapshots).
 Unified-diff file headers are ignored only before
 the first hunk, so changed source beginning with `--` or `++` remains visible,
 and a move heading names both paths. The shared differ trims equal edges and
@@ -412,8 +416,10 @@ Adapter obligations for either path:
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in
    `permissions.ts`; Codex: per-server `default_tools_approval_mode`; OpenCode:
    the render server is the only MCP added via `OPENCODE_CONFIG_CONTENT` and the
-   user's own permission rules otherwise apply; Gemini:
-   `--allowed-mcp-server-names mirafold`). Never blanket-approve the user's other
+   user's own permission rules otherwise apply; Gemini: `trust: true` on only
+   the injected project entry). Never pass Gemini's
+   `--allowed-mcp-server-names mirafold`: that flag is a server allowlist and
+   silently removes every user-configured MCP server. Never blanket-approve the user's other
    tools to make ours run — that's forcing a posture the terminal doesn't have.
    OpenCode advertises MCP tools as `mirafold_<tool>`, so the adapter recognizes
    its own render calls by the `mirafold_` prefix and paints them, suppressing
