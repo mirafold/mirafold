@@ -1,22 +1,26 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { RENDER_TOOL_COMPONENT } from "./adapters/render-mcp-cmd";
+import { RENDER_TOOL_COMPONENT, acceptableRenderId } from "./adapters/render-mcp-cmd";
 import { parseRenderId } from "./adapters/gemini-cli";
 
-// The stdio render-MCP stub (render-mcp.ts) over a real MCP handshake —
+// The compiled stdio render-MCP server over a real Electron-as-Node handshake —
 // the process Codex/Gemini engines actually spawn. The adapters never see this
 // process's output directly; they read the ack back off their engine's event
 // stream, so what matters here is exactly the ack contract: the renderId in
 // structuredContent (Codex's primary channel) AND in parseable text (the
-// fallback both adapters share). Pinned to the TS source via tsx — the
-// compiled twin is the same source, and a stale dist-server must not decide
-// what this test observes (L.2e).
+// fallback both adapters share). `test:server` rebuilds dist-server first;
+// running the compiled twin under Electron is the packaged-runtime boundary.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const ELECTRON = require("electron") as string;
+const COMPILED_RENDER_MCP = path.join(ROOT, "dist-server", "render-mcp.js");
 
 type ToolResult = {
   isError?: boolean;
@@ -25,19 +29,23 @@ type ToolResult = {
 };
 
 let client: Client;
+let transport: StdioClientTransport;
 
 before(async () => {
+  assert.ok(existsSync(COMPILED_RENDER_MCP), "build:server must produce the render-MCP bundle");
   client = new Client({ name: "mirafold-itest", version: "0.0.0" });
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: ["--import", "tsx", "server/render-mcp.ts"],
-      cwd: ROOT,
-    }),
-  );
+  transport = new StdioClientTransport({
+    command: ELECTRON,
+    args: [COMPILED_RENDER_MCP],
+    cwd: ROOT,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stderr: "pipe",
+  });
+  await client.connect(transport);
 });
 after(async () => {
   await client.close();
+  assert.equal(transport.pid, null, "the Electron render-MCP child closed cleanly");
 });
 
 const ackText = (r: ToolResult) => r.content?.find((c) => c.type === "text")?.text ?? "";
@@ -63,7 +71,7 @@ test("render_card ack: a fresh id on BOTH adapter channels, and they agree", asy
   })) as ToolResult;
   assert.ok(!r.isError);
   const id = r.structuredContent?.renderId;
-  assert.ok(id && id.length >= 8); // Codex's primary channel
+  assert.equal(acceptableRenderId(id), id); // Codex's primary channel
   assert.equal(parseRenderId(ackText(r)), id); // Gemini's shipped text parser reads the same id
 });
 

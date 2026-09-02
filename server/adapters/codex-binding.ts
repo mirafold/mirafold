@@ -1,5 +1,5 @@
 import { agentBin, envWithout } from "./types";
-import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, renderMcpCommand, type RenderMcpLaunch } from "./render-mcp-cmd";
 import { configArgs, listCodexModels, type CodexModel } from "./codex-model-list";
 import { codexProviders, type CodexProviders } from "./codex-config";
 import type { AppServerSpawn } from "./codex-app-server";
@@ -7,6 +7,23 @@ import type { AppServerSpawn } from "./codex-app-server";
 export type CodexBackendKind = "api-key" | "subscription" | "local";
 
 const RENDER_MCP = renderMcpCommand();
+
+/** Codex's native stdio-MCP schema: `env` belongs to this server process. */
+export function codexRenderMcpConfig(render: RenderMcpLaunch = RENDER_MCP) {
+  return {
+    command: render.command,
+    args: render.args,
+    ...(render.childEnv ? { env: render.childEnv } : {}),
+    // A turn whose renderer never initialized cannot honor Mirafold's
+    // structured-output contract. Codex's stable `required` setting makes
+    // thread/start wait for this server and reject before model inference
+    // if startup fails; the next prompt can retry with a fresh process.
+    required: true,
+    // Mirafold's own render tools only emit validated UI messages; the
+    // headless engine cannot prompt for their approval.
+    default_tools_approval_mode: "approve",
+  };
+}
 
 /** The provider half of an agent picker pick's enforcement. */
 export function codexProviderBinding(
@@ -72,18 +89,7 @@ export function codexSessionConfig(
 ): Record<string, unknown> {
   return {
     mcp_servers: {
-      [MIRAFOLD_MCP]: {
-        command: RENDER_MCP.command,
-        args: RENDER_MCP.args,
-        // A turn whose renderer never initialized cannot honor Mirafold's
-        // structured-output contract. Codex's stable `required` setting makes
-        // thread/start wait for this server and reject before model inference
-        // if startup fails; the next prompt can retry with a fresh process.
-        required: true,
-        // Mirafold's own render tools only emit validated UI messages; the
-        // headless engine cannot prompt for their approval.
-        default_tools_approval_mode: "approve",
-      },
+      [MIRAFOLD_MCP]: codexRenderMcpConfig(),
     },
     ...binding,
     // CA.1 spike (2026-08-25): app-server prefers the auth.json ChatGPT login
