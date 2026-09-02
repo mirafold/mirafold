@@ -4100,6 +4100,32 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   as `48629c7`; `main` and `next` both carry 0.8.1, and the merged fix,
   release, and sync branches were deleted.
 
+- [ ] **CF.HF2 — packaged Desktop render-MCP child mode (2026-09-01,
+  release pending)** — isolated branch `fix/desktop-render-mcp-node-mode` from
+  current `next`; deliberately separate from the dead-code cleanup branch.
+  The installed Desktop 0.3.9 / Shell 0.8.1 artifact was reproduced before
+  editing with its exact `/opt/Mirafold/mirafold` executable and bundled
+  `dist-server/render-mcp.js`: initialization produced no response with no
+  child Node-mode switch, while adding only `ELECTRON_RUN_AS_NODE=1`
+  initialized, advertised exactly 18 tools, called `render_card` with a valid
+  ID, and exited cleanly.
+  The narrow correction adds an optional child-only environment to the shared
+  compiled render-MCP launch description, then maps it to Codex and Gemini's
+  native `env` field and OpenCode's native `environment` field. Codex remains
+  `required: true`; Claude's in-process renderer, ordinary Node launches, the
+  daemon environment, and agent-process environments remain unchanged.
+  Regression coverage includes deterministic configuration tests for all three
+  subprocess adapters and a compiled real-MCP initialize/list/call/close test
+  under pinned Electron 43.4.0. Electron is dev-only: 327.16 MB installed with
+  transitive dependencies for CI, zero bytes in the 1.46 MB publish tarball;
+  `yarn audit` reports 0 vulnerabilities across all 470 packages. Final local
+  gates: typecheck; Tier 1 1117/1117; Tier 2 161/161; Tier 3 130/130; managed
+  browser and visual UI 11/11; package notices unchanged; dry-run pack contains
+  only the existing 20 shipped files. Remaining: reviewed PR → `next`, Shell
+  patch publication and registry proof, exact published-package Desktop intake,
+  packaged Desktop smoke on Linux and Windows, installed-engine acceptance,
+  then release and `main` → `next` synchronization.
+
 **Open records (Kyle's calls):**
 - **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
   #33547726085 passed, but GitHub annotated the pinned
