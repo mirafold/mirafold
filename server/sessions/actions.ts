@@ -5,12 +5,15 @@
 // effect is visible in every viewport's transcript.
 
 import { createLogger } from "../log";
-import { readdirSync, realpathSync, statSync } from "node:fs";
+import { opendirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { errText } from "../adapters/types";
 
 const log = createLogger("action");
+const WORKSPACE_LS_MAX_ENTRIES = 2_000;
+const WORKSPACE_LS_MAX_OUTPUT_BYTES = 64_000;
+const WORKSPACE_LS_TRUNCATED = "(listing truncated)";
 
 type ActionTool = {
   description: string;
@@ -43,22 +46,45 @@ const ACTION_TOOLS: Record<string, ActionTool> = {
     run: (args, cwd) => {
       const target = inside(cwd, String(args["path"] ?? "."));
       if (!target) throw new Error("path escapes the session workspace");
-      const names = readdirSync(target);
-      if (names.length === 0) return "(empty)";
-      return names
-        .map((n) => {
+      const dir = opendirSync(target);
+      const lines: string[] = [];
+      let outputBytes = 0;
+      let scanned = 0;
+      let truncated = false;
+      const markerBytes = Buffer.byteLength(WORKSPACE_LS_TRUNCATED, "utf8") + 1;
+      try {
+        for (;;) {
+          const entry = dir.readSync();
+          if (!entry) break;
+          if (scanned++ >= WORKSPACE_LS_MAX_ENTRIES) {
+            truncated = true;
+            break;
+          }
+          const n = entry.name;
           // Per-entry stat failures (a dangling symlink; a file the agent
           // deleted between readdir and stat) mark that ROW, never the whole
           // listing — one broken link must not turn every sibling invisible
           // (fs-folder-tree handles the same case).
+          let line: string;
           try {
             const s = statSync(path.join(target, n));
-            return `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;
+            line = `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;
           } catch {
-            return `- ${"?".padStart(8)}  ${n}`;
+            line = `- ${"?".padStart(8)}  ${n}`;
           }
-        })
-        .join("\n");
+          const lineBytes = Buffer.byteLength(line, "utf8") + (lines.length ? 1 : 0);
+          if (outputBytes + lineBytes + markerBytes > WORKSPACE_LS_MAX_OUTPUT_BYTES) {
+            truncated = true;
+            break;
+          }
+          lines.push(line);
+          outputBytes += lineBytes;
+        }
+      } finally {
+        dir.closeSync();
+      }
+      if (lines.length === 0 && !truncated) return "(empty)";
+      return `${lines.join("\n")}${truncated ? `${lines.length ? "\n" : ""}${WORKSPACE_LS_TRUNCATED}` : ""}`;
     },
   },
 };

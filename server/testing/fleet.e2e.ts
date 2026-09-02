@@ -54,6 +54,140 @@ async function allIdle(rows: number) {
   );
 }
 
+test("a maximum-length session name stays inside every supported fleet width", async () => {
+  const row = fleet.locator(".fleet-row").first();
+  const link = row.locator(".fleet-link");
+  const originalName = await link.innerText();
+  const maximumName = "n".repeat(60);
+
+  await row.locator(".fleet-edit").click();
+  await row.locator(".fleet-rename").fill(maximumName);
+  await row.locator(".fleet-rename").press("Enter");
+  await fleet.waitForFunction(
+    (name) => document.querySelector(".fleet-link")?.textContent === name,
+    maximumName,
+  );
+
+  try {
+    for (const width of [1280, 900, 800, 650, 641, 390, 320]) {
+      await fleet.setViewportSize({ width, height: 844 });
+      await fleet.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+
+      const geometry = await row.evaluate((element) => {
+        const rowBox = element.getBoundingClientRect();
+        const childrenOutside = [...element.children].flatMap((child) => {
+          if (!(child instanceof HTMLElement)) return [];
+          const style = getComputedStyle(child);
+          const box = child.getBoundingClientRect();
+          if (style.display === "none" || style.position === "absolute" || box.width < 0.5) return [];
+          return box.left < rowBox.left - 1 || box.right > rowBox.right + 1
+            ? [{ className: child.className, left: box.left, right: box.right }]
+            : [];
+        });
+        return {
+          overflow: element.scrollWidth - element.clientWidth,
+          childrenOutside,
+        };
+      });
+      assert.ok(
+        geometry.overflow <= 1,
+        `${width}px fleet row overflows itself by ${geometry.overflow}px`,
+      );
+      assert.deepEqual(
+        geometry.childrenOutside,
+        [],
+        `${width}px fleet row has children outside its border`,
+      );
+
+      const nameGeometry = await row.locator(".fleet-name").evaluate((slot) => {
+        const nameLink = slot.querySelector<HTMLElement>(".fleet-link");
+        const edit = slot.querySelector<HTMLElement>(".fleet-edit");
+        if (!nameLink || !edit) throw new Error("fleet name controls are missing");
+        const linkBox = nameLink.getBoundingClientRect();
+        const editBox = edit.getBoundingClientRect();
+        return {
+          clientWidth: nameLink.clientWidth,
+          scrollWidth: nameLink.scrollWidth,
+          textOverflow: getComputedStyle(nameLink).textOverflow,
+          editGap: editBox.left - linkBox.right,
+        };
+      });
+      assert.equal(nameGeometry.textOverflow, "ellipsis");
+      if (width === 320) {
+        assert.ok(
+          nameGeometry.scrollWidth > nameGeometry.clientWidth,
+          "320px maximum-length name is not visibly truncated",
+        );
+      }
+      assert.ok(
+        nameGeometry.editGap >= 0 && nameGeometry.editGap <= 12,
+        `${width}px rename pencil sits ${nameGeometry.editGap}px after the visible name`,
+      );
+    }
+    await fleet.setViewportSize({ width: 1280, height: 844 });
+    await fleet.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+
+    const tooltipTargets = await row.evaluate((element) => {
+      const link = element.querySelector<HTMLElement>(".fleet-link");
+      const agent = element.querySelector<HTMLElement>(".fleet-agent");
+      if (!link || !agent) throw new Error("Fleet tooltip targets are missing");
+      const label = element.querySelector<HTMLElement>(".fleet-link-label") ?? link;
+
+      const labelBox = label.getBoundingClientRect();
+      const linkBox = link.getBoundingClientRect();
+      const labelLeft = Math.max(labelBox.left, linkBox.left);
+      const labelRight = Math.min(labelBox.right, linkBox.right);
+      const nameHit = document.elementFromPoint(
+        labelLeft + (labelRight - labelLeft) / 2,
+        labelBox.top + labelBox.height / 2,
+      );
+      const agentBox = agent.getBoundingClientRect();
+      const rowHit = document.elementFromPoint(
+        agentBox.left + agentBox.width / 2,
+        agentBox.top + agentBox.height / 2,
+      );
+
+      return {
+        name:
+          nameHit instanceof HTMLElement
+            ? nameHit.closest<HTMLElement>("[title]")?.title ?? null
+            : null,
+        row:
+          rowHit instanceof HTMLElement
+            ? rowHit.closest<HTMLElement>("[title]")?.title ?? null
+            : null,
+        workspace: element.getAttribute("title"),
+      };
+    });
+    assert.equal(tooltipTargets.name, maximumName, "truncated name has no full-name tooltip");
+    assert.ok(tooltipTargets.workspace, "Fleet row has no workspace tooltip");
+    assert.equal(
+      tooltipTargets.row,
+      tooltipTargets.workspace,
+      "the stretched Fleet link overrides the row's workspace tooltip",
+    );
+  } finally {
+    await fleet.setViewportSize({ width: 1280, height: 844 });
+    await row.locator(".fleet-edit").click();
+    await row.locator(".fleet-rename").fill(originalName);
+    await row.locator(".fleet-rename").press("Enter");
+    await fleet.waitForFunction(
+      (name) => document.querySelector(".fleet-link")?.textContent === name,
+      originalName,
+    );
+  }
+});
+
 test("the ▾ details line shows live activity while a turn works, then honest idle text", async () => {
   // Activity lives behind the per-row disclosure now (2026-07-24, Kyle) —
   // the bar itself stays a stable glance set.

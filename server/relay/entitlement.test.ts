@@ -127,20 +127,44 @@ test("malformed exchange response degrades to no token, never throws", async () 
   }
 });
 
+test("oversized billing JSON and entitlement tokens degrade to no token", async () => {
+  for (const body of [
+    { token: "x".repeat(70_000), exp: futureExp() },
+    { token: "x".repeat(9_000), exp: futureExp() },
+  ]) {
+    const fetchMock = mock.method(globalThis, "fetch", async () => jsonResponse(200, body));
+    try {
+      const src = createEntitlementTokenSource({
+        MIRAFOLD_LICENSE_KEY: "mf_test",
+        MIRAFOLD_ENTITLEMENT_URL: "http://billing.test/api/entitlement",
+      });
+      assert.equal(await src.get(), undefined);
+      src.stop();
+    } finally {
+      fetchMock.mock.restore();
+    }
+  }
+});
+
 // AUDIT 2026-08-26: no key bytes in the log, not even a prefix.
 test("AUDIT: a refused license key is never echoed into the log, not even its prefix", async () => {
   const lines: string[] = [];
   const warn = mock.method(console, "warn", (...args: unknown[]) => lines.push(args.map(String).join(" ")));
   const error = mock.method(console, "error", (...args: unknown[]) => lines.push(args.map(String).join(" ")));
+  const fetchMock = mock.method(globalThis, "fetch", async () =>
+    jsonResponse(403, { reason: "lapsed" }),
+  );
+  const source = createEntitlementTokenSource({
+    MIRAFOLD_LICENSE_KEY: "mf_SECRETSECRETSECRET",
+    MIRAFOLD_ENTITLEMENT_URL: "http://billing.test/api/entitlement",
+  });
   try {
-    const source = createEntitlementTokenSource({
-      licenseKey: "mf_SECRETSECRETSECRET",
-      url: "http://127.0.0.1:1/api/entitlement",
-      fetchImpl: (async () => new Response(JSON.stringify({ reason: "lapsed" }), { status: 403 })) as unknown as typeof fetch,
-    } as unknown as Parameters<typeof createEntitlementTokenSource>[0]);
-    await source.get().catch(() => undefined);
-    source.stop();
+    assert.equal(await source.get(), undefined);
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.ok(lines.some((line) => line.includes("entitlement refused")), lines.join(" | "));
   } finally {
+    source.stop();
+    fetchMock.mock.restore();
     warn.mock.restore();
     error.mock.restore();
   }

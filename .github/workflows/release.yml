@@ -5,22 +5,23 @@ name: Release
 # the package carries a signed provenance attestation binding it to the exact
 # public commit + this workflow; users verify with `npm audit signatures`.
 #
-# Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com is configured to accept
-# `mirafold` publishes only from this workflow — identity-federated, NO npm
-# token stored anywhere, so the repo's no-secrets-in-CI bound (PLAN C.1)
-# holds and a stolen npm password can't publish. If npmjs.com's trusted-
-# publisher binding is ever removed, a real publish from here fails auth —
-# that's the fail-closed direction.
+# Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com's publisher record must
+# accept `mirafold` publishes only from this workflow in the protected
+# `npm-publish` environment — identity-federated, so this workflow needs no
+# stored npm token and the repo's no-secrets-in-CI bound (PLAN C.1) holds. The npm
+# package's Publishing access must separately disallow traditional tokens;
+# trusted publishing does not turn them off. If the trusted-publisher binding
+# is ever removed, a real publish from here fails auth — that's the
+# fail-closed direction.
 #
 # Launch morning (R.7): Kyle pushes the SIGNED release tag (tarball SHA-256
-# in the tag message) and this workflow does the rest — no hand-run
-# `npm publish`, ever. Rehearsal: workflow_dispatch runs everything up to a
-# `npm publish --dry-run`, which packs and reports without authenticating.
+# in the tag message), approves the protected publish environment after the
+# checks pass, and this workflow does the rest — no hand-run `npm publish`,
+# ever.
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch: # rehearsal — dry-run only, never a real publish
 
 # Two jobs, deliberately (audit 2026-08-26): `verify` builds, tests and packs
 # with NO publish credential in scope — `yarn install` runs two dependencies'
@@ -48,9 +49,7 @@ jobs:
       # gate a tag aimed at any branch's commit — or an old main commit —
       # would publish it. Flow b (2026-08-07): main advances only at release
       # time, so main's tip and the published package are the same thing.
-      # Dispatch rehearsals run from a branch ref and skip this.
       - name: Tag must be main's current tip
-        if: github.event_name == 'push'
         run: |
           git fetch --depth=1 origin main
           TIP="$(git rev-parse origin/main)"
@@ -66,10 +65,8 @@ jobs:
       - run: yarn install --frozen-lockfile
 
       # A tag that doesn't match package.json is a mis-cut release — refuse
-      # loudly before anything publishes. (Dispatch rehearsals skip this;
-      # there's no tag to match.)
+      # loudly before anything publishes.
       - name: Tag ↔ version check
-        if: github.event_name == 'push'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
@@ -128,7 +125,6 @@ jobs:
       # a non-deterministic build, or a tag cut from a different tree, is a
       # red run here instead of a silent mismatch.
       - name: Tag signature ↔ allowed signers, message SHA-256 ↔ packed tarball
-        if: github.event_name == 'push'
         run: |
           git fetch --no-tags --depth=1 origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git -c gpg.ssh.allowedSignersFile=.github/allowed_signers verify-tag "$GITHUB_REF_NAME" \
@@ -156,6 +152,7 @@ jobs:
     name: publish with provenance
     needs: verify
     runs-on: ubuntu-latest
+    environment: npm-publish
     # id-token: write is what mints the OIDC token npm's trusted publishing
     # exchanges for a one-shot publish credential — scoped to THIS job, which
     # runs no install scripts and touches nothing but the verified tarball.
@@ -188,13 +185,6 @@ jobs:
           [ "$SHA" = "$VERIFIED_SHA" ] || { echo "artifact sha256 $SHA != verified $VERIFIED_SHA" >&2; exit 1; }
 
       - name: Publish the packed tarball (tag push — provenance over trusted publishing)
-        if: github.event_name == 'push'
         env:
           TARBALL: ${{ needs.verify.outputs.tarball }}
         run: npm publish "./$TARBALL" --provenance --access public
-
-      - name: Dry-run publish (rehearsal)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          TARBALL: ${{ needs.verify.outputs.tarball }}
-        run: npm publish "./$TARBALL" --dry-run --access public

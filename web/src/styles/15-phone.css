@@ -236,16 +236,6 @@
     text-overflow: ellipsis;
   }
 
-  /* Everything that doesn't earn phone space (facts + plumbing + the pill). */
-  .sb-session,
-  .sb-version,
-  .sb-usage,
-  .sb-model,
-  .sb-cwd,
-  .sb-theme {
-    display: none;
-  }
-
   /* Thumb-sized controls, one consistent 40px height — sized so the whole
      strip (pair button included, the local-viewport worst case) fits one
      row at 390px. */
@@ -322,10 +312,10 @@
     min-height: 40px;
   }
 
-  /* Fleet rows: name + state read first; plumbing columns step back. */
-  .fleet-row {
-    flex-wrap: wrap;
-    row-gap: 2px;
+  /* The row already wraps below 900px; give its name the first phone line. */
+  .fleet-name {
+    flex: 1 1 240px;
+    max-width: none;
   }
 
   .fleet-id {

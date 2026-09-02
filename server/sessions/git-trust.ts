@@ -48,11 +48,6 @@ export function gitBin(): string | undefined {
   }
   return gitBinCache;
 }
-/** Test seam: forget the cached lookup (PATH changed). */
-export function resetGitBinCache(): void {
-  gitBinCache = null;
-}
-
 // Shared with every git invocation in git.ts — one timebox for the family.
 export const GIT_TIMEOUT_MS = envInt("FS_GIT_TIMEOUT_MS", 5_000);
 // A config dump is small; this only bounds a pathological repo's memory.

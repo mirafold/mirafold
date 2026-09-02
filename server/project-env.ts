@@ -3,8 +3,66 @@
 // overrides, PATH/shell controls, runtime loader hooks, and arbitrary project
 // variables stay available only when the operator supplied them before launch.
 
-import { readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+} from "node:fs";
 import { parseEnv } from "node:util";
+
+// Project configuration is a tiny text file. Bound the descriptor read itself
+// so a planted device/FIFO or a growing file cannot pin or exhaust the daemon
+// before the folder-trust question is even shown.
+const PROJECT_ENV_MAX_BYTES = 1024 * 1024;
+
+function readProjectEnvFile(file: string): string | undefined {
+  try {
+    // The pre-open check rejects a checkout-supplied symlink on every
+    // platform. O_NOFOLLOW below also closes the check/open race where the
+    // platform provides it; O_NONBLOCK keeps a raced special file from
+    // blocking before fstat rejects it.
+    if (!lstatSync(file).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      file,
+      constants.O_RDONLY |
+        (constants.O_NOFOLLOW ?? 0) |
+        (constants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > PROJECT_ENV_MAX_BYTES) return undefined;
+
+    // Read the opened descriptor, not the path. The fixed-size buffer keeps a
+    // file that grows after fstat from allocating beyond one extra byte.
+    const bytes = Buffer.alloc(stat.size + 1);
+    let read = 0;
+    while (read < bytes.length) {
+      const count = readSync(fd, bytes, read, bytes.length - read, null);
+      if (count === 0) break;
+      read += count;
+    }
+    if (read > PROJECT_ENV_MAX_BYTES) return undefined;
+    return bytes.subarray(0, read).toString("utf8");
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // Optional startup configuration must never abort the daemon.
+      }
+    }
+  }
+}
 
 export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   // Agent selection, credentials, endpoints, and model choices.
@@ -113,7 +171,9 @@ export function loadProjectEnv(
 ): void {
   let parsed: NodeJS.Dict<string>;
   try {
-    parsed = parseEnv(readFileSync(file, "utf8"));
+    const source = readProjectEnvFile(file);
+    if (source === undefined) return;
+    parsed = parseEnv(source);
   } catch {
     return;
   }

@@ -15,7 +15,6 @@ import type { ConnectionContext } from "./handler-context";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
-import type { SessionEntry } from "./registry";
 import { relayGateRefusal } from "../provider-policy";
 import { envInt } from "../env";
 import { badClientId } from "./fs-handlers";
