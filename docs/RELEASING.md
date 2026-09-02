@@ -89,11 +89,16 @@ Three mechanics to know:
    the exact bytes. No hand-run `npm publish`, ever — the tag push triggers
    `.github/workflows/release.yml`, which re-verifies (guard, tag↔version
    check, typecheck, tests), packs once, **refuses unless its pack's SHA-256
-   equals the one in the tag message**, and publishes that exact tarball
-   with provenance via npm trusted publishing — so the signed tag, the
-   workflow summary, and the registry bytes are one file, not three packs
-   assumed identical. A manual dispatch of that workflow is a dry-run
-   rehearsal (no tag, so the SHA check is skipped).
+   equals the one in the tag message**, then waits for `kserrec` to approve
+   the protected `npm-publish` environment. Approve that deployment from the
+   GitHub Actions run; the workflow then publishes the exact tarball with
+   provenance via npm trusted publishing. The environment admits only `v*`
+   tags, so the signed tag, workflow summary, and registry bytes are one file,
+   not three packs assumed identical. The workflow has no manual trigger.
+   npm package Settings → Publishing access must be set to, and remain,
+   **Require two-factor authentication and disallow tokens**; trusted
+   publishing removes the CI token but does not disable traditional token
+   publishing by itself.
 6. **Verify the same day**: the release run is green including the guard step;
    `npm view mirafold version` shows `x.y.z`; the registry tarball's sha256
    matches the signed tag message (`curl` it down and `sha256sum` — the

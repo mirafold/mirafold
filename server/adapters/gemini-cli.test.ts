@@ -129,6 +129,21 @@ test("Gemini remains supported without a Mirafold retirement notice", async () =
   s.close();
 });
 
+test("an oversized stream-json line terminates the turn instead of growing without bound", async () => {
+  const events = path.join(tmp, "oversized-stream-line");
+  writeFileSync(events, "x".repeat(32 * 1024 * 1024 + 1));
+  process.env.FAKE_EVENTS = events;
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("trigger the oversized frame");
+    await awaitTurnEnd();
+    assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /size limit/);
+  } finally {
+    delete process.env.FAKE_EVENTS;
+    s.close();
+  }
+});
+
 test("Gemini inherits the user's MCP server set instead of allowlisting only Mirafold", async () => {
   const argsLog = path.join(tmp, "mcp-inheritance-args.txt");
   process.env.FAKE_ARGS_LOG = argsLog;

@@ -3454,6 +3454,68 @@ require a PR) — see the session recap for the exact clicks. Review + commit
 on `polish`; then a patch release (findings 2–4 of the delta audit and the
 engine gate are live in 0.5.0).
 
+## Pro launch-readiness security audit (opened 2026-09-01)
+
+Whole-repository pass on `audit/pro-launch-readiness`, with current source,
+history, package contents, dependency advisories, GitHub rulesets, and release
+identity checked. Repo-local findings:
+
+- [x] **Pre-trust project configuration followed a checkout symlink outside
+  the checkout.** Reproduced with an ordinary outside file. The loader now
+  refuses a symlink before open on every platform, adds a no-follow open where
+  the platform supports it, verifies the opened descriptor is a regular file,
+  and bounds the read allocation at 1 MiB plus one byte. The focused test uses
+  non-dotenv fixture names.
+- [x] **Directory work was capped only after allocation.** `fs_listdir`
+  retained all 12,000 probed entries before returning 2,000; the component
+  action returned all 12,000 lines and statted every name. Both scans now stop
+  before allocation/stat work runs away and report truncation.
+- [x] **Agent transport framing was not consistently bounded before parse.**
+  Gemini JSONL and OpenCode SSE had no frame ceiling; Codex had a
+  32 × 1024 × 1024 decoded-character ceiling but reached it through a
+  quadratic string accumulator (12.5 seconds in the isolated probe). All
+  three now reject beyond that ceiling and accumulate chunks linearly (the
+  same Gemini probe reaches the refusal in about 0.25 seconds; the fragmented
+  OpenCode probe in about 0.18 seconds).
+- [x] **Billing clients parsed unlimited response bodies.** Entitlement and
+  subscription JSON is now read through a 64 KiB streaming ceiling; retained
+  token and date fields have their own bounds.
+- [x] **npm release authorization had no external trust anchor.** npm's
+  trusted publisher matches repository + workflow filename, while GitHub uses
+  the workflow version at the event ref. The previous tag/manual workflow and
+  absence of a deployment environment let a write-capable account run a
+  modified copy of that trusted filename with every in-file main/signature/SHA
+  gate removed. On 2026-09-01 the repository gained a verified
+  `npm-publish` environment: `kserrec` is the required reviewer and only `v*`
+  tags may deploy; administrators cannot bypass its rules. This branch makes
+  the workflow tag-only, binds only the real publish job to that environment,
+  and removes the redundant rehearsal. Kyle then confirmed in npm's package
+  settings that the trusted-publisher record names `npm-publish` and that
+  Publishing access is **Require two-factor authentication and disallow
+  tokens**. The environment claim is now required and traditional token
+  publishing is disabled.
+  The earlier 2026-08-26 signed-tag-ruleset follow-up remains incomplete and
+  would not alone bind npm OIDC to the repository's allowed signing key.
+
+Verification so far: production and full dependency audits report zero known
+advisories; reachable-history secret-shape scan found only synthetic test
+fixtures; a sanitized package dry-run contains the intended 20 files; focused
+tests for every fixed class pass; full Gemini, OpenCode, and Codex adapter
+suites pass; TypeScript and the server bundle pass. The blanket test command
+was deliberately not run because repository tests that load dotenv fixtures
+are outside Kyle's categorical dotenv-inspection rule. The first fresh cold
+review caught fragmented OpenCode input still taking quadratic time, a hanging
+cancel-before-kill order, one overstated configuration-reader claim, and test
+fixture leaks. The required second review caught whole-frame line splitting,
+a vacuous license-log test, more fixture leaks, and byte/character wording.
+All were corrected; the targeted final re-review found no findings, with its
+89 focused tests, TypeScript, and diff check green. The repo-local cold-review
+gate is complete. The separate release-boundary cold review caught GitHub's
+default administrator bypass, two unsupported documentation claims, and an
+incomplete one-job OIDC assertion. All were corrected; live GitHub readback,
+the focused workflow test, YAML parsing, TypeScript, and the final re-review
+are clean. Kyle confirmed both required npm package settings through npm's UI.
+
 ## Test-audit pass (2026-08-26) — the whole suite
 
 Baseline: Tier-1 998/998 ×3 (~22 s); Tier-2 156/156 ×3 idle, 155/154/156

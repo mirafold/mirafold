@@ -31,6 +31,8 @@ const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // well inside the 48h token TT
 // backoff into an HTTP hammer.
 const FORCED_REFRESH_MIN_GAP_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
+const BILLING_RESPONSE_MAX_BYTES = 64 * 1024;
+const ENTITLEMENT_TOKEN_MAX_BYTES = 8_192;
 // A backend line rides to the pair/manage card verbatim — bounded. Shared
 // with subscription.ts so both cards cap alike.
 export const MAX_REASON_CHARS = 200;
@@ -71,6 +73,31 @@ export function postLicenseKey(endpoint: string, licenseKey: string, timeoutMs: 
     body: JSON.stringify({ licenseKey }),
     signal: AbortSignal.timeout(timeoutMs),
   });
+}
+
+/** Parse one billing-backend JSON response without letting a chunked or
+ *  misconfigured endpoint allocate an unlimited body first. */
+export async function readBillingJson(res: Response): Promise<unknown> {
+  if (!res.body) throw new Error("empty response");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > BILLING_RESPONSE_MAX_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error("billing response exceeded the size limit");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode()) as unknown;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export function createEntitlementTokenSource(env: {
@@ -160,9 +187,9 @@ export function createEntitlementTokenSource(env: {
       if (res.status === 403) {
         // The backend's body is untrusted JSON — any shape, `null` included;
         // only a string `reason` is quoted, and nothing here may throw.
-        const body: unknown = await res.json().catch(() => undefined);
+        const body: unknown = await readBillingJson(res).catch(() => undefined);
         const raw = body && typeof body === "object" ? (body as { reason?: unknown }).reason : undefined;
-        const reason = typeof raw === "string" ? raw : undefined;
+        const reason = typeof raw === "string" ? raw.slice(0, MAX_REASON_CHARS) : undefined;
         if (!denied) {
           log.warn(
             `entitlement refused for license ${mask(licenseKey)}: ` +
@@ -172,11 +199,17 @@ export function createEntitlementTokenSource(env: {
         }
         denied = true;
         cached = undefined;
-        next = { state: "invalid", ...(reason ? { reason: reason.slice(0, MAX_REASON_CHARS) } : {}) };
+        next = { state: "invalid", ...(reason ? { reason } : {}) };
       } else {
         if (!res.ok) throw new Error(`http ${res.status}`);
-        const body = (await res.json()) as { token?: unknown; exp?: unknown };
-        if (typeof body.token !== "string" || typeof body.exp !== "number") {
+        const body = (await readBillingJson(res)) as { token?: unknown; exp?: unknown };
+        if (
+          typeof body.token !== "string" ||
+          body.token.length === 0 ||
+          Buffer.byteLength(body.token, "utf8") > ENTITLEMENT_TOKEN_MAX_BYTES ||
+          typeof body.exp !== "number" ||
+          !Number.isFinite(body.exp)
+        ) {
           throw new Error("malformed response");
         }
         cached = { token: body.token, expMs: body.exp * 1000 };
