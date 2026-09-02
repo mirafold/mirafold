@@ -26,8 +26,7 @@ export function SessionName({
   renaming: boolean;
   /** The session being viewed (cockpit): the link carries aria-current. */
   current?: boolean;
-  /** Wraps link + pencil (fleet's `.fleet-name`); the cockpit's grid wants
-   *  them as direct children, so it passes none. */
+  /** Optional surface-specific wrapper around the link and pencil. */
   wrapClass?: string;
   onStart: () => void;
   onCommit: (name: string) => void;
@@ -55,7 +54,7 @@ export function SessionName({
       <a
         className={cls.link}
         href={sessionPath(s.sessionId)}
-        title={surface === "cockpit" ? s.name : undefined}
+        title={s.name}
         aria-current={current ? "page" : undefined}
       >
         {s.name}

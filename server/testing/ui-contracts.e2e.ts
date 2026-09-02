@@ -83,6 +83,109 @@ test("settings modal traps keyboard focus and returns it to the opener", async (
   });
 });
 
+test("status controls stay contained at intermediate and phone boundaries", async () => {
+  await withFreshMockSession("ui-status-containment-e2e", async (page) => {
+    const prompt = page.locator(".prompt-box textarea");
+    await prompt.fill("kpi coverage");
+    await prompt.press("Enter");
+    await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
+
+    const compactFacts = [
+      ".sb-session",
+      ".sb-version",
+      ".sb-usage",
+      ".sb-model",
+      ".sb-cwd",
+      ".sb-theme",
+    ];
+    for (const width of [900, 800, 641, 640]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+
+      for (const selector of compactFacts) {
+        assert.equal(
+          await page.locator(selector).evaluateAll((elements) =>
+            elements.every((element) => getComputedStyle(element).display === "none"),
+          ),
+          true,
+          `${selector} is still visible at ${width}px`,
+        );
+      }
+
+      const geometry = await page.locator(".status-bar").evaluate((bar) => {
+        const barBox = bar.getBoundingClientRect();
+        const controls = [...bar.querySelectorAll<HTMLElement>("a, button, .sb-item")]
+          .map((element) => ({
+            element,
+            style: getComputedStyle(element),
+            box: element.getBoundingClientRect(),
+          }))
+          .filter(
+            ({ style, box }) =>
+              style.display !== "none" &&
+              style.visibility !== "hidden" &&
+              box.width >= 0.5 &&
+              box.height >= 0.5,
+          )
+          .map(({ element, box }) => ({
+            className: element.className,
+            left: box.left,
+            right: box.right,
+            top: box.top,
+            bottom: box.bottom,
+          }));
+        const outside = controls.filter(
+          (control) => control.left < barBox.left - 1 || control.right > barBox.right + 1,
+        );
+        const overlaps: string[] = [];
+        for (let i = 0; i < controls.length; i += 1) {
+          for (let j = i + 1; j < controls.length; j += 1) {
+            const a = controls[i];
+            const b = controls[j];
+            const horizontal = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const vertical = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (horizontal > 0.5 && vertical > 0.5) {
+              overlaps.push(`${a.className} / ${b.className}`);
+            }
+          }
+        }
+        return { outside, overlaps };
+      });
+      assert.deepEqual(geometry.outside, [], `${width}px status controls leave the bar`);
+      assert.deepEqual(geometry.overlaps, [], `${width}px status controls overlap`);
+    }
+  });
+});
+
+test("the segmented theme control paints keyboard focus inside its clipped frame", async () => {
+  await withFreshMockSession("ui-theme-focus-e2e", async (page) => {
+    await page.setViewportSize({ width: 1180, height: 800 });
+    await page.locator(".sb-settings").focus();
+    const theme = page.locator(".sb-theme");
+    const beforeFocus = await theme.screenshot();
+    await page.keyboard.press("Tab");
+
+    const lightTheme = page.locator('.sb-theme-opt[title="Light theme"]');
+    const focus = await lightTheme.evaluate((element) => ({
+      active: document.activeElement === element,
+      focusVisible: element.matches(":focus-visible"),
+    }));
+    const withFocus = await theme.screenshot();
+    assert.equal(focus.active, true, "Tab did not reach the light-theme option");
+    assert.equal(focus.focusVisible, true, "keyboard focus did not match :focus-visible");
+    assert.equal(
+      beforeFocus.equals(withFocus),
+      false,
+      "keyboard focus makes no visible change inside the clipped theme control",
+    );
+  });
+});
+
 test("ending a session requires two clicks, then returns to an empty fleet", async () => {
   await withFreshMockSession("ui-end-session-e2e", async (page, base) => {
     const sessionUrl = page.url();

@@ -218,6 +218,12 @@
   cursor: pointer;
 }
 
+/* The segmented frame clips overflow to preserve its rounded corners, so
+   keyboard focus must paint inward instead of disappearing outside it. */
+.sb-theme-opt:focus-visible {
+  outline-offset: -3px;
+}
+
 .sb-theme-opt + .sb-theme-opt {
   border-left: 1px solid var(--border-mid);
 }
@@ -296,3 +302,15 @@
   border-color: var(--border-hover);
 }
 
+/* Between the full workbench and the phone layout, keep the controls and
+   identity while moving facts already available in settings off the strip. */
+@media (max-width: 900px) {
+  .sb-session,
+  .sb-version,
+  .sb-usage,
+  .sb-model,
+  .sb-cwd,
+  .sb-theme {
+    display: none;
+  }
+}
