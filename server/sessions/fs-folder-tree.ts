@@ -245,9 +245,10 @@ export function readDirRaw(
 }
 
 /**
- * Order and cap one directory's entries for the wire. Directories sort
- * before files, alphabetical within each group — so when a cap trips, files
- * are what get cut and the tree stays navigable.
+ * Order and cap the bounded raw scan for the wire. Directories sort before
+ * files, alphabetical within each group, so the reply cap cuts scanned files
+ * first. If the earlier raw work cap trips, entries later in filesystem order
+ * are unknown and `truncated` tells the client the listing is incomplete.
  */
 export function sortAndCapDir(
   all: FsDirEntry[],

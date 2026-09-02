@@ -402,8 +402,9 @@ export type ViewportMsgBody =
   // or sequenced; every request gets exactly one reply, an error rides the
   // reply. `path` echoes the request so racing replies correlate beyond the
   // id. Entries are NAMES (not paths — the client owns nesting), capped per
-  // directory with `truncated` honest. `status` chars come from the
-  // multi-repo git layer.
+  // directory with `truncated` honest. A truncated reply is a bounded subset,
+  // not a globally ranked prefix of children the server did not scan. `status`
+  // chars come from the multi-repo git layer.
   | {
       type: "fs_dir";
       id: string;

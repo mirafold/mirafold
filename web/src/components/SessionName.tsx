@@ -54,10 +54,16 @@ export function SessionName({
       <a
         className={cls.link}
         href={sessionPath(s.sessionId)}
-        title={s.name}
+        title={surface === "cockpit" ? s.name : undefined}
         aria-current={current ? "page" : undefined}
       >
-        {s.name}
+        {surface === "fleet" ? (
+          <span className="fleet-link-label" title={s.name}>
+            {s.name}
+          </span>
+        ) : (
+          s.name
+        )}
       </a>
       <button
         className={cls.edit}
