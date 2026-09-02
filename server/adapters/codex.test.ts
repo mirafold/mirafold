@@ -2,13 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
 import { describePatchChange, normalizePatchChanges } from "./codex-patch";
 import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
-import { MIRAFOLD_MCP } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
+import { codexRenderMcpConfig } from "./codex-binding";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
 import { OUTPUT_CAP_BYTES } from "./types";
 import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
@@ -1262,6 +1264,49 @@ function withEnvVar(name: string, value: string | undefined, fn: () => void) {
 
 const withOpenAiKey = (value: string | undefined, fn: () => void) =>
   withEnvVar("OPENAI_API_KEY", value, fn);
+
+test("packaged render-MCP launch adds only Electron child mode; ordinary Node stays byte-for-byte stable", () => {
+  const compiled = path.join(path.dirname(fileURLToPath(import.meta.url)), "render-mcp.js");
+  const nodeLaunch = renderMcpCommand({
+    execPath: "/runtime/node",
+    electron: undefined,
+    compiledExists: () => true,
+  });
+  assert.deepEqual(nodeLaunch, { command: "/runtime/node", args: [compiled] });
+
+  const electronLaunch = renderMcpCommand({
+    execPath: "/runtime/Mirafold",
+    electron: "43.4.0",
+    compiledExists: () => true,
+  });
+  assert.deepEqual(electronLaunch, {
+    command: "/runtime/Mirafold",
+    args: [compiled],
+    childEnv: { ELECTRON_RUN_AS_NODE: "1" },
+  });
+
+  const electronDevLaunch = renderMcpCommand({
+    execPath: "/runtime/Mirafold",
+    electron: "43.4.0",
+    compiledExists: () => false,
+  });
+  assert.equal(electronDevLaunch.childEnv, undefined, "the tsx development command is not Electron");
+});
+
+test("Codex maps Electron Node mode to the required MCP child, not the app-server process", () => {
+  const childEnv = { ELECTRON_RUN_AS_NODE: "1" };
+  const mcp = codexRenderMcpConfig({
+    command: "/runtime/Mirafold",
+    args: ["/app/render-mcp.js"],
+    childEnv,
+  });
+  assert.deepEqual(mcp.env, childEnv);
+  assert.equal(mcp.required, true);
+  assert.equal(mcp.default_tools_approval_mode, "approve");
+
+  const engine = capturedSpawn({ kind: "subscription" });
+  assert.equal(engine.env?.ELECTRON_RUN_AS_NODE, undefined);
+});
 
 test("F.10: the installed Codex executable runs app-server with a required, stable renderer", () => {
   withEnvVar("MIRAFOLD_CODEX_BIN", "/operator/chosen/codex", () => {

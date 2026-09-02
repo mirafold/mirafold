@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { chmodSync, existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import type { WireMsg } from "../protocol";
-import { GeminiCliSession } from "./gemini-cli";
+import { GeminiCliSession, geminiRenderMcpConfig } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../sessions/workspace-trust";
 import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
@@ -33,7 +33,7 @@ before(() => {
     // would hold the stdout pipe open and the adapter's `close` never fires.
     // FAKE_ARGS_LOG records the latest spawn's argv (one arg per ---ARG---
     // separator) for the -m / guidance-injection assertions.
-    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && { printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"; printf \'ENV_TRUST=%s\\n\' "$GEMINI_CLI_TRUST_WORKSPACE" >> "$FAKE_ARGS_LOG"; }\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
+    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && { printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"; printf \'ENV_TRUST=%s\\nENV_RUN_AS_NODE=%s\\n\' "$GEMINI_CLI_TRUST_WORKSPACE" "${ELECTRON_RUN_AS_NODE-unset}" >> "$FAKE_ARGS_LOG"; }\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
   process.env.MIRAFOLD_GEMINI_BIN = stub;
@@ -145,10 +145,28 @@ test("Gemini inherits the user's MCP server set instead of allowlisting only Mir
       false,
       "the CLI flag is an allowlist that blocks every user-configured MCP server not named Mirafold",
     );
+    assert.match(readFileSync(argsLog, "utf8"), /ENV_RUN_AS_NODE=unset/);
   } finally {
     delete process.env.FAKE_ARGS_LOG;
     s.close();
   }
+});
+
+test("Gemini maps Electron Node mode to its MCP `env` field", () => {
+  const childEnv = { ELECTRON_RUN_AS_NODE: "1" };
+  assert.deepEqual(
+    geminiRenderMcpConfig({
+      command: "/runtime/Mirafold",
+      args: ["/app/render-mcp.js"],
+      childEnv,
+    }),
+    {
+      command: "/runtime/Mirafold",
+      args: ["/app/render-mcp.js"],
+      env: childEnv,
+      trust: true,
+    },
+  );
 });
 
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {

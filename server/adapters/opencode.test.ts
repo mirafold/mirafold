@@ -5,7 +5,7 @@ import os from "node:os";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
-import { OpenCodeSession } from "./opencode";
+import { OpenCodeSession, openCodeRenderMcpConfig } from "./opencode";
 import { OpenCodeServerProcess, type OpenCodeEvent, type OpenCodeTransport } from "./opencode-client";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { waitFor } from "../testing/wait-for";
@@ -1128,7 +1128,24 @@ test("the render MCP injects additively through config content", () => {
   const mcp = (fake.configContent?.["mcp"] ?? {}) as Record<string, Record<string, unknown>>;
   assert.equal(mcp["mirafold"]?.["type"], "local");
   assert.ok(Array.isArray(mcp["mirafold"]?.["command"]));
+  assert.equal(mcp["mirafold"]?.["environment"], undefined, "ordinary Node adds no Electron override");
   session.close();
+});
+
+test("OpenCode maps Electron Node mode to the local MCP `environment` field", () => {
+  const childEnv = { ELECTRON_RUN_AS_NODE: "1" };
+  const mcp = openCodeRenderMcpConfig({
+    command: "/runtime/Mirafold",
+    args: ["/app/render-mcp.js"],
+    childEnv,
+  });
+  assert.deepEqual(mcp, {
+    type: "local",
+    command: ["/runtime/Mirafold", "/app/render-mcp.js"],
+    environment: childEnv,
+    enabled: true,
+  });
+  assert.equal("env" in mcp, false, "OpenCode does not accept the Codex/Gemini field name");
 });
 
 test("BUGFIX: /model rescues a PINLESS session instead of dying on the pin gate", async () => {

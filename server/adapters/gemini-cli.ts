@@ -7,7 +7,13 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, emitPromptOptions, envWithout, errText, toolDetail } from "./types";
-import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
+import {
+  MIRAFOLD_MCP,
+  generativeUIMsg,
+  renderIdFor,
+  renderMcpCommand,
+  type RenderMcpLaunch,
+} from "./render-mcp-cmd";
 import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
@@ -19,6 +25,16 @@ import { ResumeIdState } from "./resume-id";
 // loads MCP servers from settings.json, so we write a per-session project
 // `.gemini/settings.json` naming it (merged over the user's global config).
 const RENDER_MCP = renderMcpCommand();
+
+/** Gemini CLI's native stdio-MCP schema: `env` belongs to this server process. */
+export function geminiRenderMcpConfig(render: RenderMcpLaunch = RENDER_MCP) {
+  return {
+    command: render.command,
+    args: render.args,
+    ...(render.childEnv ? { env: render.childEnv } : {}),
+    trust: true,
+  };
+}
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // How much of a failed turn's stderr rides into the surfaced error.
@@ -252,7 +268,7 @@ export class GeminiCliSession implements AgentSession {
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
       ...cfg.mcpServers,
-      [MIRAFOLD_MCP]: { command: RENDER_MCP.command, args: RENDER_MCP.args, trust: true },
+      [MIRAFOLD_MCP]: geminiRenderMcpConfig(),
     };
     this.writeSettings(cfg);
   }

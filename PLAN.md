@@ -4073,12 +4073,52 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   and the surrounding lifecycles against the exact installed protocol
   contracts; it returned no confirmed findings and changed nothing.
 
-- [ ] **CF.HF.REL — publish v0.8.1 (2026-09-01, in progress)** — PR #86
+- [x] **CF.HF.REL — published v0.8.1 (2026-09-01, complete)** — PR #86
   merged the reviewed repair into `next`; `release/0.8.1` was cut from the
   v0.8.0 `main` tip and contains only that repair plus the package-version
-  bump. Release-branch gates, the PR into `main`, signed tag, registry-byte
-  verification, published-package smoke, and fixed-snapshot `main` → `next`
-  sync remain.
+  bump. Release PR #87 passed DCO, CodeQL, Tier 1, Tier 2+3, Cloudflare, and
+  a completed Codex review with no findings, then merged as `72f6031`.
+  Signed tag `v0.8.1` points exactly there; release workflow #33547726085
+  passed the main-tip, signature, version, test, pack-hash, and provenance
+  gates; npm serves 0.8.1; the registry tarball SHA-256 equals the signed tag
+  (`a5bd80d28968cd62232daf0bb76c6fdd174d4eceb07f96565fceb228f769d994`);
+  published-package smoke passed 9/9 and the machine now uses the registry
+  build. Fixed-snapshot sync PR #88 passed DCO, Tier 1, Tier 2+3, Cloudflare,
+  and a head-specific Codex review with no findings, then merged into `next`
+  as `48629c7`; `main` and `next` both carry 0.8.1, and the merged fix,
+  release, and sync branches were deleted.
+
+- [ ] **CF.HF2 — v0.8.2 packaged Desktop render-MCP child mode (2026-09-01,
+  release in progress)** — isolated branch `fix/desktop-render-mcp-node-mode`
+  from current `next`; deliberately separate from the dead-code cleanup
+  branch.
+  The installed Desktop 0.3.9 / Shell 0.8.1 artifact was reproduced before
+  editing with its exact `/opt/Mirafold/mirafold` executable and bundled
+  `dist-server/render-mcp.js`: initialization produced no response with no
+  child Node-mode switch, while adding only `ELECTRON_RUN_AS_NODE=1`
+  initialized, advertised exactly 18 tools, called `render_card` with a valid
+  ID, and exited cleanly.
+  The narrow correction adds an optional child-only environment to the shared
+  compiled render-MCP launch description, then maps it to Codex and Gemini's
+  native `env` field and OpenCode's native `environment` field. Codex remains
+  `required: true`; Claude's in-process renderer, ordinary Node launches, the
+  daemon environment, and agent-process environments remain unchanged.
+  Regression coverage includes deterministic configuration tests for all three
+  subprocess adapters and a compiled real-MCP initialize/list/call/close test
+  under pinned Electron 43.4.0. Electron is dev-only: 327.16 MB installed with
+  transitive dependencies for CI, zero bytes in the 1.46 MB publish tarball;
+  `yarn audit` reports 0 vulnerabilities across all 470 packages. Final local
+  gates: typecheck; Tier 1 1117/1117; Tier 2 161/161; Tier 3 130/130; managed
+  browser and visual UI 11/11; package notices unchanged; dry-run pack contains
+  only the existing 20 shipped files. PR #91 passed DCO, Tier 1, Tier 2+3,
+  Cloudflare, and the complete review-comment audit with no findings, then
+  merged into `next` as `42934cb`. `release/0.8.2` was cut from the v0.8.1
+  `main` tip and carries only that hotfix plus release documentation and the
+  package-version bump; the cleanup already on `next` is excluded. Remaining:
+  release PR and review → `main`, signed tag, registry-byte and
+  published-package proof, exact published-package Desktop intake, packaged
+  Desktop smoke on Linux and Windows, installed-engine acceptance, then
+  `main` → `next` synchronization.
 
 **Open records (Kyle's calls):**
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
