@@ -3516,13 +3516,18 @@ incomplete one-job OIDC assertion. All were corrected; live GitHub readback,
 the focused workflow test, YAML parsing, TypeScript, and the final re-review
 are clean. Kyle confirmed both required npm package settings through npm's UI.
 
-- [ ] **PLR.REL — publish v0.8.3 (2026-09-02, in progress)** — security and
-  launch hardening merged into `next` through PR #95. Fixed-snapshot sync PR
-  #96 restored the v0.8.2 production ancestry and package version before
-  `release/0.8.3` was cut from synchronized `next` at `ec4f22e`. Remaining:
-  release PR and review into `main`, signed tag, protected-environment
-  approval, registry-byte verification, published-package smoke, and the
-  fixed-snapshot `main` → `next` synchronization.
+- [x] **PLR.REL — published v0.8.3 (2026-09-02)** — security and launch
+  hardening merged into `next` through PR #95; fixed-snapshot PR #96 first
+  restored v0.8.2's production ancestry and package version. Release PR #97
+  merged reviewed commit `63fb7d6` into `main` at `db4520e`; its Fleet tooltip
+  fix traveled through `next` in PR #98, while bounded folder-list pagination
+  remains explicit follow-up #99 rather than a weakened security cap. Signed
+  tag `v0.8.3` and protected release workflow #33636620275 published with npm
+  provenance. The registry tarball matched signed SHA-256
+  `254683d07ab3c95e1756358ee8f80cb70b4ce18ca7f8aaf092bcca2c0da3f9f8`;
+  the public-package browser pass was 9/9; Cloudflare production and the
+  GitHub Release are live. This fixed production snapshot closes the loop by
+  returning the release merge and version to `next`.
 
 ## Test-audit pass (2026-08-26) — the whole suite
 
