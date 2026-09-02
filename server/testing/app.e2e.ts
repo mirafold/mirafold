@@ -1,14 +1,13 @@
 import { test, before, after } from "node:test";
 import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { type Browser, type Locator, type Page } from "playwright-core";
-import { createSession, fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
+import { type Browser, type Page } from "playwright-core";
+import { createSession, fixtureGit as git, startDaemon, type Daemon } from "./itest-harness";
 import { assertAxeClean, launchChrome, noSideScroll, typePrompt, withFreshMockSession, settled } from "./e2e-harness";
-import type { ClientMsg } from "../protocol";
 import { startOllamaFixture } from "./ollama-fixture";
 import { startRelayStub } from "../relay/relay-stub";
 import { THEMES } from "../../web/src/themes/manifest";

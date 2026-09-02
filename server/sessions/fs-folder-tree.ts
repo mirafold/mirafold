@@ -15,9 +15,11 @@ import {
   fstatSync,
   lstatSync,
   openSync,
+  opendirSync,
   readlinkSync,
   readdirSync,
   readSync,
+  type Dirent,
 } from "node:fs";
 import path from "node:path";
 import type { FsDirEntry, FsEntry } from "../protocol";
@@ -52,6 +54,11 @@ const SKIP_DIRS = new Set([".git", "node_modules"]);
 // Strictly tighter than the whole-tree caps, since the unit is one readdir.
 const FS_DIR_MAX_ENTRIES = envInt("FS_DIR_MAX_ENTRIES", 2_000);
 const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
+// Git decoration can discard ignored entries before the reply caps apply, so
+// the raw scan needs headroom beyond FS_DIR_MAX_ENTRIES. It still needs a hard
+// ceiling of its own: readdirSync would otherwise allocate every name in a
+// pathological flat directory before either reply cap saw it.
+const FS_DIR_MAX_SCAN_ENTRIES = 10_000;
 
 // A file read is bounded twice: the sniff window that decides binary vs
 // text, and the content cap — same size and same honesty contract as the
@@ -179,23 +186,24 @@ export function listTree(
 }
 
 /**
- * The raw readdir behind the lazy tree's fetch unit: jail, kinds, and the
- * SKIP_DIRS floor — but no sort, no caps, and the resolved real path kept.
- * Split out so the git layer can decorate or filter a listing BEFORE
- * the caps apply — a dropped ignored entry must free its cap budget, and a
- * merged deleted entry must count against it. `rel` is the client's requested
+ * The raw directory scan behind the lazy tree's fetch unit: jail, kinds, the
+ * SKIP_DIRS floor, and a work cap, with the resolved real path kept. Split out
+ * so the git layer can decorate or filter a listing BEFORE the tighter reply
+ * caps apply — a dropped ignored entry must free its cap budget, and a merged
+ * deleted entry must count against it. `rel` is the client's requested
  * root-relative path ("" or "." = the root). Symlinks are leaves by kind
  * (lstat semantics: a symlink-to-dir reports `symlink`, not `dir`).
  */
 export function readDirRaw(
   root: string,
   rel: string,
-): { real: string; all: FsDirEntry[] } | { error: string } {
+  maxScanEntries = FS_DIR_MAX_SCAN_ENTRIES,
+): { real: string; all: FsDirEntry[]; truncated: boolean } | { error: string } {
   const real = inside(root, rel === "" ? "." : rel);
   if (!real) return { error: "path is outside the session workspace" };
-  let dirents;
+  let dir;
   try {
-    dirents = readdirSync(real, { withFileTypes: true });
+    dir = opendirSync(real);
   } catch (err) {
     return {
       error:
@@ -204,15 +212,36 @@ export function readDirRaw(
           : "directory is not readable",
     };
   }
-  const kindOf = (d: (typeof dirents)[number]): FsDirEntry["kind"] =>
+  const kindOf = (d: Dirent): FsDirEntry["kind"] =>
     // Order matters: isDirectory() is false for a symlink-to-dir (lstat
     // semantics), so the symlink check needn't come first — but a FIFO or
     // socket lands as `file`, same as the walk lists it (refused at read time).
     d.isDirectory() ? "dir" : d.isSymbolicLink() ? "symlink" : "file";
-  const all = dirents
-    .filter((d) => !(d.isDirectory() && SKIP_DIRS.has(d.name)))
-    .map((d) => ({ name: d.name, kind: kindOf(d) }));
-  return { real, all };
+  const all: FsDirEntry[] = [];
+  let scanned = 0;
+  let truncated = false;
+  try {
+    for (;;) {
+      const d = dir.readSync();
+      if (!d) break;
+      if (scanned++ >= maxScanEntries) {
+        truncated = true;
+        break;
+      }
+      if (!(d.isDirectory() && SKIP_DIRS.has(d.name))) {
+        all.push({ name: d.name, kind: kindOf(d) });
+      }
+    }
+  } catch {
+    return { error: "directory is not readable" };
+  } finally {
+    try {
+      dir.closeSync();
+    } catch {
+      // The listing result already says whether the scan itself succeeded.
+    }
+  }
+  return { real, all, truncated };
 }
 
 /**
@@ -254,11 +283,12 @@ export function sortAndCapDir(
 export function listDir(
   root: string,
   rel: string,
-  caps: { maxEntries?: number; maxNameBytes?: number } = {},
+  caps: { maxEntries?: number; maxNameBytes?: number; maxScanEntries?: number } = {},
 ): DirResult {
-  const raw = readDirRaw(root, rel);
+  const raw = readDirRaw(root, rel, caps.maxScanEntries);
   if ("error" in raw) return raw;
-  return sortAndCapDir(raw.all, caps);
+  const capped = sortAndCapDir(raw.all, caps);
+  return { entries: capped.entries, truncated: raw.truncated || capped.truncated };
 }
 
 /**

@@ -17,8 +17,7 @@ import path from "node:path";
 import { createLogger } from "../log";
 import type { ConnectionContext } from "./handler-context";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../throttle";
-import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
-import type { SessionEntry } from "./registry";
+import type { ClientMsg, FsDirEntry, FsEntry } from "../protocol";
 import {
   capBuffer,
   contentRevision,
@@ -238,7 +237,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           id: msg.id,
           path: msg.path,
           entries: r.entries,
-          ...(r.truncated ? { truncated: true } : {}),
+          ...(raw.truncated || r.truncated ? { truncated: true } : {}),
         });
       };
       // A directory inside a repo lists through THAT repo's view —

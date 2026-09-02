@@ -144,5 +144,3 @@ export function createChangesRequests(deps: ChangesRequestsDeps) {
   };
   return requests;
 }
-
-export type ChangesRequests = ReturnType<typeof createChangesRequests>;

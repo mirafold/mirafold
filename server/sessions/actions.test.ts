@@ -7,8 +7,9 @@ import { runActionTool, actionToolNames } from "./actions";
 
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), "genui-act-"));
 
-test("workspace_ls lists a real subdirectory", () => {
+test("workspace_ls lists a real subdirectory", (t) => {
   const base = tmp();
+  t.after(() => rmSync(base, { recursive: true, force: true }));
   mkdirSync(path.join(base, "sub"));
   writeFileSync(path.join(base, "sub", "f.txt"), "hi");
   const r = runActionTool("workspace_ls", { path: "sub" }, base);
@@ -16,16 +17,18 @@ test("workspace_ls lists a real subdirectory", () => {
   assert.match(r.output, /f\.txt/);
 });
 
-test("workspace_ls handles '.'", () => {
+test("workspace_ls handles '.'", (t) => {
   const base = tmp();
+  t.after(() => rmSync(base, { recursive: true, force: true }));
   writeFileSync(path.join(base, "a.txt"), "x");
   const r = runActionTool("workspace_ls", { path: "." }, base);
   assert.equal(r.isError, false);
   assert.match(r.output, /a\.txt/);
 });
 
-test("workspace_ls blocks a symlink escaping the workspace", () => {
+test("workspace_ls blocks a symlink escaping the workspace", (t) => {
   const base = tmp();
+  t.after(() => rmSync(base, { recursive: true, force: true }));
   symlinkSync(os.tmpdir(), path.join(base, "escape")); // points above the workspace
   const r = runActionTool("workspace_ls", { path: "escape" }, base);
   assert.equal(r.isError, true);
@@ -61,6 +64,24 @@ test("workspace_ls survives a dangling symlink — the row is marked, siblings s
     assert.equal(res.isError, false);
     assert.match(res.output, /real\.txt/);
     assert.match(res.output, /\?\s+dangling/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("workspace_ls bounds flat-directory work and reports truncation", () => {
+  const dir = tmp();
+  try {
+    for (let i = 0; i < 2_001; i++) {
+      writeFileSync(path.join(dir, `entry-${String(i).padStart(4, "0")}.txt`), "x");
+    }
+
+    const result = runActionTool("workspace_ls", {}, dir);
+
+    assert.equal(result.isError, false);
+    assert.match(result.output, /\(listing truncated\)$/);
+    assert.ok(result.output.split("\n").length <= 2_001);
+    assert.ok(Buffer.byteLength(result.output, "utf8") <= 64_000);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

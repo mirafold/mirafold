@@ -3454,6 +3454,68 @@ require a PR) — see the session recap for the exact clicks. Review + commit
 on `polish`; then a patch release (findings 2–4 of the delta audit and the
 engine gate are live in 0.5.0).
 
+## Pro launch-readiness security audit (opened 2026-09-01)
+
+Whole-repository pass on `audit/pro-launch-readiness`, with current source,
+history, package contents, dependency advisories, GitHub rulesets, and release
+identity checked. Repo-local findings:
+
+- [x] **Pre-trust project configuration followed a checkout symlink outside
+  the checkout.** Reproduced with an ordinary outside file. The loader now
+  refuses a symlink before open on every platform, adds a no-follow open where
+  the platform supports it, verifies the opened descriptor is a regular file,
+  and bounds the read allocation at 1 MiB plus one byte. The focused test uses
+  non-dotenv fixture names.
+- [x] **Directory work was capped only after allocation.** `fs_listdir`
+  retained all 12,000 probed entries before returning 2,000; the component
+  action returned all 12,000 lines and statted every name. Both scans now stop
+  before allocation/stat work runs away and report truncation.
+- [x] **Agent transport framing was not consistently bounded before parse.**
+  Gemini JSONL and OpenCode SSE had no frame ceiling; Codex had a
+  32 × 1024 × 1024 decoded-character ceiling but reached it through a
+  quadratic string accumulator (12.5 seconds in the isolated probe). All
+  three now reject beyond that ceiling and accumulate chunks linearly (the
+  same Gemini probe reaches the refusal in about 0.25 seconds; the fragmented
+  OpenCode probe in about 0.18 seconds).
+- [x] **Billing clients parsed unlimited response bodies.** Entitlement and
+  subscription JSON is now read through a 64 KiB streaming ceiling; retained
+  token and date fields have their own bounds.
+- [x] **npm release authorization had no external trust anchor.** npm's
+  trusted publisher matches repository + workflow filename, while GitHub uses
+  the workflow version at the event ref. The previous tag/manual workflow and
+  absence of a deployment environment let a write-capable account run a
+  modified copy of that trusted filename with every in-file main/signature/SHA
+  gate removed. On 2026-09-01 the repository gained a verified
+  `npm-publish` environment: `kserrec` is the required reviewer and only `v*`
+  tags may deploy; administrators cannot bypass its rules. This branch makes
+  the workflow tag-only, binds only the real publish job to that environment,
+  and removes the redundant rehearsal. Kyle then confirmed in npm's package
+  settings that the trusted-publisher record names `npm-publish` and that
+  Publishing access is **Require two-factor authentication and disallow
+  tokens**. The environment claim is now required and traditional token
+  publishing is disabled.
+  The earlier 2026-08-26 signed-tag-ruleset follow-up remains incomplete and
+  would not alone bind npm OIDC to the repository's allowed signing key.
+
+Verification so far: production and full dependency audits report zero known
+advisories; reachable-history secret-shape scan found only synthetic test
+fixtures; a sanitized package dry-run contains the intended 20 files; focused
+tests for every fixed class pass; full Gemini, OpenCode, and Codex adapter
+suites pass; TypeScript and the server bundle pass. The blanket test command
+was deliberately not run because repository tests that load dotenv fixtures
+are outside Kyle's categorical dotenv-inspection rule. The first fresh cold
+review caught fragmented OpenCode input still taking quadratic time, a hanging
+cancel-before-kill order, one overstated configuration-reader claim, and test
+fixture leaks. The required second review caught whole-frame line splitting,
+a vacuous license-log test, more fixture leaks, and byte/character wording.
+All were corrected; the targeted final re-review found no findings, with its
+89 focused tests, TypeScript, and diff check green. The repo-local cold-review
+gate is complete. The separate release-boundary cold review caught GitHub's
+default administrator bypass, two unsupported documentation claims, and an
+incomplete one-job OIDC assertion. All were corrected; live GitHub readback,
+the focused workflow test, YAML parsing, TypeScript, and the final re-review
+are clean. Kyle confirmed both required npm package settings through npm's UI.
+
 ## Test-audit pass (2026-08-26) — the whole suite
 
 Baseline: Tier-1 998/998 ×3 (~22 s); Tier-2 156/156 ×3 idle, 155/154/156
@@ -4035,6 +4097,18 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   bughunt found and fixed the dead-session key leak. Gates on the final
   tree: typecheck; Tier 1 1,097/1,097; visual 11/11; Tier 3 130/130.
 
+- [x] **CF.REL — released as v0.8.0 (2026-09-01)** with Phase TS. Runbook
+  flow b: `release/0.8.0` off next; the Codex reviewer's five P2s on the
+  release PR (#82) verified — four fixed on `fix/release-review-0.8.0` (PR
+  #83 → next, then that branch alone into the release: ring keeps only the
+  latest `tool_update` per row; the live-output ceiling is said once on the
+  stream; collab fan-out bounded before it is built; orphaned subagent
+  narration shown inline after its turn, reasoning as a thinking row) and
+  one false (the SDK has no top-level `compact_boundary`). Tag signed with
+  the release key (no prompt), release workflow green, `npm view` 0.8.0,
+  registry sha256 == tag message, packaged smoke 9/9 against the published
+  package; main → next synced (#84); merged branches deleted.
+
 - [x] **CF.HF — v0.8.1 cross-agent startup/event hotfix
   (2026-09-01, complete)** — branch
   `fix/codex-mcp-startup-handshake` from current `next`. Verified against the
@@ -4088,10 +4162,9 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   as `48629c7`; `main` and `next` both carry 0.8.1, and the merged fix,
   release, and sync branches were deleted.
 
-- [ ] **CF.HF2 — v0.8.2 packaged Desktop render-MCP child mode (2026-09-01,
-  release in progress)** — isolated branch `fix/desktop-render-mcp-node-mode`
-  from current `next`; deliberately separate from the dead-code cleanup
-  branch.
+- [x] **CF.HF2 — v0.8.2 packaged Desktop render-MCP child mode (2026-09-01,
+  complete)** — isolated branch `fix/desktop-render-mcp-node-mode` from
+  current `next`; deliberately separate from the dead-code cleanup branch.
   The installed Desktop 0.3.9 / Shell 0.8.1 artifact was reproduced before
   editing with its exact `/opt/Mirafold/mirafold` executable and bundled
   `dist-server/render-mcp.js`: initialization produced no response with no
@@ -4114,13 +4187,18 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   Cloudflare, and the complete review-comment audit with no findings, then
   merged into `next` as `42934cb`. `release/0.8.2` was cut from the v0.8.1
   `main` tip and carries only that hotfix plus release documentation and the
-  package-version bump; the cleanup already on `next` is excluded. Remaining:
-  release PR and review → `main`, signed tag, registry-byte and
-  published-package proof, exact published-package Desktop intake, packaged
-  Desktop smoke on Linux and Windows, installed-engine acceptance, then
-  `main` → `next` synchronization.
+  package-version bump; the cleanup already on `next` was excluded. Release
+  PR #93 merged as `f3dc164`; signed tag `v0.8.2` carries the packed tarball's
+  SHA-256; release workflow #33580820830 passed; and npm serves 0.8.2. This
+  fixed-snapshot synchronization carries that production state back into
+  `next` before the next release is cut.
 
 **Open records (Kyle's calls):**
+- **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
+  #33547726085 passed, but GitHub annotated the pinned
+  `actions/upload-artifact` v4 commit because its declared Node 20 runtime is
+  deprecated and was forcibly run on Node 24. Review/update that action on a
+  normal branch; it is not part of the emergency runtime hotfix.
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
   full-suite runs (never in isolation; the failing assertion was not
   captured). Same load-sensitive family as IH.F / CR.2; recorded, not

@@ -97,6 +97,25 @@ test("CS: a backend refusal's reason surfaces, bounded; malformed and down degra
   }
 });
 
+test("CS: oversized billing JSON and date fields never reach the subscription view", async () => {
+  let oversizedBody = true;
+  const m = mock.method(globalThis, "fetch", async () =>
+    oversizedBody
+      ? Response.json({ status: "active", padding: "x".repeat(70_000) })
+      : Response.json({ status: "active", periodEnd: "x".repeat(65), cancelAt: "soon" }),
+  );
+  try {
+    const actions = createSubscriptionActions({ MIRAFOLD_LICENSE_KEY: KEY })!;
+    assert.deepEqual(await actions.status(), { error: SUPPORT_FALLBACK });
+    oversizedBody = false;
+    assert.deepEqual(await actions.status(), {
+      view: { status: "active", cancelAt: "soon" },
+    });
+  } finally {
+    m.mock.restore();
+  }
+});
+
 test("CS: the throttle admits one in-flight action and floors restarts", () => {
   const t = createSubscriptionThrottle(60_000);
   assert.equal(t.tryStart(), true);
