@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 // The long-lived `codex app-server` transport: newline-delimited JSON-RPC
 // over the child's stdio, the same framing jsonrpc-oneshot.ts uses for the
@@ -36,7 +37,7 @@ export interface AppServerClient {
 
 // A single JSON line larger than this is not a protocol message we can use;
 // cut the process off rather than let one runaway line grow the daemon.
-const MAX_LINE_BYTES = 32 * 1024 * 1024;
+const MAX_LINE_CHARS = 32 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 8 * 1024;
 
 export class AppServerExitedError extends Error {
@@ -105,21 +106,45 @@ export function spawnAppServer(spec: AppServerSpawn): AppServerClient {
     else p.resolve(m.result);
   };
 
-  let buf = "";
-  child.stdout?.on("data", (chunk: Buffer) => {
-    buf += chunk.toString("utf8");
-    if (buf.length > MAX_LINE_BYTES) {
-      stderrTail += "\nmirafold: app-server line exceeded the size limit";
-      child.kill("SIGKILL");
-      buf = "";
-      return;
+  const decoder = new StringDecoder("utf8");
+  let lineParts: string[] = [];
+  let lineChars = 0;
+  let lineTooLarge = false;
+  const overflow = () => {
+    if (lineTooLarge) return;
+    lineTooLarge = true;
+    lineParts = [];
+    lineChars = 0;
+    stderrTail += "\nmirafold: app-server line exceeded the size limit";
+    child.kill("SIGKILL");
+  };
+  const append = (part: string): boolean => {
+    if (lineChars + part.length > MAX_LINE_CHARS) {
+      overflow();
+      return false;
     }
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
+    if (part) lineParts.push(part);
+    lineChars += part.length;
+    return true;
+  };
+  const feed = (text: string) => {
+    let start = 0;
+    for (;;) {
+      const nl = text.indexOf("\n", start);
+      if (nl < 0) {
+        append(text.slice(start));
+        return;
+      }
+      if (!append(text.slice(start, nl))) return;
+      const line = lineParts.join("").trim();
+      lineParts = [];
+      lineChars = 0;
       if (line) onLine(line);
+      start = nl + 1;
     }
+  };
+  child.stdout?.on("data", (chunk: Buffer) => {
+    if (!lineTooLarge) feed(decoder.write(chunk));
   });
   child.stderr?.on("data", (chunk: Buffer) => {
     stderrTail = (stderrTail + chunk.toString("utf8")).slice(-STDERR_TAIL_BYTES);

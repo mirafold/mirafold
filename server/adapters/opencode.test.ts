@@ -1,8 +1,8 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession, openCodeRenderMcpConfig } from "./opencode";
@@ -18,12 +18,18 @@ import { OPENCODE_SUBAGENT_EVENTS } from "../testing/opencode-subagent-fixture";
 
 type Any = WireMsg & Record<string, any>;
 
+const previousTrustFile = process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-opencode-test-"));
 // The folder-trust gate (audit 2026-08-26): sessions under `tmp` start warm;
 // the gate has its own untrusted-folder test at the end.
 const trustRecord = path.join(tmp, "trusted-workspaces.json");
 writeFileSync(trustRecord, JSON.stringify({ version: 2, scopes: { opencode: [tmp] } }));
 process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
+after(() => {
+  if (previousTrustFile === undefined) delete process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
+  else process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = previousTrustFile;
+  rmSync(tmp, { recursive: true, force: true });
+});
 const SES = "ses_test";
 
 class FakeTransport implements OpenCodeTransport {
@@ -1448,6 +1454,170 @@ test("AUDIT: the minted server password is redacted from a stderr tail (pure)", 
   assert.equal(redactSecret("nothing to redact", ""), "nothing to redact");
 });
 
+test("a fragmented oversized SSE frame is rejected promptly", async () => {
+  const transport = new OpenCodeServerProcess({
+    bin: "unused",
+    cwd: tmp,
+    configContent: {},
+  });
+  const internals = transport as unknown as {
+    base: string;
+    auth: string;
+    generation: number;
+    stderrTail: string;
+    pumpEvents(
+      onEvent: (event: OpenCodeEvent) => void,
+      generation: number,
+      maxFrameChars?: number,
+    ): Promise<void>;
+  };
+  internals.base = "http://opencode.test";
+  internals.auth = "Basic test";
+  internals.generation = 1;
+  const seen: OpenCodeEvent[] = [];
+  const realFetch = globalThis.fetch;
+  const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
+  let sent = 0;
+  globalThis.fetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(sent++ < 512 ? chunk : new Uint8Array([120]));
+      },
+    });
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }) as typeof fetch;
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      internals.pumpEvents((event) => seen.push(event), 1),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("fragmented frame rejection timed out")), 2_000);
+      }),
+    ]);
+    assert.deepEqual(seen, []);
+    assert.match(internals.stderrTail, /size limit/);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    globalThis.fetch = realFetch;
+    transport.close();
+  }
+});
+
+test("SSE frames parse across a split boundary and line-dense metadata", async () => {
+  const transport = new OpenCodeServerProcess({
+    bin: "unused",
+    cwd: tmp,
+    configContent: {},
+  });
+  const internals = transport as unknown as {
+    base: string;
+    auth: string;
+    generation: number;
+    pumpEvents(
+      onEvent: (event: OpenCodeEvent) => void,
+      generation: number,
+      maxFrameChars?: number,
+    ): Promise<void>;
+  };
+  internals.base = "http://opencode.test";
+  internals.auth = "Basic test";
+  internals.generation = 1;
+  const encoder = new TextEncoder();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('\ndata: {"type":"one","properties":{}}\n'));
+        controller.enqueue(
+          encoder.encode(
+            `\nevent: message\n${"x\n".repeat(512 * 1024)}data: {"type":"two","properties":{}}\n\n`,
+          ),
+        );
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200 });
+  }) as typeof fetch;
+  const seen: OpenCodeEvent[] = [];
+  try {
+    await internals.pumpEvents((event) => {
+      seen.push(event);
+      if (seen.length === 2) transport.close();
+    }, 1);
+    assert.deepEqual(
+      seen.map((event) => event.type),
+      ["one", "two"],
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    transport.close();
+  }
+});
+
+test("an oversized SSE frame kills the child before cancelling the stream", async () => {
+  const transport = new OpenCodeServerProcess({
+    bin: "unused",
+    cwd: tmp,
+    configContent: {},
+  });
+  const internals = transport as unknown as {
+    base: string;
+    auth: string;
+    child: { kill(signal?: NodeJS.Signals): boolean };
+    generation: number;
+    pumpEvents(
+      onEvent: (event: OpenCodeEvent) => void,
+      generation: number,
+      maxFrameChars?: number,
+    ): Promise<void>;
+  };
+  internals.base = "http://opencode.test";
+  internals.auth = "Basic test";
+  internals.generation = 1;
+  let killed = false;
+  let killSignal: NodeJS.Signals | undefined;
+  let killedBeforeCancel = false;
+  internals.child = {
+    kill(signal) {
+      killed = true;
+      killSignal ??= signal;
+      return true;
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(65)));
+      },
+      cancel() {
+        killedBeforeCancel = killed;
+        return new Promise<void>(() => {});
+      },
+    });
+    return new Response(body, { status: 200 });
+  }) as typeof fetch;
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      internals.pumpEvents(() => {}, 1, 64),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("event pump awaited cancellation")), 500);
+      }),
+    ]);
+    assert.equal(killed, true);
+    assert.equal(killSignal, "SIGKILL");
+    assert.equal(killedBeforeCancel, true);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    globalThis.fetch = realFetch;
+    transport.close();
+  }
+});
+
 test("an explicit failure of the injected renderer aborts OpenCode startup", async () => {
   const transport = new OpenCodeServerProcess({
     bin: "unused",
@@ -1614,6 +1784,7 @@ test("an untrusted folder asks before `opencode serve` starts; a no spawns nothi
     await waitFor(() => fake.prompts.length === 1, "the prompt reaches the engine");
   } finally {
     session.close();
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 

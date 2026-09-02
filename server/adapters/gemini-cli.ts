@@ -1,4 +1,5 @@
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { createLogger, verbose } from "../log";
 import { UnknownKindReporter } from "./wire-helpers";
 import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
@@ -39,6 +40,10 @@ export function geminiRenderMcpConfig(render: RenderMcpLaunch = RENDER_MCP) {
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // How much of a failed turn's stderr rides into the surfaced error.
 const STDERR_TAIL_CAP = 4000;
+// Match the Codex app-server boundary: a JSONL record larger than this is not
+// a protocol event Mirafold can safely retain. Tool output is capped much
+// lower after parsing; this ceiling protects the parser before that cap runs.
+const STREAM_LINE_MAX_CHARS = 32 * 1024 * 1024;
 // How long the folder-trust ask waits for an answer before denying —
 // the same posture as Claude's permission prompt: an unanswered ask must not
 // pin a turn open forever.
@@ -513,8 +518,11 @@ export class GeminiCliSession implements AgentSession {
       });
       this.child = child;
 
-      let buf = "";
+      const decoder = new StringDecoder("utf8");
+      let lineParts: string[] = [];
+      let lineChars = 0;
       let ended = false;
+      let streamTooLarge = false;
       // Whether any stdout event parsed this turn, and a capped stderr
       // tail — so a stderr-only non-zero exit (the trust-folder trap: Gemini
       // writes the error to stderr, exits 55, and emits NOTHING on stdout)
@@ -540,13 +548,49 @@ export class GeminiCliSession implements AgentSession {
         this.handleEvent(ev);
       };
 
-      child.stdout.on("data", (chunk: Buffer) => {
-        buf += chunk.toString();
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          consume(buf.slice(0, nl));
-          buf = buf.slice(nl + 1);
+      const rejectOversizedLine = () => {
+        if (streamTooLarge) return;
+        streamTooLarge = true;
+        lineParts = [];
+        lineChars = 0;
+        if (!this.closed) {
+          this.emit({ type: "error", message: "gemini stream-json line exceeded the size limit" });
         }
+        child.kill("SIGKILL");
+      };
+
+      // Keep chunks separately until a newline arrives. Repeatedly appending
+      // to one growing string copies the entire partial line on every stdout
+      // chunk; a 32 MiB malformed line otherwise stalls the event loop for
+      // seconds before the limit can fire.
+      const append = (part: string): boolean => {
+        if (lineChars + part.length > STREAM_LINE_MAX_CHARS) {
+          rejectOversizedLine();
+          return false;
+        }
+        if (part) lineParts.push(part);
+        lineChars += part.length;
+        return true;
+      };
+      const feed = (text: string) => {
+        let start = 0;
+        for (;;) {
+          const nl = text.indexOf("\n", start);
+          if (nl < 0) {
+            append(text.slice(start));
+            return;
+          }
+          if (!append(text.slice(start, nl))) return;
+          consume(lineParts.join(""));
+          lineParts = [];
+          lineChars = 0;
+          start = nl + 1;
+        }
+      };
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        if (streamTooLarge) return;
+        feed(decoder.write(chunk));
       });
       // Usually diagnostics, but sometimes the ONLY signal. Keep a
       // capped tail for the stderr-only-failure path; MIRAFOLD_DEBUG=1 also
@@ -556,7 +600,11 @@ export class GeminiCliSession implements AgentSession {
         if (verbose) createLogger("gemini-cli").debug(`stderr — ${d}`);
       });
       child.on("close", (code: number | null) => {
-        if (buf) consume(buf);
+        if (!streamTooLarge) {
+          const tail = decoder.end();
+          if (tail) feed(tail);
+          if (!streamTooLarge && lineChars) consume(lineParts.join(""));
+        }
         if (this.child === child) this.child = undefined;
         // A non-zero exit that produced no stdout events, with something
         // on stderr, is a silent failure — surface it (code null = a signal

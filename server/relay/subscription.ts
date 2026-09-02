@@ -17,7 +17,12 @@
 
 import { createLogger } from "../log";
 import { inflightSlot, minInterval } from "../throttle";
-import { MAX_REASON_CHARS, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
+import {
+  MAX_REASON_CHARS,
+  postLicenseKey,
+  readBillingJson,
+  resolveEntitlementUrl,
+} from "./entitlement";
 
 const log = createLogger("billing");
 
@@ -48,7 +53,8 @@ export function subscriptionBase(entitlementUrl: string): string | undefined {
   return base === entitlementUrl ? undefined : base;
 }
 
-const optionalIso = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const optionalIso = (v: unknown): string | undefined =>
+  typeof v === "string" && v.length <= 64 ? v : undefined;
 
 export function createSubscriptionActions(env: {
   MIRAFOLD_ENTITLEMENT_TOKEN?: string;
@@ -75,12 +81,15 @@ export function createSubscriptionActions(env: {
         // Our backend's own composed refusal (unknown/superseded key). Shown
         // as-is but bounded: a self-hoster can point the exchange anywhere,
         // and this string lands in a shell-owned surface.
-        const reason = ((await res.json().catch(() => ({}))) as { reason?: string; error?: string });
+        const reason = ((await readBillingJson(res).catch(() => ({}))) as {
+          reason?: string;
+          error?: string;
+        });
         const text = typeof reason.reason === "string" ? reason.reason : reason.error;
         return { error: (text || SUPPORT_FALLBACK).slice(0, MAX_REASON_CHARS) };
       }
       if (!res.ok) throw new Error(`http ${res.status}`);
-      const body = (await res.json()) as Record<string, unknown>;
+      const body = (await readBillingJson(res)) as Record<string, unknown>;
       if (typeof body.status !== "string") throw new Error("malformed response");
       const view: SubscriptionView = { status: body.status.slice(0, 40) };
       const periodEnd = optionalIso(body.periodEnd);

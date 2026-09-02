@@ -72,6 +72,10 @@ export interface OpenCodeTransport {
 
 const START_DEADLINE_MS = envInt("MIRAFOLD_OPENCODE_START_TIMEOUT_MS", 20_000);
 const CONTROL_REQUEST_TIMEOUT_MS = envInt("MIRAFOLD_OPENCODE_CONTROL_TIMEOUT_MS", 10_000);
+// Same pre-parser boundary as the Codex app-server JSONL transport. Display
+// payloads are capped much lower after parsing; this protects the long-lived
+// SSE accumulator before any event mapper gets a chance to do that work.
+const EVENT_FRAME_MAX_CHARS = 32 * 1024 * 1024;
 
 /** One agent from `GET /agent` — `hidden: true` marks the engine's internal
  *  primaries (compaction/summary/title), which no picker should offer. */
@@ -297,31 +301,95 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   }
 
   /** Read the SSE stream for this SPAWN's life, reconnecting on drops. */
-  private async pumpEvents(onEvent: (ev: OpenCodeEvent) => void, generation: number): Promise<void> {
+  private async pumpEvents(
+    onEvent: (ev: OpenCodeEvent) => void,
+    generation: number,
+    maxFrameChars = EVENT_FRAME_MAX_CHARS,
+  ): Promise<void> {
     while (!this.closed && this.generation === generation) {
       try {
         const res = await fetch(`${this.base}/event`, { headers: { authorization: this.auth } });
         if (!res.ok || !res.body) throw new Error(`event stream HTTP ${res.status}`);
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = "";
+        let frameParts: string[] = [];
+        let frameChars = 0;
+        let pendingNewline = false;
+        const rejectOversizedFrame = () => {
+          this.stderrTail = (
+            this.stderrTail + "\nmirafold: event stream frame exceeded the size limit"
+          ).slice(-2000);
+          if (this.generation === generation) this.child?.kill("SIGKILL");
+          void reader.cancel().catch(() => {});
+        };
+        const appendFrame = (text: string): boolean => {
+          if (frameChars + text.length > maxFrameChars) {
+            rejectOversizedFrame();
+            return false;
+          }
+          if (text) frameParts.push(text);
+          frameChars += text.length;
+          return true;
+        };
+        const emitFrame = () => {
+          const frame = frameParts.length === 1 ? frameParts[0] : frameParts.join("");
+          frameParts = [];
+          frameChars = 0;
+          const prefix = "data: ";
+          let lineStart = 0;
+          if (!frame.startsWith(prefix)) {
+            lineStart = frame.indexOf(`\n${prefix}`);
+            if (lineStart < 0) return;
+            lineStart += 1;
+          }
+          const dataStart = lineStart + prefix.length;
+          const lineEnd = frame.indexOf("\n", dataStart);
+          const data = frame.slice(dataStart, lineEnd < 0 ? undefined : lineEnd);
+          try {
+            onEvent(JSON.parse(data) as OpenCodeEvent);
+          } catch {
+            // one unparseable frame must not kill the stream
+          }
+        };
+        // Search only each newly decoded chunk. Retaining frame fragments and
+        // joining once at the delimiter keeps a long fragmented frame linear.
+        const consume = (text: string): boolean => {
+          let offset = 0;
+          if (pendingNewline && text) {
+            pendingNewline = false;
+            if (text.startsWith("\n")) {
+              emitFrame();
+              offset = 1;
+            } else if (!appendFrame("\n")) {
+              return false;
+            }
+          }
+          while (offset < text.length) {
+            const boundary = text.indexOf("\n\n", offset);
+            if (boundary >= 0) {
+              if (!appendFrame(text.slice(offset, boundary))) return false;
+              emitFrame();
+              offset = boundary + 2;
+              continue;
+            }
+            const tail = text.slice(offset);
+            if (tail.endsWith("\n")) {
+              if (!appendFrame(tail.slice(0, -1))) return false;
+              pendingNewline = true;
+            } else if (!appendFrame(tail)) {
+              return false;
+            }
+            break;
+          }
+          return true;
+        };
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let boundary;
-          while ((boundary = buffer.indexOf("\n\n")) >= 0) {
-            const chunk = buffer.slice(0, boundary);
-            buffer = buffer.slice(boundary + 2);
-            const data = chunk.split("\n").find((line) => line.startsWith("data: "));
-            if (!data) continue;
-            try {
-              onEvent(JSON.parse(data.slice(6)) as OpenCodeEvent);
-            } catch {
-              // one unparseable frame must not kill the stream
-            }
-          }
+          if (!consume(decoder.decode(value, { stream: true }))) return;
         }
+        if (!consume(decoder.decode())) return;
+        if (pendingNewline && !appendFrame("\n")) return;
       } catch {
         // fall through to reconnect
       }
