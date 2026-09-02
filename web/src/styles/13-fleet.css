@@ -141,6 +141,13 @@
   inset: 0;
 }
 
+/* Above the stretched overlay, the visible name keeps its own full-name
+   tooltip while the rest of the row inherits the workspace tooltip. */
+.fleet-link-label {
+  position: relative;
+  z-index: 1;
+}
+
 /* The row's real controls (and the rename input) ride above the overlay. */
 .fleet-edit,
 .fleet-end,

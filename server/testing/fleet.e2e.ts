@@ -129,10 +129,52 @@ test("a maximum-length session name stays inside every supported fleet width", a
         `${width}px rename pencil sits ${nameGeometry.editGap}px after the visible name`,
       );
     }
+    await fleet.setViewportSize({ width: 1280, height: 844 });
+    await fleet.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+
+    const tooltipTargets = await row.evaluate((element) => {
+      const link = element.querySelector<HTMLElement>(".fleet-link");
+      const agent = element.querySelector<HTMLElement>(".fleet-agent");
+      if (!link || !agent) throw new Error("Fleet tooltip targets are missing");
+      const label = element.querySelector<HTMLElement>(".fleet-link-label") ?? link;
+
+      const labelBox = label.getBoundingClientRect();
+      const linkBox = link.getBoundingClientRect();
+      const labelLeft = Math.max(labelBox.left, linkBox.left);
+      const labelRight = Math.min(labelBox.right, linkBox.right);
+      const nameHit = document.elementFromPoint(
+        labelLeft + (labelRight - labelLeft) / 2,
+        labelBox.top + labelBox.height / 2,
+      );
+      const agentBox = agent.getBoundingClientRect();
+      const rowHit = document.elementFromPoint(
+        agentBox.left + agentBox.width / 2,
+        agentBox.top + agentBox.height / 2,
+      );
+
+      return {
+        name:
+          nameHit instanceof HTMLElement
+            ? nameHit.closest<HTMLElement>("[title]")?.title ?? null
+            : null,
+        row:
+          rowHit instanceof HTMLElement
+            ? rowHit.closest<HTMLElement>("[title]")?.title ?? null
+            : null,
+        workspace: element.getAttribute("title"),
+      };
+    });
+    assert.equal(tooltipTargets.name, maximumName, "truncated name has no full-name tooltip");
+    assert.ok(tooltipTargets.workspace, "Fleet row has no workspace tooltip");
     assert.equal(
-      await link.getAttribute("title"),
-      maximumName,
-      "truncated name has no full-name tooltip",
+      tooltipTargets.row,
+      tooltipTargets.workspace,
+      "the stretched Fleet link overrides the row's workspace tooltip",
     );
   } finally {
     await fleet.setViewportSize({ width: 1280, height: 844 });
