@@ -93,6 +93,7 @@ async function settleLiveDocument(page: Page): Promise<void> {
   await page.locator(".output-zone").evaluate((element) => {
     element.scrollTop = 0;
   });
+  await page.locator(".jump-to-latest.is-visible").waitFor();
 }
 
 test("visual: agent-picker card", { skip: LINUX_ONLY }, async () => {

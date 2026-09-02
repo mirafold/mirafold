@@ -373,23 +373,46 @@ test("LD.3: response documents reflow across folder tree, file view, pin dock, a
     await p.locator(".output-zone").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    await typePrompt(p, MOCK_PROMPTS["responsive-document"]);
     const stressDocument = p.locator(".response-document", { hasText: "Width stress" });
-    await stressDocument.locator(".rc-diff").waitFor({ timeout: 15_000 });
-    await stressDocument.locator(".rc-chart").waitFor({ timeout: 15_000 });
     const finalStressProse = stressDocument.locator(".turn-assistant", {
       hasText: "without widening the workbench",
     });
+    await p.evaluate(() => {
+      const attribute = "data-e2e-first-stress-paint";
+      document.documentElement.removeAttribute(attribute);
+      const observer = new MutationObserver(() => {
+        const stressDocument = [...document.querySelectorAll(".response-document")].find((element) =>
+          element.textContent?.includes("Width stress"),
+        );
+        if (!stressDocument) return;
+        const artifact = stressDocument.querySelector(".artifact");
+        const prose = [...stressDocument.querySelectorAll(".turn-assistant")].some((element) =>
+          element.textContent?.includes("Every painting"),
+        );
+        if (!artifact && !prose) return;
+        document.documentElement.setAttribute(
+          attribute,
+          artifact && prose ? "simultaneous" : artifact ? "artifact" : "prose",
+        );
+        observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    await typePrompt(p, MOCK_PROMPTS["responsive-document"]);
+    await stressDocument.locator(".rc-diff").waitFor({ timeout: 15_000 });
+    await stressDocument.locator(".rc-chart").waitFor({ timeout: 15_000 });
     await stressDocument.locator(".artifact").waitFor({ timeout: 15_000 });
     assert.equal(
       await p.locator(".activity-line").count(),
       1,
       "the artifact waited until turn_end",
     );
+    const firstStressPaint = p.locator("html[data-e2e-first-stress-paint]");
+    await firstStressPaint.waitFor({ timeout: 15_000 });
     assert.equal(
-      await finalStressProse.count(),
-      0,
-      "the artifact did not paint before subsequent prose",
+      await firstStressPaint.getAttribute("data-e2e-first-stress-paint"),
+      "artifact",
+      "subsequent prose painted before the artifact",
     );
     const artifactHandle = await stressDocument
       .locator("iframe.artifact-frame")
