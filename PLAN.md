@@ -4162,8 +4162,8 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   as `48629c7`; `main` and `next` both carry 0.8.1, and the merged fix,
   release, and sync branches were deleted.
 
-- [ ] **CF.HF2 — packaged Desktop render-MCP child mode (2026-09-01,
-  release pending)** — isolated branch `fix/desktop-render-mcp-node-mode` from
+- [x] **CF.HF2 — v0.8.2 packaged Desktop render-MCP child mode (2026-09-01,
+  complete)** — isolated branch `fix/desktop-render-mcp-node-mode` from
   current `next`; deliberately separate from the dead-code cleanup branch.
   The installed Desktop 0.3.9 / Shell 0.8.1 artifact was reproduced before
   editing with its exact `/opt/Mirafold/mirafold` executable and bundled
@@ -4183,10 +4183,15 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   `yarn audit` reports 0 vulnerabilities across all 470 packages. Final local
   gates: typecheck; Tier 1 1117/1117; Tier 2 161/161; Tier 3 130/130; managed
   browser and visual UI 11/11; package notices unchanged; dry-run pack contains
-  only the existing 20 shipped files. Remaining: reviewed PR → `next`, Shell
-  patch publication and registry proof, exact published-package Desktop intake,
-  packaged Desktop smoke on Linux and Windows, installed-engine acceptance,
-  then release and `main` → `next` synchronization.
+  only the existing 20 shipped files. PR #91 passed DCO, Tier 1, Tier 2+3,
+  Cloudflare, and the complete review-comment audit with no findings, then
+  merged into `next` as `42934cb`. `release/0.8.2` was cut from the v0.8.1
+  `main` tip and carries only that hotfix plus release documentation and the
+  package-version bump; the cleanup already on `next` was excluded. Release
+  PR #93 merged as `f3dc164`; signed tag `v0.8.2` carries the packed tarball's
+  SHA-256; release workflow #33580820830 passed; and npm serves 0.8.2. This
+  fixed-snapshot synchronization carries that production state back into
+  `next` before the next release is cut.
 
 **Open records (Kyle's calls):**
 - **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
