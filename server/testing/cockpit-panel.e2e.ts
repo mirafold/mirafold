@@ -70,6 +70,17 @@ test("CP.2/3 cockpit panel previews, acts, follows a session switch, and closes 
   // the new name arrives back through the server's sessions snapshot;
   // Escape cancels without renaming.
   const target = row(first, secondId);
+  const editGap = await target.evaluate((element) => {
+    const name = element.querySelector(".cockpit-session-name");
+    const edit = element.querySelector(".cockpit-edit");
+    if (!(name instanceof HTMLElement) || !(edit instanceof HTMLElement)) {
+      throw new Error("cockpit rename controls are missing");
+    }
+    const text = document.createRange();
+    text.selectNodeContents(name);
+    return edit.getBoundingClientRect().left - text.getBoundingClientRect().right;
+  });
+  assert.ok(editGap >= 0 && editGap <= 10, `rename pencil sits ${editGap}px after the session name`);
   await target.locator(".cockpit-edit").click();
   const rename = target.locator(".cockpit-rename");
   await rename.waitFor();

@@ -175,6 +175,7 @@ function CockpitRow({
         <SessionName
           s={session}
           surface="cockpit"
+          wrapClass="cockpit-session-name-slot"
           renaming={renaming}
           current={current}
           onStart={onStartRename}

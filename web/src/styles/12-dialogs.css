@@ -703,7 +703,8 @@
   margin-bottom: 6px;
 }
 
-.theme-row {
+.theme-row,
+.notify-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -719,7 +720,8 @@
   cursor: pointer;
 }
 
-.theme-row:hover {
+.theme-row:hover,
+.notify-row:hover {
   background: var(--surface-hover);
   border-color: var(--border-faint);
 }
@@ -760,27 +762,6 @@
   margin-top: 18px;
 }
 
-.notify-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 0.9em;
-  color: var(--fg-body);
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.notify-row:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-faint);
-}
-
 .notify-row[aria-checked="true"] {
   border-color: var(--border-mid);
   background: var(--surface-2);
@@ -808,4 +789,3 @@
   line-height: 1.45;
   color: var(--warn-fg);
 }
-
