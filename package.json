@@ -47,9 +47,9 @@
     "nanoid": "^3.3.17"
   },
   "scripts": {
-    "dev:server": "MIRAFOLD_TOKEN= tsx watch server/index.ts",
+    "dev:server": "MIRAFOLD_TOKEN= node --import tsx scripts/watch-server.ts",
     "dev:web": "vite",
-    "dev": "PORT=${PORT:-3100} MIRAFOLD_STRICT_PORT=1 concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
+    "dev": "PORT=${PORT:-3100} MIRAFOLD_STRICT_PORT=1 concurrently --kill-others-on-fail -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
     "build": "vite build && yarn build:server",
     "build:server": "esbuild server/index.ts server/render-mcp.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server",
     "prepack": "yarn build",

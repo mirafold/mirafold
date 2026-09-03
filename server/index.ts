@@ -26,7 +26,7 @@ import {
   verifyToken,
 } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
-import { envFlag, envInt } from "./env";
+import { DEV_PORT_CONFLICT_EXIT_CODE, envFlag, envInt } from "./env";
 import { VERSION } from "./version";
 
 const log = createLogger("mirafold");
@@ -34,7 +34,7 @@ const log = createLogger("mirafold");
 // Last-gasp handlers — a crash stays loud and exits nonzero, it just
 // signs its name first so a stranger's report contains something actionable
 // — and the flight-recorder file keeps it even if the terminal is gone.
-const lastGasp = (kind: string) => (err: unknown) => {
+const lastGasp = (kind: string, exitCode = 1) => (err: unknown) => {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
   log.error(`v${VERSION} crashed (${kind}): ${detail}`);
   log.error(
@@ -42,7 +42,7 @@ const lastGasp = (kind: string) => (err: unknown) => {
       `(include the lines above${logFile ? ` — also in ${logFile}` : ""}; ` +
       "never paste the ?token= URL or a pairing code)",
   );
-  process.exit(1);
+  process.exit(exitCode);
 };
 process.on("uncaughtException", lastGasp("uncaughtException"));
 process.on("unhandledRejection", lastGasp("unhandledRejection"));
@@ -334,9 +334,10 @@ const listen = (port: number) => {
     // claims "server on" ports we never bound — a line users copy.
     server.removeListener("listening", onListening);
     if (err.code === "EADDRINUSE" && strictPort) {
-      throw new Error(
-        `port ${port} is already in use; this launch requires that exact port`,
-        { cause: err },
+      return lastGasp("uncaughtException", DEV_PORT_CONFLICT_EXIT_CODE)(
+        new Error(`port ${port} is already in use; this launch requires that exact port`, {
+          cause: err,
+        }),
       );
     }
     if (err.code === "EADDRINUSE" && port - basePort < 20) {

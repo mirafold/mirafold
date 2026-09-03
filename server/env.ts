@@ -7,6 +7,13 @@
 
 import { createLogger } from "./log";
 
+// scripts/watch-server.ts owns the other end of this private process contract.
+// 75 is EX_TEMPFAIL: the daemon itself is sound, but the requested development
+// port is temporarily unavailable. Keeping this distinct from ordinary code
+// failures lets the watcher retain edit-and-retry behavior for those failures
+// while still stopping Vite for the one failure that makes its proxy invalid.
+export const DEV_PORT_CONFLICT_EXIT_CODE = 75;
+
 /** A non-negative INTEGER env var, or `fallback` when unset/blank/garbage.
  *  Every consumer is a count, a byte size, a port, or a millisecond delay,
  *  none of which mean anything fractional (PORT=3000.5 reached listen()).
