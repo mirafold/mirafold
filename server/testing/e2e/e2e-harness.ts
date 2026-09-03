@@ -74,7 +74,7 @@ export async function withFreshMockPage(
   }
 }
 
-export async function enterMockSession(page: Page, agent = "Claude Code"): Promise<void> {
+export async function enterMockSession(page: Page, agent = "Claude Agent"): Promise<void> {
   await page.locator(".agent-picker-agent", { hasText: agent }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   await page.locator(".prompt-box textarea").waitFor();

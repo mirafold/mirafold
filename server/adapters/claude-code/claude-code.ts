@@ -192,7 +192,7 @@ export class ClaudeCodeSession implements AgentSession {
   // arrive as buffered assistant text with zero deltas), the buffered text is
   // the ONLY copy and must be emitted, or the command runs but nothing paints.
   private streamedText = false;
-  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Claude Code", (m) => log.warn(m));
+  private readonly unknown = new UnknownKindReporter((m) => this.emit(m), "Claude Agent", (m) => log.warn(m));
   // Per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
   private permissions = new PermissionLedger((msg) => this.emit(msg));
@@ -311,10 +311,10 @@ export class ClaudeCodeSession implements AgentSession {
     if (this.closed) return Promise.resolve(false);
     return this.permissions.ask(
       {
-        tool: "Claude Code",
+        tool: "Claude Agent",
         detail:
           `trust this folder — ${this.workspaceDir}. ` +
-          `Yes lets Claude Code run here and applies this folder's own .claude/settings.json ` +
+          `Yes lets Claude Agent run here and applies this folder's own .claude/settings.json ` +
           `(hooks included), .mcp.json servers, and CLAUDE.md, exactly as the terminal does once ` +
           `you trust it there.`,
       },
@@ -333,7 +333,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.emit({
       type: "notice",
       text:
-        `Claude Code won't run in a folder you haven't trusted. Nothing ran. ` +
+        `Claude Agent won't run in a folder you haven't trusted. Nothing ran. ` +
         `Send another prompt to be asked again, or switch agents.`,
     });
     this.emit({ type: "turn_end" });
@@ -415,7 +415,7 @@ export class ClaudeCodeSession implements AgentSession {
           // to happen inside the guarded constructor; here it would be an
           // unhandled rejection and take the daemon down — it is this
           // turn's error instead.
-          this.emit({ type: "error", message: `Claude Code could not start: ${this.safeEngineText(errText(err))}` });
+          this.emit({ type: "error", message: `Claude Agent could not start: ${this.safeEngineText(errText(err))}` });
           this.emit({ type: "turn_end" });
           return;
         }

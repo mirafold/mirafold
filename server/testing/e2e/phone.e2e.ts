@@ -67,7 +67,7 @@ test("desktop: the shell-owned pair affordance shows the QR of the pairing URL",
   await desktop.goto(`http://127.0.0.1:${d.port}/`);
   // An empty fleet auto-opens agent picker — seed the session first, then the
   // pair affordance is testable in the session's status bar…
-  await desktop.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+  await desktop.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
   await desktop.waitForURL(/\/s\/[\w-]+/);
   sessionId = new URL(desktop.url()).pathname.match(/^\/s\/([\w-]+)/)![1];
   await desktop.locator(".status-bar .sb-pair").click();

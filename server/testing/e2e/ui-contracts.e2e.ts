@@ -212,7 +212,7 @@ test("ending one of multiple sessions returns to the fleet without opening agent
   await withFreshMockSession("ui-end-session-with-survivor-e2e", async (page, base) => {
     const remaining = await page.context().newPage();
     await remaining.goto(`${base}/?new=1`);
-    await remaining.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await remaining.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await remaining.waitForURL(/\/s\/[\w-]+/);
     const remainingId = new URL(remaining.url()).pathname.split("/").pop()!;
 

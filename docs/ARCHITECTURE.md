@@ -27,7 +27,7 @@ flowchart LR
 
 Four rules define the shape:
 
-1. **Each agent keeps its own engine.** Claude Code, Codex, Gemini CLI, and
+1. **Each agent keeps its own engine.** Claude Agent, Codex, Gemini CLI, and
    OpenCode are independent adapters behind the same `AgentSession` interface.
 2. **The wire protocol is the shared contract.** Adapters emit `WireMsg`; the
    session layer and browser do not consume provider-native events.
@@ -215,7 +215,7 @@ rows that have collided before.
 ### Generative UI
 
 Mirafold exposes drawing tools to each agent through the Model Context Protocol
-(MCP). Claude Code uses the in-process server in
+(MCP). Claude Agent uses the in-process server in
 [`render-tools.ts`](../server/render-tools.ts); adapters that load an MCP
 subprocess use [`render-mcp.ts`](../server/render-mcp.ts).
 Both paths use the schemas in

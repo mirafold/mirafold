@@ -299,7 +299,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       );
       const [first] = await toasts(page2);
       assert.match(first.title, /^⚠ permission — /);
-      assert.match(first.body ?? "", /Claude Code wants Bash: rm -rf/);
+      assert.match(first.body ?? "", /Claude Agent wants Bash: rm -rf/);
       assert.ok(first.tag?.startsWith("mirafold-"), `tag was ${first.tag}`);
 
       // Answering retires the permission toast (the state moved on); the
@@ -327,7 +327,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       );
     },
     {
-      agent: "Claude Code",
+      agent: "Claude Agent",
       prepare: async (p) => {
       // Notification stubbed before boot: headless Chrome auto-denies the
       // real API and an OS toast is invisible to the DOM anyway — the

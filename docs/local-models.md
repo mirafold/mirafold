@@ -11,12 +11,12 @@ Three of the four supported agents have a real local path today:
 
 | Agent | Local path | How |
 |---|---|---|
-| **Claude Code** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API |
+| **Claude Agent** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API |
 | **Codex** | ✅ Ollama / LM Studio / vLLM | an OpenAI-compatible provider (auto-configured, or `~/.codex/config.toml`) |
 | **OpenCode** | ✅ any provider OpenCode itself supports | declare it in your own `opencode.json` (Ollama, LM Studio, OpenRouter, …); Mirafold adds nothing and the session classifies as `local` when the engine reports a local provider |
 | **Gemini CLI** | ❌ none | the CLI only talks to Google's endpoints — no supported local path |
 
-The two recipes below (Claude Code, Codex) assume a local server that already
+The two recipes below (Claude Agent, Codex) assume a local server that already
 has a model pulled. All examples use [Ollama](https://ollama.com); LM Studio
 and vLLM notes follow. OpenCode needs no Mirafold-side recipe: configure it as
 you would for the terminal.
@@ -30,8 +30,8 @@ daemon probes the well-known localhost ports at startup and while the
 the agent picker is open — Ollama (11434), LM Studio (1234), vLLM (8000),
 llama.cpp (8080) — and any server that answers appears in the picker with
 its model list, under every agent that can drive it (Ollama under Claude
-Code *and* Codex; OpenAI-dialect-only servers under Codex). Pick a model
-and the session is configured automatically, per-session: Claude Code gets
+Agent *and* Codex; OpenAI-dialect-only servers under Codex). Pick a model
+and the session is configured automatically, per-session: Claude Agent gets
 the endpoint through the documented env recipe, Codex gets a custom
 provider injected — no env vars, no `config.toml` edit, no dummy API key.
 Start your server while the picker is open and it appears within a few
@@ -57,11 +57,12 @@ config), and the fallback for setups discovery can't see.
 
 ---
 
-## Path A — Claude Code against Ollama (the fastest fully-local path)
+## Path A — Claude Agent against Ollama (the fastest fully-local path)
 
 Since v0.14.0, Ollama serves [Anthropic's Messages API](https://docs.ollama.com/api/anthropic-compatibility),
-so Claude Code — and therefore Mirafold's Claude Code adapter, which drives
-the same engine — can run against a local model with two environment variables.
+so Mirafold's Claude Agent integration — powered by the Claude Agent SDK and
+its bundled Claude Code runtime — can run against a local model with two
+environment variables.
 
 1. Install Ollama and pull a coding model (see the [model table](#choosing-a-model)
    below — the model must fit in your free RAM/VRAM; `qwen3-coder` is an 18 GB
@@ -71,7 +72,7 @@ the same engine — can run against a local model with two environment variables
 ollama pull qwen3-coder
 ```
 
-2. Give it the context window Claude Code needs (a derived model with a bigger
+2. Give it the context window Claude Agent needs (a derived model with a bigger
    `num_ctx` — plain user-space, no service config; see
    [context length](#choosing-a-model)):
 
@@ -95,7 +96,7 @@ three lines in `.env` and run `yarn dev`.)
 
 That's it. Mirafold counts a set `ANTHROPIC_BASE_URL` as "this agent is
 configured" (exactly so that local setups don't fall back to the API-free mock),
-so the agent picker shows Claude Code as live, and every token of inference stays on
+so the agent picker shows Claude Agent as live, and every token of inference stays on
 your machine.
 
 **Honest limitations of this path** (Ollama's, not ours): no prompt caching —
@@ -174,7 +175,7 @@ agent at it exactly like a local server, with the provider's real URL and key.
 Nothing subscription-shaped is involved — you pay the provider per token,
 like a Claude API key.
 
-**Claude Code** works with any Anthropic-compatible API. Two providers that
+**Claude Agent** works with any Anthropic-compatible API. Two providers that
 publish one:
 
 ```sh
@@ -251,7 +252,7 @@ your agent runs:
 (The "needs" column assumes a GPU or Apple-Silicon unified memory. CPU-only
 is a different regime — see below.)
 
-Context length: configure **at least 32K tokens** for Claude Code, and
+Context length: configure **at least 32K tokens** for Claude Agent, and
 **64K+ for Codex** — both agents carry large system prompts and tool schemas,
 and Ollama's per-model default context is far smaller, which makes the agent
 truncate and behave erratically. The clean way to raise it is a **derived
@@ -261,13 +262,13 @@ model** (user-space, per-model, no service restart), as in Path A step 2:
 Ollama systemd service's environment.)
 
 **The number that gates CPU-only machines is prefill.** A faithful Claude
-Code turn sends the full agent surface — system prompt, tool schemas, your
+Agent turn sends the full agent surface — system prompt, tool schemas, your
 own settings and memory — before your first word: **~26K tokens, measured**.
 A GPU chews through that in seconds. A CPU-only laptop we measured (ThinkPad
 T480, 8 threads) prefilled ~6.5 tok/s on an 8B Q4 model — an hour before the
 first reply token — and a 1.7B model completed a browser turn in ~25 minutes
 end-to-end. It genuinely works (that run is this doc's verification), but
-it's proof, not daily driving: on CPU-only hardware treat local Claude Code
+it's proof, not daily driving: on CPU-only hardware treat local Claude Agent
 as an experiment with small models, and use a ≥16–24 GB GPU for real work.
 (Slow prefill can also outlive a client's stream timeout and get retried;
 Ollama's prompt prefix cache makes each retry resume where the last stopped,

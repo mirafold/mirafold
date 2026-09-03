@@ -9,7 +9,7 @@ type BackendKind = NonNullable<AgentInfo["kind"]>;
 // demo banner, so "no credentials" is never a dead end.
 
 export const LABEL: Record<AgentName, string> = {
-  "claude-code": "Claude Code",
+  "claude-code": "Claude Agent",
   codex: "Codex",
   "gemini-cli": "Gemini CLI",
   opencode: "OpenCode",

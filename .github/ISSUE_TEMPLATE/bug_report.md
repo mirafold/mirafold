@@ -31,7 +31,7 @@ Replace either with `[redacted]`. Everything else is safe to share.
 
 - OS:
 - Node version (`node --version`):
-- Agent (Claude Code / Codex / Gemini CLI):
+- Agent (Claude Agent / Codex / Gemini CLI):
 
 **Logs**
 

@@ -4,8 +4,8 @@
 precisely. The "(was)" column is transition history — the old term, for anyone
 who knew it.
 
-*Context for a fresh reader:* Mirafold is a faithful browser re-skin of
-terminal coding agents (Claude Code, Codex, Gemini CLI), with generative UI
+*Context for a fresh reader:* Mirafold is a faithful browser re-skin of coding
+agents (Claude Agent, Codex, Gemini CLI), with generative UI
 layered on top. This file names its parts.
 
 *Naming register:* plain, terminal-native compounds — mostly two words

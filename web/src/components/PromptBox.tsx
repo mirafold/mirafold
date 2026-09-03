@@ -19,7 +19,7 @@ const PROMPT_OPTIONS_ID = "prompt-options";
 function promptSourceLabel(option: PromptOption): string | undefined {
   switch (option.source) {
     case "claude-code":
-      return "Claude Code command";
+      return "Claude Agent command";
     case "codex":
       return option.kind === "skill" ? "Codex skill" : "Codex command";
     case "gemini-cli":

@@ -927,7 +927,7 @@ test("an untrusted folder asks before the engine is created; a no runs nothing, 
     s.refreshPromptOptions();
     s.pushPrompt("hello");
     const ask = await waitFor((m) => m.type === "permission_request", "the trust ask");
-    assert.equal(ask.tool, "Claude Code");
+    assert.equal(ask.tool, "Claude Agent");
     assert.match(ask.detail, /trust this folder/);
     assert.ok(ask.detail.includes(ws), "the ask names the exact folder");
     assert.match(ask.detail, /hooks/, "the ask says what a yes applies");
@@ -1023,7 +1023,7 @@ test("TS.12: an SDK message kind the ledger leaves unmapped is reported once, ne
   await awaitTurnEnd();
   assert.deepEqual(
     msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]),
-    [["Mirafold doesn't display this Claude Code message yet: task_started", undefined]],
+    [["Mirafold doesn't display this Claude Agent message yet: task_started", undefined]],
   );
   s.close();
 });

@@ -297,7 +297,7 @@ test(
       // A rejected cwd belongs to the value that was submitted. Replacing the
       // value must remove that stale error before the user retries creation.
       await cwdInput.fill(missing);
-      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
       await page2.waitForSelector(".agent-picker-error");
       assert.match(await page2.locator(".agent-picker-error").innerText(), /no such directory/i);
 
@@ -306,7 +306,7 @@ test(
       await page2.locator(".agent-picker-error").waitFor({ state: "detached" });
 
       await page2.setViewportSize({ width: 1100, height: 800 });
-      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
       await page2.waitForURL(/\/s\/[\w-]+/);
       await page2.waitForSelector(".sb-cwd");
       assert.equal(await page2.locator(".sb-cwd").getAttribute("title"), picked);
@@ -331,7 +331,7 @@ test("agent picker → a full mock turn renders in the DOM", async () => {
     .innerText();
   assert.match(opencodeRowText, /opencode auth login/);
   assert.match(opencodeRowText, /OPENCODE_MODEL/);
-  const claudeRow = page.locator(".agent-picker-agent", { hasText: "Claude Code" });
+  const claudeRow = page.locator(".agent-picker-agent", { hasText: "Claude Agent" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
   // offers `codex login` WITH the uncertainty caveat, plus the API-key path.
@@ -708,7 +708,7 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Agent" });
     await claudeRow.waitFor();
     // Warn-toned "subscription not supported", not the neutral demo status.
     assert.equal(await claudeRow.locator(".agent-picker-blocked").count(), 1);
@@ -749,7 +749,7 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Agent" });
     await claudeRow.waitFor();
     assert.match(await claudeRow.locator(".agent-picker-agent-status").innerText(), /ready/);
     const detail = await claudeRow.locator(".agent-picker-agent-detail").innerText();
@@ -844,7 +844,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
 
     // Claude: two usable (env endpoint + API key) + ollama speaks anthropic
     // too, and the prohibited subscription is VISIBLE but gray with the why.
-    await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await page2.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await page2.waitForSelector(".agent-picker-backends");
     assert.equal(await page2.locator(".agent-picker-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
     const blocked = page2.locator(".agent-picker-backend-blocked");
@@ -2245,7 +2245,7 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await assertAxeClean(p, "agent-picker");
 
     // 2) A live session with a rendered transcript + checklist.
-    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".demo-banner");
     await p.locator("textarea").click();
@@ -2382,7 +2382,7 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
     // An empty registry opens the agent picker overlay, which sits over the
     // fleet's pair button — enter a session and use the status bar's instead
     // (both hosts render the same card).
-    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
 
     // The resting UI shows only the pair button; nothing cancel-shaped.
@@ -2436,7 +2436,7 @@ test("no relay: the pair button is still there and opens the Mirafold Pro offer"
   // status bar's button (both hosts render the same card).
   await page.locator(".agent-picker-card, .fleet-new").first().waitFor();
   if (!(await page.locator(".agent-picker-card").count())) await page.locator(".fleet-new").click();
-  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+  await page.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   await page.waitForSelector(".prompt-box textarea");
   await page.locator(".status-bar .sb-pair").click();
@@ -2460,7 +2460,7 @@ test("no relay: the pair button is still there and opens the Mirafold Pro offer"
   const p = await browser.newPage();
   try {
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".prompt-box textarea");
     await p.locator(".status-bar .sb-pair").click();
@@ -2500,7 +2500,7 @@ test("PB.2: a refused license key — no QR, the reason, the pay link; a phone i
   const p = await browser.newPage();
   try {
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".prompt-box textarea");
     await p.locator(".status-bar .sb-pair").click();
