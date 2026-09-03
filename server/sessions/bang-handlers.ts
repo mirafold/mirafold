@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ClientMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
-import { CLIENT_ID_RE } from "./fs-handlers";
+import { CLIENT_ID_RE } from "./workspace/filesystem/fs-handlers";
 import { spawnBang } from "../pty/pty";
 import { relayGateRefusal } from "../provider-policy";
 import { errText } from "../adapters";

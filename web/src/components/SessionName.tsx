@@ -1,5 +1,5 @@
 import type { SessionMeta } from "@protocol";
-import { sessionPath } from "../session-url";
+import { sessionPath } from "../transport/session-url";
 
 // Each surface keeps its own class family (and stylesheet); the interaction
 // contract below is the one thing they must never let drift.

@@ -59,7 +59,7 @@
     "test:e2e": "yarn build && node --import tsx --test --test-concurrency=1 \"server/**/*.e2e.ts\"",
     "test:ui": "yarn build && yarn -s test:ui:built",
     "test:ui:built": "node --import tsx --test --test-concurrency=1 \"server/**/*.uitest.ts\"",
-    "test:ui:update-snapshots": "yarn build && MIRAFOLD_UPDATE_UI_SNAPSHOTS=1 node --import tsx --test --test-concurrency=1 \"server/testing/ui-visual.uitest.ts\"",
+    "test:ui:update-snapshots": "yarn build && MIRAFOLD_UPDATE_UI_SNAPSHOTS=1 node --import tsx --test --test-concurrency=1 \"server/testing/ui/ui-visual.uitest.ts\"",
     "test:live": "node --import tsx --test --test-concurrency=1 \"server/**/*.ltest.ts\""
   },
   "dependencies": {

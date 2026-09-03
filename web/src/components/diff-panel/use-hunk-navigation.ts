@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { reviewScrollBehavior, type ReviewHunk } from "../../change-review";
+import { reviewScrollBehavior, type ReviewHunk } from "../../workspace/change-review";
 
 /** Hunk navigation for the review diff: which hunk is current, moving
  * between hunks, and the two positioning behaviors that took probing to get

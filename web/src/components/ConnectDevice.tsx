@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { ModalCard } from "./ModalCard";
 import { visibleControls } from "../visible-controls";
-import { useCopyFeedback, type CopyState } from "../use-copy-feedback";
+import { useCopyFeedback, type CopyState } from "../hooks/use-copy-feedback";
 
 const COPY_LABEL = { idle: "copy link", copied: "copied", failed: "copy failed" } as const;
-import type { SubscriptionAct } from "../session-bus";
+import type { SubscriptionAct } from "../transport/session-bus";
 import {
   acting,
   confirmLede,
@@ -25,8 +25,8 @@ import {
 // The hello's pairing info (protocol.ts `agents.relay`): `ws` is the relay's
 // ws(s) origin, present when `url` is a separate static app origin — it rides
 // the QR fragment so the loaded page knows where to dial.
-export type { EntitlementView, RelayInfo } from "../daemon-hello";
-import type { AgentsHello, EntitlementView, RelayInfo } from "../daemon-hello";
+export type { EntitlementView, RelayInfo } from "../transport/daemon-hello";
+import type { AgentsHello, EntitlementView, RelayInfo } from "../transport/daemon-hello";
 
 /** Why remote access is off (hello `relayOff`) — the card's state when there
  *  is no relay to draw a QR for. */

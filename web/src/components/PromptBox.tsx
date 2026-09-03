@@ -4,9 +4,9 @@ import {
   insertPromptOption,
   matchingPromptOptions,
   promptCompletionMatch,
-} from "../prompt-completions";
-import { mergePromptDraft } from "../prompt-draft";
-import { useIsPhone } from "../use-is-phone";
+} from "../input/prompt-completions";
+import { mergePromptDraft } from "../input/prompt-draft";
+import { useIsPhone } from "../hooks/use-is-phone";
 import {
   PhoneInputNavigation,
   type PhoneInputNavigationModel,

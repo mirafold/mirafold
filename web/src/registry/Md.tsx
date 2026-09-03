@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { CodeHead } from "./Code";
-import { workspacePathFromHref } from "../workspace-file-link";
+import { workspacePathFromHref } from "../workspace/workspace-file-link";
 
 // remark-gfm's task-list checkbox (`- [x] thing`) renders as a bare
 // `<input disabled>` with no accessible name — a screen reader announces

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clientSchemas, registrySchemas, type ComponentName } from "./registry-spec";
-import { MOCK_RENDERS } from "./adapters/mock";
+import { MOCK_RENDERS } from "./adapters/mock/mock";
 
 test("every MOCK_RENDERS payload satisfies its component schema", () => {
   for (const make of MOCK_RENDERS) {

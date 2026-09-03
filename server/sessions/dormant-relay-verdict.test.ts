@@ -8,7 +8,7 @@ import type { CredentialKind } from "../provider-policy";
 import type { WireMsg } from "../protocol";
 import { openConnection, type Connection } from "./connection";
 import { SessionRegistry } from "./registry";
-import { SessionCheckpointStore, type StoredSession } from "./session-store";
+import { SessionCheckpointStore, type StoredSession } from "./persistence/session-store";
 
 // Audit 2026-08-30 (+ PR #77 review): a session whose credential kind is a
 // hello-time GUESS (OpenCode) refuses every remote act while active, but its

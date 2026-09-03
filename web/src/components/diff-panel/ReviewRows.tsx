@@ -9,7 +9,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
-import type { ReviewLine, VersionedReviewSelection } from "../../change-review";
+import type { ReviewLine, VersionedReviewSelection } from "../../workspace/change-review";
 import { codeFence, splitNodeLines } from "../../registry/Code";
 
 type ReviewRowsValue = {

@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "../testing/itest-harness";
-import { launchChrome } from "../testing/e2e-harness";
+import { launchChrome } from "../testing/e2e/e2e-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 
 // R.1's "Done when", literally: a second BROWSER attaches through the local

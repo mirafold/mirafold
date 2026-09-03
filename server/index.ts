@@ -7,7 +7,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
-import { SessionCheckpointStore } from "./sessions/session-store";
+import { SessionCheckpointStore } from "./sessions/persistence/session-store";
 import { openConnection } from "./sessions/connection";
 import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";

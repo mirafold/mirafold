@@ -5,17 +5,17 @@ import { visibleControls } from "../visible-controls";
 import { SessionName } from "./SessionName";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice } from "./ConnectDevice";
-import { createDaemonClient } from "../daemon-client";
-import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
+import { createDaemonClient } from "../transport/daemon-client";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../transport/daemon-hello";
 import type { SubscriptionReply } from "../subscription-card";
 import { GearGlyph } from "./GearGlyph";
-import { SocketClient } from "../ws";
-import { tildify } from "../tildify";
-import { useArmedConfirm } from "../use-armed-confirm";
+import { SocketClient } from "../transport/ws";
+import { tildify } from "../workspace/tildify";
+import { useArmedConfirm } from "../hooks/use-armed-confirm";
 import { paintTabStatus } from "../tab-status";
 import { agentLabel } from "../agents-meta";
 import { createDomNotifier, folderTitle } from "../notify";
-import { sessionPath } from "../session-url";
+import { sessionPath } from "../transport/session-url";
 import { cockpitOrder, wantsAnswer } from "../fleet-order";
 
 // Mission control, the fleet cockpit: every live session in

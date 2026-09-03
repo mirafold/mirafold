@@ -13,32 +13,32 @@ import { DiffPanel } from "./diff-panel/DiffPanel";
 import { CockpitPanel } from "./CockpitPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
-import { createSessionBus } from "../session-bus";
+import { createSessionBus } from "../transport/session-bus";
 import type { SubscriptionReply } from "../subscription-card";
-import { IDLE_TURN, reduceTurn, type TurnInput } from "../turn-state";
-import { traceTurn } from "../turn-trace";
-import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
+import { IDLE_TURN, reduceTurn, type TurnInput } from "../transcript/turn-state";
+import { traceTurn } from "../transcript/turn-trace";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../transport/daemon-hello";
 import { ThemePicker } from "./ThemePicker";
-import { useThemeSlots } from "../use-theme-slots";
-import { useNotifyPreference } from "../use-notify-preference";
-import { useFileDropZone } from "../use-file-drop-zone";
-import { tildify } from "../tildify";
+import { useThemeSlots } from "../hooks/use-theme-slots";
+import { useNotifyPreference } from "../hooks/use-notify-preference";
+import { useFileDropZone } from "../hooks/use-file-drop-zone";
+import { tildify } from "../workspace/tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { createDomNotifier, folderTitle } from "../notify";
-import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
+import { createFileDrop, quoteForPrompt, type UploadEntry } from "../workspace/file-drop";
 import type { WireMsg } from "@protocol";
-import { useEscapeKey } from "../use-escape";
+import { useEscapeKey } from "../hooks/use-escape";
 import { Announcer, useAnnouncer } from "./Announcer";
 import { PermissionBar } from "./PermissionBar";
-import type { InputNavigationDirection } from "../input-navigation";
-import { sessionIdFromPath } from "../session-url";
+import type { InputNavigationDirection } from "../input/input-navigation";
+import { sessionIdFromPath } from "../transport/session-url";
 import { cockpitPanelWasOpen, rememberCockpitPanel } from "../cockpit-panel-state";
-import { useIsPhone } from "../use-is-phone";
+import { useIsPhone } from "../hooks/use-is-phone";
 import type {
   InputNavigationHandle,
   InputNavigationState,
-} from "../use-input-navigation";
+} from "../input/use-input-navigation";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 type AuxiliarySurface = WorkspaceSurface | "cockpit";

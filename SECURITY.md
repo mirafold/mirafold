@@ -354,9 +354,9 @@ daemon's exact commands:
   refused git entirely, degrading to the plain listing rather than building an
   unbounded command line.
 
-Pinned by `server/sessions/git-trust.itest.ts`, which plants real programs in
-all three settings and fails if any of them leaves a mark on disk — verified
-to fail when the protection is removed.
+Pinned by `server/sessions/workspace/git/git-trust.itest.ts`, which plants real
+programs in all three settings and fails if any of them leaves a mark on disk
+— verified to fail when the protection is removed.
 
 Three bypasses of that guard were found and closed on 2026-08-26 (each
 proven with a marker program first): a `=` inside a filter's name split the

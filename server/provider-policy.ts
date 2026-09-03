@@ -300,7 +300,7 @@ export function allowedOverRelay(kind: CredentialKind): boolean {
  * The relay gate's whole verdict for a session entry, pending-awareness
  * included (OC.4c). An OpenCode session's hello-time kind is OPTIMISTIC —
  * the truthful, provider-resolved kind only arrives once the engine starts
- * and the session publishes it (adapters/opencode.ts) — so until then a
+ * and the session publishes it (adapters/opencode/opencode.ts) — so until then a
  * remote viewport is refused outright: without this, a relay prompt racing
  * the first classification could drive a subscription/gateway session under
  * the optimistic "api-key". Returns the human refusal, or undefined when the

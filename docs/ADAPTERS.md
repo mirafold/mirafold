@@ -330,7 +330,8 @@ for a tool rarely paints (Phase TS, 2026-08-30):
   JavaScript runtime as `tools.mcp__mirafold__<name>(args)`, discovered via
   `ALL_TOOLS` (≥0.147; custom/local providers still see them directly). The
   adapter's developer instructions therefore open with a where-are-the-tools
-  note (`codex-prompt.ts`) that names all three paths with exact call shapes
+  note (`server/adapters/codex/codex-prompt.ts`) that names all three paths
+  with exact call shapes
   and makes loading the tool the first step of any structured reply. The note
   also forbids resource-list APIs as tool discovery and stops after one failed
   pass; it never tells the model that an absent tool is secretly present.
@@ -345,11 +346,14 @@ dispatcher has a default branch: an item, event, or message kind with no
 mapping is logged and surfaced once per session as a shell-voiced notice
 ("Mirafold doesn't display this Codex item yet: …"), never swallowed. Each
 adapter's ledger — what it maps, what it deliberately ignores and why —
-lives beside it (`codex-ledger.ts`, `opencode-ledger.ts`; Claude's is
+lives beside it (`codex/codex-ledger.ts`, `opencode/opencode-ledger.ts`;
+Claude's is
 `CLAUDE_MESSAGE_LEDGER` in its adapter). For Codex the ledger is held to the
-engine's own protocol: `scripts/codex-protocol-digest.mjs` distills `codex app-server generate-json-schema`
-into `server/adapters/codex-protocol.digest.json` (item kinds, notification
-methods, the field shapes the adapter reads); `codex-protocol.test.ts`
+engine's own protocol: `scripts/codex-protocol-digest.mjs` distills
+`codex app-server generate-json-schema`
+into `server/adapters/codex/codex-protocol.digest.json` (item kinds,
+notification methods, the field shapes the adapter reads);
+`codex/codex-protocol.test.ts`
 asserts every kind is handled, deliberately ignored (with a reason), or
 unmapped with a plan step, and that the read fields still have the shapes the
 adapter assumes; the Tier-4 live test regenerates the digest from the
@@ -441,15 +445,16 @@ Adapter obligations for either path:
 
 ## 6. Adding the next provider — the checklist
 
-**OpenCode was provider #4** (Phase OC, `server/adapters/opencode.ts` +
-`opencode-client.ts` + `opencode-events.ts` + `opencode-commands.ts`) and is the
-most recent worked example — its spike doc `opencode.spike.md` shows the
-capture-live discipline, and it exercised the seam differently enough to reveal
-two touchpoints the earlier providers never needed (see step 4b below). The
+**OpenCode was provider #4** (Phase OC, `server/adapters/opencode/opencode.ts` +
+its neighboring client, event, and command modules) and is the most recent
+worked example — its spike doc
+`server/adapters/opencode/opencode.spike.md` shows the capture-live discipline,
+and it exercised the seam differently enough to reveal two touchpoints the
+earlier providers never needed (see step 4b below). The
 proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 
-1. **Spike first** (`server/adapters/<agent>.spike.md`): identify the drive
-   surface (official SDK > headless JSONL > ACP-style protocol > raw stdio, in
+1. **Spike first** (`server/adapters/<agent>/<agent>.spike.md`): identify the
+   drive surface (official SDK > headless JSONL > ACP-style protocol > raw stdio, in
    order of preference), confirm it can run as its *own engine* with streamed
    events and native MCP loading, and draft the event→`WireMsg` mapping table.
    A provider that cannot load MCP servers cannot carry generative UI — that's
@@ -457,8 +462,9 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 2. **Capture real events live** before writing the adapter. Both spikes found
    the docs wrong in the details (Codex: dot-notation event names, buffered
    deltas; Gemini: individual-account authentication removed). One throwaway probe saves a rewrite.
-3. **Write the adapter** (`server/adapters/<agent>.ts`), template: `codex.ts`
-   (subprocess SDK) or `gemini-cli.ts` (headless CLI). Identify the native
+3. **Write the adapter** (`server/adapters/<agent>/<agent>.ts`), template:
+   `server/adapters/codex/codex.ts` (app-server JSON-RPC) or
+   `server/adapters/gemini-cli/gemini-cli.ts` (headless CLI). Identify the native
    durable conversation id/resume call and any pre-submit command discovery
    surface at the same time; honor every rule in §3.
 4. **Wire the seam** — six touchpoints in two server files, plus display

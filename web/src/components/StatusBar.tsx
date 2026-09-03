@@ -10,9 +10,9 @@ import {
 import type { SubscriptionReply } from "../subscription-card";
 import { WorkspaceGlyph } from "./WorkspaceGlyph";
 import { GearGlyph } from "./GearGlyph";
-import { useArmedConfirm } from "../use-armed-confirm";
-import { useIsPhone } from "../use-is-phone";
-import { newSessionHref } from "../relay-pairing";
+import { useArmedConfirm } from "../hooks/use-armed-confirm";
+import { useIsPhone } from "../hooks/use-is-phone";
+import { newSessionHref } from "../transport/relay-pairing";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible

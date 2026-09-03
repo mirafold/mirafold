@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { WireMsg } from "@protocol";
-import type { ZoneMsg } from "../../session-bus";
+import type { ZoneMsg } from "../../transport/session-bus";
 import {
   applyDirReply,
   beginDirFetch,
@@ -9,7 +9,7 @@ import {
   emptyDirStore,
   pruneDirStore,
   type DirStore,
-} from "../../folder-tree";
+} from "../../workspace/folder-tree";
 
 // The folder tree's tree controller — the fetch/refresh half of FolderTreePanel,
 // beside the pure store in folder-tree.ts. Owns the per-directory

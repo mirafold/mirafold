@@ -3,7 +3,7 @@
 // generate-json-schema` prints, ~4 MB) into the few facts the adapter
 // depends on: the thread-item kinds, the server notification and request
 // methods, and the shapes of the fields the adapter reads. The digest is
-// vendored at server/adapters/codex-protocol.digest.json so Tier 1 can hold
+// vendored at server/adapters/codex/codex-protocol.digest.json so Tier 1 can hold
 // the adapter to it offline; the Tier-4 live test regenerates it from the
 // installed Codex and fails on drift. Usage:
 //   node scripts/codex-protocol-digest.mjs            # print JSON
@@ -95,7 +95,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const digest = generateDigest();
   const json = JSON.stringify(digest, null, 2) + "\n";
   if (process.argv.includes("--write")) {
-    const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "server", "adapters", "codex-protocol.digest.json");
+    const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "server", "adapters", "codex", "codex-protocol.digest.json");
     writeFileSync(out, json);
     console.log(`wrote ${out}: ${Object.keys(digest.items).length} item kinds, ${digest.notifications.length} notifications, ${digest.requests.length} requests`);
   } else {

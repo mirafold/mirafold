@@ -53,10 +53,12 @@ The daemon delegates by responsibility:
 - [`server/adapters/`](../server/adapters/) drives agent engines and normalizes
   their output.
 - [`server/sessions/`](../server/sessions/) owns session lifecycle,
-  connections, checkpoints, filesystem requests, Git inspection, uploads, and
-  component actions.
+  connections, and component actions. Its
+  [`persistence/`](../server/sessions/persistence/) modules own checkpoints
+  and replay; [`workspace/`](../server/sessions/workspace/) owns folder
+  selection, filesystem requests, Git inspection, and uploads.
 - [`server/security/`](../server/security/) owns local authentication,
-  executable trust, and tool-permission policy.
+  workspace-engine consent, and tool-permission policy.
 - [`server/pty/`](../server/pty/) owns the interactive `!` pseudo-terminal
   (PTY) shell (`!` hands the finished transcript to the agent as its own
   turn; `!!` is shell-only — the agent never sees it).
@@ -80,11 +82,11 @@ The shipped implementations are:
 
 | Adapter | Engine surface |
 | --- | --- |
-| [`claude-code.ts`](../server/adapters/claude-code.ts) | Anthropic Agent SDK |
-| [`codex.ts`](../server/adapters/codex.ts) | OpenAI Codex SDK and Codex CLI |
-| [`gemini-cli.ts`](../server/adapters/gemini-cli.ts) | Gemini CLI headless stream |
-| [`opencode.ts`](../server/adapters/opencode.ts) | Per-session `opencode serve` HTTP and event stream |
-| [`mock.ts`](../server/adapters/mock.ts) | Scripted, model-free development and test backend |
+| [`claude-code/claude-code.ts`](../server/adapters/claude-code/claude-code.ts) | Anthropic Agent SDK |
+| [`codex/codex.ts`](../server/adapters/codex/codex.ts) | OpenAI Codex CLI app-server |
+| [`gemini-cli/gemini-cli.ts`](../server/adapters/gemini-cli/gemini-cli.ts) | Gemini CLI headless stream |
+| [`opencode/opencode.ts`](../server/adapters/opencode/opencode.ts) | Per-session `opencode serve` HTTP and event stream |
+| [`mock/mock.ts`](../server/adapters/mock/mock.ts) | Scripted, model-free development and test backend |
 
 [`server/adapters/index.ts`](../server/adapters/index.ts) detects available
 backends, applies provider policy, validates a browser's backend choice, and is
@@ -105,10 +107,10 @@ credential constraints, MCP requirements, and the add-an-adapter checklist.
 [`SessionRegistry`](../server/sessions/registry.ts) owns active and dormant
 sessions. Each entry contains the adapter, working directory, attached local
 and remote viewports, the sequenced replay ring
-([`replay-ring.ts`](../server/sessions/replay-ring.ts)), prompt catalog, and
+([`replay-ring.ts`](../server/sessions/persistence/replay-ring.ts)), prompt catalog, and
 the stream-derived activity state — status, turn counters, pending
 permissions, usage — computed by the pure reducer in
-[`session-state.ts`](../server/sessions/session-state.ts).
+[`session-state.ts`](../server/sessions/persistence/session-state.ts).
 
 Measured costs (2026-08-25, one machine, for sizing decisions): a checkpoint
 of a 4,000-message text ring (0.6 MB) takes ~14 ms; a ring holding fifteen
@@ -136,7 +138,7 @@ plain-text tail derived from each replay ring. Text movement wakes only those
 opted-in watchers, and a remote watcher never receives a tail for a backend
 that provider policy forbids over the paid relay.
 
-[`session-store.ts`](../server/sessions/session-store.ts) writes bounded,
+[`session-store.ts`](../server/sessions/persistence/session-store.ts) writes bounded,
 owner-only checkpoints and strictly validates them before recovery. A closed
 tab detaches its viewport; it does not end the session. An idle active engine
 can unload while the checkpoint remains available for lazy recovery.
@@ -150,8 +152,8 @@ can unload while the checkpoint remains available for lazy recovery.
 - `/s/<session-id>` mounts [`Shell`](../web/src/components/Shell.tsx), one
   session viewport.
 
-[`session-bus.ts`](../web/src/session-bus.ts) owns one
-[`SocketClient`](../web/src/ws.ts) and fans incoming messages to shell
+[`session-bus.ts`](../web/src/transport/session-bus.ts) owns one
+[`SocketClient`](../web/src/transport/ws.ts) and fans incoming messages to shell
 consumers. `Shell` owns connection state, agent picker, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
 and other trusted controls. While its desktop Cockpit panel is open,
@@ -167,6 +169,14 @@ tool activity, errors, and shell boundaries visible. The output zone delegates
 structured content to [`web/src/registry/`](../web/src/registry/) and arbitrary
 HTML to the sandboxed [`Artifact`](../web/src/components/Artifact.tsx) host.
 
+Browser modules follow the same ownership boundaries:
+[`transport/`](../web/src/transport/) owns daemon and relay connectivity;
+[`transcript/`](../web/src/transcript/) owns transcript state and projection;
+[`workspace/`](../web/src/workspace/) owns file, change-review, and folder-tree
+state; [`input/`](../web/src/input/) owns prompt drafts, completions, and
+navigation; and [`hooks/`](../web/src/hooks/) contains reusable React
+lifecycle hooks.
+
 ### Keyboard ownership
 
 Several shell parts listen for keys on `window` or `document`. Which one
@@ -178,8 +188,8 @@ one.
 
 | Owner | Keys | Registered as | Active while | Claims the key? |
 | --- | --- | --- | --- | --- |
-| [`useFocusTrap`](../web/src/use-focus-trap.ts) | Tab, Shift+Tab | `document`, capture | a modal overlay, the enlarged file box, or a phone workspace dialog is open | yes — cycles focus inside the container |
-| [`useEscapeKey`](../web/src/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FolderTreePanel`](../web/src/components/folder-tree/FolderTreePanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
+| [`useFocusTrap`](../web/src/hooks/use-focus-trap.ts) | Tab, Shift+Tab | `document`, capture | a modal overlay, the enlarged file box, or a phone workspace dialog is open | yes — cycles focus inside the container |
+| [`useEscapeKey`](../web/src/hooks/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/hooks/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FolderTreePanel`](../web/src/components/folder-tree/FolderTreePanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
 | Phone input-history card in [`InputNavigation`](../web/src/components/InputNavigation.tsx) | Escape | `window`, capture + `stopPropagation` | the ⋯ card is open | yes — closes it and restores focus to its toggle |
 | [`PickerBlock`](../web/src/components/PickerBlock.tsx) | ArrowUp, ArrowDown, Enter, Escape | `document`, capture + `stopPropagation` | a live `/model`-style picker is showing | yes, unless a non-empty input, a picker row, or the phone card owns focus — only the idle (empty) prompt box cedes these keys |
 | Prompt trigger in [`PromptBox`](../web/src/components/PromptBox.tsx) | `/`, `$` | `window`, capture + `stopPropagation` | a provider catalog offers that trigger and `globalTriggersDisabled` is off | yes, when typed outside an editable field or dialog — focuses the prompt box and inserts the trigger |
@@ -198,8 +208,8 @@ input-history strips (ArrowUp/ArrowDown/Escape while one is selected).
 Adding a global listener means choosing a row: an owner that must win uses
 capture plus `stopPropagation` (the `exclusive` idiom); an owner that must
 yield registers on bubble and checks `defaultPrevented` and the event target.
-[`phone.e2e.ts`](../server/testing/phone.e2e.ts) and
-[`input-navigation.e2e.ts`](../server/testing/input-navigation.e2e.ts) pin the
+[`phone.e2e.ts`](../server/testing/e2e/phone.e2e.ts) and
+[`input-navigation.e2e.ts`](../server/testing/e2e/input-navigation.e2e.ts) pin the
 rows that have collided before.
 
 ### Generative UI
