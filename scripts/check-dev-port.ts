@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { envInt } from "../server/env";
 
-const port = envInt("PORT", 3100);
+const port = envInt("PORT", 3000);
 const probe = createServer();
 
 probe.once("error", (error: NodeJS.ErrnoException) => {

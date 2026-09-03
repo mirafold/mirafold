@@ -54,7 +54,9 @@ test("the Vite WebSocket proxy uses the daemon fallback for a malformed PORT", a
   }
 });
 
-test("yarn dev exits before Vite starts when the selected daemon port is occupied", async () => {
+test("yarn dev exits before Vite starts when the selected daemon port is occupied", {
+  skip: process.platform === "win32" ? "the development scripts require a POSIX shell" : false,
+}, async () => {
   const blocker = createServer();
   await new Promise<void>((resolve, reject) => {
     blocker.once("error", reject);
