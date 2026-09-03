@@ -7,7 +7,7 @@ import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./regist
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
 import type { SessionMsg, WireMsg } from "../protocol";
-import { SessionCheckpointStore } from "./session-store";
+import { SessionCheckpointStore } from "./persistence/session-store";
 
 test("resolveCwd defaults to the process cwd", () => {
   assert.equal(resolveCwd(undefined), process.cwd());

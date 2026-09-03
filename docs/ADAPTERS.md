@@ -39,7 +39,8 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
   into another's session. A Codex user gets Codex — model defaults, approval
   semantics, config files — never "Claude things".
 - **I2 — Inherit, don't invent.** The user's own configuration for that agent
-  (Claude Code `settings.json`/CLAUDE.md/memory; Codex `~/.codex/config.toml`;
+  (Claude Code `settings.json`/CLAUDE.md/memory through the Claude Agent SDK;
+  Codex `~/.codex/config.toml`;
   Gemini `~/.gemini/settings.json`) applies exactly as in the terminal. The
   adapter adds only what Mirafold needs (the render MCP server, a model
   override *if the user set one*) and adds it non-destructively. The historical
@@ -194,7 +195,7 @@ are denied. Must be a no-op when idle.
 
 **`resolvePermission(id, allow)`** — completes a previously emitted
 `permission_request`. Only meaningful for providers whose engine exposes an
-approval surface (today: Claude Code via `canUseTool`, OpenCode via
+approval surface (today: the Claude Agent SDK via `canUseTool`, OpenCode via
 `permission.asked`, and Gemini's one-time workspace-trust ask); others make
 this a no-op (I3). Deny is the default posture on timeout
 (`PERMISSION_TIMEOUT_MS`, default 60 s; Gemini's trust ask uses its own longer
@@ -213,8 +214,8 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 the adapter maps them onto the neutral lane instead of dropping or flattening
 them. The rules, for the next adapter author:
 
-- **`parentId` is an opaque adapter-chosen handle.** Claude Code uses the
-  spawn `tool_use` id; OpenCode uses the parent `task` PART id. Shared code
+- **`parentId` is an opaque adapter-chosen handle.** The Claude Agent SDK uses
+  the spawn `tool_use` id; OpenCode uses the parent `task` PART id. Shared code
   (registry, client, replay) only ever GROUPS by it — nothing parses,
   dereferences, or compares it across adapters. Pick whatever your engine's
   natural join key is.
@@ -238,18 +239,18 @@ them. The rules, for the next adapter author:
   turn-end announcement).
 - **A subagent's render call never paints.** Paintings are session-level;
   inside a deck it gets the honest `tool_use`/`tool_result` record. On
-  OpenCode this is our lane code; on Claude Code the ENGINE enforces it —
+  OpenCode this is our lane code; the Claude Agent SDK's runtime enforces it —
   the SDK withholds MCP tools from subagent contexts (proved through the
   real adapter + shipped in-process render server, audit 2026-08-14).
 - **A subagent's permission ask surfaces on the shell bar** with `parentId`
-  when the engine can attribute it (OpenCode can; Claude Code's
+  when the engine can attribute it (OpenCode can; the Claude Agent SDK's
   `canUseTool` callback carries no subagent identity, so its asks ride
   unattributed), and the same deny-by-default timer as any ask. A child's
   lifecycle events (idle, status, error) must never touch the parent turn's
   state — its failure surfaces through the spawn record's result.
 - **Render depth 1 — what the stream surfaces.** Engines nest deeper
-  (Claude Code to depth 3, engine-hidden; OpenCode only if the user
-  configures it). Resolve parentage transitively to the nearest
+  (the Claude Agent SDK nests to depth 3, engine-hidden; OpenCode only if the
+  user configures it). Resolve parentage transitively to the nearest
   stream-visible ancestor's deck; engine-hidden grandchildren are the
   ENGINE's choice, faithfully absent.
 
@@ -318,7 +319,7 @@ schemas in `server/registry-spec.ts` — and delivered two ways:
 MCP tool definitions from the model by default, and a model that has to hunt
 for a tool rarely paints (Phase TS, 2026-08-30):
 
-- Claude Code's Agent SDK defers every MCP tool behind `ToolSearch` (on by
+- The Claude Agent SDK defers every MCP tool behind `ToolSearch` (on by
   default since Claude Code 2.1.x). `render-tools.ts` marks the `ui` server
   `alwaysLoad: true`, which is the SDK's per-server exemption
   (`_meta["anthropic/alwaysLoad"]` on each tool): Mirafold's tools are in
@@ -330,7 +331,8 @@ for a tool rarely paints (Phase TS, 2026-08-30):
   JavaScript runtime as `tools.mcp__mirafold__<name>(args)`, discovered via
   `ALL_TOOLS` (≥0.147; custom/local providers still see them directly). The
   adapter's developer instructions therefore open with a where-are-the-tools
-  note (`codex-prompt.ts`) that names all three paths with exact call shapes
+  note (`server/adapters/codex/codex-prompt.ts`) that names all three paths
+  with exact call shapes
   and makes loading the tool the first step of any structured reply. The note
   also forbids resource-list APIs as tool discovery and stops after one failed
   pass; it never tells the model that an absent tool is secretly present.
@@ -345,11 +347,14 @@ dispatcher has a default branch: an item, event, or message kind with no
 mapping is logged and surfaced once per session as a shell-voiced notice
 ("Mirafold doesn't display this Codex item yet: …"), never swallowed. Each
 adapter's ledger — what it maps, what it deliberately ignores and why —
-lives beside it (`codex-ledger.ts`, `opencode-ledger.ts`; Claude's is
+lives beside it (`codex/codex-ledger.ts`, `opencode/opencode-ledger.ts`;
+Claude's is
 `CLAUDE_MESSAGE_LEDGER` in its adapter). For Codex the ledger is held to the
-engine's own protocol: `scripts/codex-protocol-digest.mjs` distills `codex app-server generate-json-schema`
-into `server/adapters/codex-protocol.digest.json` (item kinds, notification
-methods, the field shapes the adapter reads); `codex-protocol.test.ts`
+engine's own protocol: `scripts/codex-protocol-digest.mjs` distills
+`codex app-server generate-json-schema`
+into `server/adapters/codex/codex-protocol.digest.json` (item kinds,
+notification methods, the field shapes the adapter reads);
+`codex/codex-protocol.test.ts`
 asserts every kind is handled, deliberately ignored (with a reason), or
 unmapped with a plan step, and that the read fields still have the shapes the
 adapter assumes; the Tier-4 live test regenerates the digest from the
@@ -441,15 +446,16 @@ Adapter obligations for either path:
 
 ## 6. Adding the next provider — the checklist
 
-**OpenCode was provider #4** (Phase OC, `server/adapters/opencode.ts` +
-`opencode-client.ts` + `opencode-events.ts` + `opencode-commands.ts`) and is the
-most recent worked example — its spike doc `opencode.spike.md` shows the
-capture-live discipline, and it exercised the seam differently enough to reveal
-two touchpoints the earlier providers never needed (see step 4b below). The
+**OpenCode was provider #4** (Phase OC, `server/adapters/opencode/opencode.ts` +
+its neighboring client, event, and command modules) and is the most recent
+worked example — its spike doc
+`server/adapters/opencode/opencode.spike.md` shows the capture-live discipline,
+and it exercised the seam differently enough to reveal two touchpoints the
+earlier providers never needed (see step 4b below). The
 proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 
-1. **Spike first** (`server/adapters/<agent>.spike.md`): identify the drive
-   surface (official SDK > headless JSONL > ACP-style protocol > raw stdio, in
+1. **Spike first** (`server/adapters/<agent>/<agent>.spike.md`): identify the
+   drive surface (official SDK > headless JSONL > ACP-style protocol > raw stdio, in
    order of preference), confirm it can run as its *own engine* with streamed
    events and native MCP loading, and draft the event→`WireMsg` mapping table.
    A provider that cannot load MCP servers cannot carry generative UI — that's
@@ -457,8 +463,9 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 2. **Capture real events live** before writing the adapter. Both spikes found
    the docs wrong in the details (Codex: dot-notation event names, buffered
    deltas; Gemini: individual-account authentication removed). One throwaway probe saves a rewrite.
-3. **Write the adapter** (`server/adapters/<agent>.ts`), template: `codex.ts`
-   (subprocess SDK) or `gemini-cli.ts` (headless CLI). Identify the native
+3. **Write the adapter** (`server/adapters/<agent>/<agent>.ts`), template:
+   `server/adapters/codex/codex.ts` (app-server JSON-RPC) or
+   `server/adapters/gemini-cli/gemini-cli.ts` (headless CLI). Identify the native
    durable conversation id/resume call and any pre-submit command discovery
    surface at the same time; honor every rule in §3.
 4. **Wire the seam** — six touchpoints in two server files, plus display
@@ -505,11 +512,12 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 Locked 2026-07-05, restated here because it is the standing answer to "how do
 we support provider X that isn't a terminal agent":
 
-**Local isn't a Mirafold feature; it's a property of the agent.** A
-terminal agent that can point at a local OpenAI-compatible endpoint (Codex →
-Ollama/vLLM/LM Studio; Claude Code → `ANTHROPIC_BASE_URL` — already counted as
-"live" by `agentHasCredentials`) already runs locally, and Mirafold simply
-re-skins it. **No LiteLLM, no shim, no homegrown loop for bare models.** Phase
+**Local isn't a Mirafold feature; it's a property of the agent.** An agent whose
+underlying engine can point at a local OpenAI-compatible endpoint (Codex →
+Ollama/vLLM/LM Studio; Claude Agent → `ANTHROPIC_BASE_URL` through the SDK's
+bundled Claude Code runtime — already counted as "live" by
+`agentHasCredentials`) already runs locally, and Mirafold simply re-skins it.
+**No LiteLLM, no shim, no homegrown loop for bare models.** Phase
 L is documentation and ergonomics (`docs/local-models.md`, later `--local`
 detection), not architecture. Small models that misfire on render tools
 degrade to styled text via the Step 1.4 fallback — best-effort by design, no

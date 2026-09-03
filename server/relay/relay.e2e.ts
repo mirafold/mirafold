@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "../testing/itest-harness";
-import { launchChrome } from "../testing/e2e-harness";
+import { launchChrome } from "../testing/e2e/e2e-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 
 // R.1's "Done when", literally: a second BROWSER attaches through the local
@@ -37,7 +37,7 @@ after(async () => {
 test("local page: create a session and run a deterministic mock turn", async () => {
   local = await browser.newPage();
   await local.goto(`http://127.0.0.1:${d.port}/`);
-  await local.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+  await local.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
   await local.waitForURL(/\/s\/[\w-]+/);
   await local.locator("textarea").click();
   await local.keyboard.type("plan it step by step");

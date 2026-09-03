@@ -17,23 +17,23 @@ import {
 import { allowedOverRelay, relayGateRefusal, type CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, scrub, verbose } from "../log";
-import { startWatch, type FsWatchHandle } from "./fs-watch";
-import { invalidateRepoStatusCache } from "./git";
+import { startWatch, type FsWatchHandle } from "./workspace/filesystem/fs-watch";
+import { invalidateRepoStatusCache } from "./workspace/git/git";
 import { envInt } from "../env";
-import { recoverStoredTranscript } from "./session-recovery";
-import { SessionCheckpointStore, admitForCheckpoint, type StoredSession } from "./session-store";
+import { recoverStoredTranscript } from "./persistence/session-recovery";
+import { SessionCheckpointStore, admitForCheckpoint, type StoredSession } from "./persistence/session-store";
 import { normalizePromptOptions } from "../prompt-options";
 
-import { ReplayRing } from "./replay-ring";
+import { ReplayRing } from "./persistence/replay-ring";
 import {
   IDLE_STATE,
   reduceSessionState,
   type SessionActivityState,
   type SessionStateInput,
-} from "./session-state";
-import { changesTranscriptTail, transcriptTail } from "./transcript-tail";
+} from "./persistence/session-state";
+import { changesTranscriptTail, transcriptTail } from "./persistence/transcript-tail";
 
-export { foldUsage } from "./session-state";
+export { foldUsage } from "./persistence/session-state";
 
 // A session with no viewports keeps a warm engine this long. With the
 // production checkpoint store it then unloads to a dormant resumable record;

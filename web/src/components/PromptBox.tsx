@@ -4,9 +4,9 @@ import {
   insertPromptOption,
   matchingPromptOptions,
   promptCompletionMatch,
-} from "../prompt-completions";
-import { mergePromptDraft } from "../prompt-draft";
-import { useIsPhone } from "../use-is-phone";
+} from "../input/prompt-completions";
+import { mergePromptDraft } from "../input/prompt-draft";
+import { useIsPhone } from "../hooks/use-is-phone";
 import {
   PhoneInputNavigation,
   type PhoneInputNavigationModel,
@@ -19,7 +19,7 @@ const PROMPT_OPTIONS_ID = "prompt-options";
 function promptSourceLabel(option: PromptOption): string | undefined {
   switch (option.source) {
     case "claude-code":
-      return "Claude Code command";
+      return "Claude Agent command";
     case "codex":
       return option.kind === "skill" ? "Codex skill" : "Codex command";
     case "gemini-cli":

@@ -7,7 +7,7 @@ import { agentLabel, backingLine, connectHint, localLiveHint } from "./agents-me
 // the raw string — never `undefined` — and simply carry no connect hint (R.4h).
 
 test("known agents resolve to display labels and hints", () => {
-  assert.equal(agentLabel("claude-code"), "Claude Code");
+  assert.equal(agentLabel("claude-code"), "Claude Agent");
   assert.equal(agentLabel("codex"), "Codex");
   assert.equal(agentLabel("gemini-cli"), "Gemini CLI");
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): codex may

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeTodos, resultText } from "./claude-code";
-import { mcpText, extractRenderId, type CodexMcpToolCall } from "./codex";
-import { parseRenderId } from "./gemini-cli";
+import { normalizeTodos, resultText } from "./claude-code/claude-code";
+import { mcpText, extractRenderId, type CodexMcpToolCall } from "./codex/codex";
+import { parseRenderId } from "./gemini-cli/gemini-cli";
 
 test("normalizeTodos keeps valid items and defaults an unknown status to pending", () => {
   const out = normalizeTodos({

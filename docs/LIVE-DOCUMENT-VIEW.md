@@ -588,13 +588,13 @@ reduced-motion behavior.
 
 Most executable work remains in the web client.
 
-### `web/src/transcript-projection.ts`
+### `web/src/transcript/transcript-projection.ts`
 
 No change is expected. It remains the source of projected visible rows. If a
 presentation request appears to require changing its wire-to-view semantics,
 stop and re-evaluate first.
 
-### `web/src/response-document.ts`
+### `web/src/transcript/response-document.ts`
 
 Pure grouping of `OutputZoneRow[]` into ephemeral display items. Owns only
 eligibility and hard/soft boundary classification. Direct unit coverage is

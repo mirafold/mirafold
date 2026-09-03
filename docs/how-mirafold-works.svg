@@ -131,7 +131,7 @@
   <polyline points="780,636 974,650 974,658" fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrblue)"/>
 
   <rect x="118" y="660" width="260" height="260" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
-  <text x="248" y="684" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Claude Code / Codex /</text>
+  <text x="248" y="684" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Claude Agent / Codex /</text>
   <text x="248" y="702" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Gemini CLI</text>
   <circle cx="140" cy="722" r="2.2" fill="#1f2937"/>
   <text x="148" y="726" class="bs">User picks one per session;</text>
@@ -153,7 +153,7 @@
   <text x="148" y="901" class="bs">Render tools injected via MCP</text>
 
   <rect x="398" y="660" width="370" height="235" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.8"/>
-  <text x="416" y="684" font-size="13.5" font-weight="800" class="green">PATH A &#8212; Claude Code</text>
+  <text x="416" y="684" font-size="13.5" font-weight="800" class="green">PATH A &#8212; Claude Agent</text>
   <circle cx="426" cy="704" r="2.2" fill="#14532d"/>
   <text x="434" y="708" class="b">Render tools run IN-PROCESS inside the</text>
   <text x="434" y="723" class="b">Mirafold daemon</text>
@@ -217,7 +217,7 @@
   <text x="644" y="1152" class="b">The adapter synthesizes the render message from the engine's</text>
   <text x="644" y="1167" class="b">native plan/todo events</text>
   <circle cx="636" cy="1184" r="2.2" fill="#78350f"/>
-  <text x="644" y="1188" class="b">Examples: Claude Code's <tspan class="m">TodoWrite</tspan> tool; Codex's <tspan class="m">todo_list</tspan> items</text>
+  <text x="644" y="1188" class="b">Examples: Claude Agent's <tspan class="m">TodoWrite</tspan> tool; Codex's <tspan class="m">todo_list</tspan> items</text>
   <circle cx="636" cy="1205" r="2.2" fill="#78350f"/>
   <text x="644" y="1209" class="b">The user sees a live task list as a real component</text>
 

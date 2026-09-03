@@ -1,7 +1,7 @@
 {
   "name": "mirafold",
   "version": "0.8.3",
-  "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, Gemini CLI, or OpenCode — with generative UI layered on top.",
+  "description": "A faithful browser re-skin of the coding agents you already use — Claude Agent, Codex, Gemini CLI, or OpenCode — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
   "author": "Kyle Serrecchia (https://github.com/kserrec)",
@@ -49,7 +49,7 @@
   "scripts": {
     "dev:server": "MIRAFOLD_TOKEN= tsx watch server/index.ts",
     "dev:web": "vite",
-    "dev": "concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
+    "dev": "PORT=${PORT:-3100} MIRAFOLD_STRICT_PORT=1 concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
     "build": "vite build && yarn build:server",
     "build:server": "esbuild server/index.ts server/render-mcp.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server",
     "prepack": "yarn build",
@@ -59,7 +59,7 @@
     "test:e2e": "yarn build && node --import tsx --test --test-concurrency=1 \"server/**/*.e2e.ts\"",
     "test:ui": "yarn build && yarn -s test:ui:built",
     "test:ui:built": "node --import tsx --test --test-concurrency=1 \"server/**/*.uitest.ts\"",
-    "test:ui:update-snapshots": "yarn build && MIRAFOLD_UPDATE_UI_SNAPSHOTS=1 node --import tsx --test --test-concurrency=1 \"server/testing/ui-visual.uitest.ts\"",
+    "test:ui:update-snapshots": "yarn build && MIRAFOLD_UPDATE_UI_SNAPSHOTS=1 node --import tsx --test --test-concurrency=1 \"server/testing/ui/ui-visual.uitest.ts\"",
     "test:live": "node --import tsx --test --test-concurrency=1 \"server/**/*.ltest.ts\""
   },
   "dependencies": {

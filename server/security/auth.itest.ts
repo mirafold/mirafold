@@ -43,6 +43,19 @@ test("EADDRINUSE walk: only the bound port says 'server on' (R.4b)", async () =>
   }
 });
 
+test("strict port mode refuses a collision instead of leaving a fixed proxy behind", async () => {
+  await assert.rejects(
+    startDaemon({ PORT: String(d.port), MIRAFOLD_STRICT_PORT: "1" }),
+    (err: Error) => {
+      assert.match(err.message, new RegExp(`port ${d.port} is already in use`));
+      assert.match(err.message, /requires that exact port/);
+      assert.doesNotMatch(err.message, /busy — trying/);
+      assert.doesNotMatch(err.message, /server on http/);
+      return true;
+    },
+  );
+});
+
 test("HTTP: valid ?token= mints the cookie and redirects to the clean path", async () => {
   const res = await http(`/?token=${TOKEN}`);
   assert.equal(res.status, 302);

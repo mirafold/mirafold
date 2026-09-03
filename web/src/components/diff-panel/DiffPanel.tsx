@@ -1,8 +1,8 @@
 import { useRef, type RefObject } from "react";
-import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
-import type { ZoneMsg } from "../../session-bus";
+import { useWorkspacePanelFrame } from "../../hooks/use-workspace-panel-frame";
+import type { ZoneMsg } from "../../transport/session-bus";
 import type { WorkspaceSurface } from "../WorkspaceTabs";
-import { useIsPhone } from "../../use-is-phone";
+import { useIsPhone } from "../../hooks/use-is-phone";
 import { FileView } from "../folder-tree/FileView";
 import {
   ChangeFileHeader,

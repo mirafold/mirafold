@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ZoneMsg } from "../../session-bus";
+import type { ZoneMsg } from "../../transport/session-bus";
 import { diffToState, fileToState, type FileViewState } from "./FileView";
 
 type FileViewMode = "content" | "diff";

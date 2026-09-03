@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import type { ComponentProps } from "@registry-spec";
-import { diffLines, type DiffLine } from "../diff";
+import { diffLines, type DiffLine } from "../workspace/diff";
 
 // Empty `before` means a new file and empty `after` a deletion — show pure
 // +/- lines rather than diffing against the empty string's single "" line.
