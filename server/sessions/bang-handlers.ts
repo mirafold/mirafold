@@ -305,6 +305,7 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport, re
     }
     if (entry.bang) {
       sendError("a ! command is already running (stop it first)");
+      viewport({ type: "bang_end", id: msg.id, exitCode: null });
       return;
     }
     // The burst throttle — checked only when nothing is

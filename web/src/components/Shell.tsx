@@ -431,7 +431,12 @@ export function Shell() {
     if (m) {
       const silent = m[1] === "!";
       const command = m[2].trim();
-      setBang({ my: { id: bus.sendBang(command, silent), command }, tail: "" });
+      const id = bus.sendBang(command, silent);
+      // The daemon may reject this request because the previous PTY is still
+      // running. Keep that PTY's stdin/kill controls until its own bang_end.
+      setBang((current) =>
+        current.my ? current : { my: { id, command }, tail: "" },
+      );
     } else {
       bus.sendPrompt(text);
     }

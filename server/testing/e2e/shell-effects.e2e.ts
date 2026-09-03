@@ -246,6 +246,40 @@ test("provider completions open before submit, transcript click focuses, and set
   );
 });
 
+test("a rejected second bang leaves the first PTY's controls usable", async () => {
+  await withFreshMockSession(browser, "e2e-bang-reject-9c2f", async (page) => {
+    const prompt = page.locator(".prompt-box textarea");
+    const bar = page.locator(".bang-bar");
+    const firstCommand = `node -e "console.log('first-pty-ready'); setInterval(() => {}, 1000)"`;
+
+    // Start with `!!` and reject a later `!`: both spellings share the same
+    // one-PTY guard, and the first command stays shell-only after it is killed.
+    await prompt.fill(`!! ${firstCommand}`);
+    await prompt.press("Enter");
+    await bar.waitFor();
+    await page.locator(".bang-output", { hasText: "first-pty-ready" }).waitFor();
+
+    await prompt.fill("! echo second-pty-must-not-run");
+    await prompt.press("Enter");
+    await page
+      .locator(".turn-assistant", { hasText: "a ! command is already running" })
+      .waitFor();
+
+    assert.equal(
+      await bar.locator(".bang-bar-cmd").getAttribute("title"),
+      firstCommand,
+      "the rejected command replaced the running PTY's controls",
+    );
+    await bar.locator(".bang-bar-kill").click();
+    await bar.waitFor({ state: "detached" });
+    assert.equal(
+      await page.locator(".bang-output", { hasText: "second-pty-must-not-run" }).count(),
+      0,
+      "the rejected second command ran",
+    );
+  });
+});
+
 test("NF: hidden viewport toasts a permission then the turn end; visibility closes both", async () => {
   const token = "e2e-notify-7b31";
   type ToastRec = { title: string; body?: string; tag?: string; closed: boolean };

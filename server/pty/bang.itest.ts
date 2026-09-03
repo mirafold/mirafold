@@ -321,8 +321,17 @@ test("bang_kill force-stops a HUP-ignoring command and still hands its partial t
   c.send({ type: "bang", id: "b3", command: "echo nope" } as never);
   const err = (await c.type("error")) as Any;
   assert.match(err.message, /already running/);
+  const refusedEnd = (await c.waitFor(
+    (m) => m.type === "bang_end" && (m as Any).id === "b3",
+    "rejected b3 end",
+  )) as Any;
+  assert.equal(refusedEnd.exitCode, null);
   c.send({ type: "bang_kill", id: "b2" } as never);
-  const end = (await c.type("bang_end", 20_000)) as Any;
+  const end = (await c.waitFor(
+    (m) => m.type === "bang_end" && (m as Any).id === "b2",
+    "b2 killed",
+    20_000,
+  )) as Any;
   assert.equal(end.id, "b2");
   assert.equal(end.exitCode, null); // signal death, not a clean exit
   // This is the Bang bar's PTY-only stop, not whole-session Stop: its partial
