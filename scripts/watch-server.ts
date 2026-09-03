@@ -14,10 +14,30 @@ const TSX_IMPORT = import.meta.resolve("tsx");
 const SERVER_TEST_PATH =
   /(^|\/)testing(\/|$)|\.(?:test|itest|e2e|uitest|ltest)\.ts$/;
 
+const normalizePath = (relativePath: string): string => relativePath.replaceAll("\\", "/");
+
+const pathKey = (relativePath: string): string => {
+  const normalized = normalizePath(relativePath);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+};
+
 export const isServerSource = (relativePath: string | null): boolean => {
   if (relativePath === null) return true;
-  const normalized = relativePath.replaceAll("\\", "/");
+  const normalized = normalizePath(relativePath);
   return normalized.endsWith(".ts") && !SERVER_TEST_PATH.test(normalized);
+};
+
+export const createServerRestartFilter = (
+  watchRoot: string,
+  cwd: string,
+  runtimeLogFile: string | undefined,
+): ((relativePath: string | null) => boolean) => {
+  const ignoredLog = runtimeLogFile
+    ? pathKey(path.relative(watchRoot, path.resolve(cwd, runtimeLogFile)))
+    : null;
+  return (relativePath) =>
+    isServerSource(relativePath) &&
+    (relativePath === null || pathKey(relativePath) !== ignoredLog);
 };
 
 type RootWatchHandle = { close: () => void };
@@ -354,16 +374,21 @@ export async function runWatchedProcess(options: WatchedProcessOptions): Promise
 async function main(): Promise<void> {
   const controller = new AbortController();
   const stop = () => controller.abort();
+  const cwd = process.cwd();
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   try {
     process.exitCode = await runWatchedProcess({
       watchRoot: SERVER_ROOT,
       watchFiles: [PACKAGE_JSON],
-      shouldRestart: isServerSource,
+      shouldRestart: createServerRestartFilter(
+        SERVER_ROOT,
+        cwd,
+        process.env.MIRAFOLD_LOG_FILE,
+      ),
       command: process.execPath,
       args: ["--import", TSX_IMPORT, SERVER_ENTRY],
-      cwd: process.cwd(),
+      cwd,
       env: process.env,
       signal: controller.signal,
       label: "server",

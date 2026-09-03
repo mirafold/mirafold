@@ -19,6 +19,7 @@ import concurrently from "concurrently";
 import type { ConfigEnv, UserConfig } from "vite";
 import makeViteConfig from "../../vite.config";
 import {
+  createServerRestartFilter,
   isServerSource,
   runWatchedProcess,
   watchRecursively,
@@ -274,17 +275,23 @@ test("runtime output under the server tree does not restart the dev server", asy
   const watched = path.join(fixture, "watched");
   const { childFile, stateFile } = countingChild(fixture);
   const sourceFile = path.join(watched, "source.ts");
-  const logFile = path.join(watched, "dev.log");
+  const logFile = path.join(watched, "runtime.ts");
   mkdirSync(watched);
   writeFileSync(sourceFile, "first");
   writeFileSync(logFile, "first\n");
-  assert.equal(isServerSource("dev.log"), false);
-  assert.equal(isServerSource("source.ts"), true);
+  const shouldRestart = createServerRestartFilter(
+    watched,
+    fixture,
+    path.join("watched", "runtime.ts"),
+  );
+  assert.equal(isServerSource("runtime.ts"), true);
+  assert.equal(shouldRestart("runtime.ts"), false);
+  assert.equal(shouldRestart("source.ts"), true);
 
   const controller = new AbortController();
   const result = runWatchedProcess({
     watchRoot: watched,
-    shouldRestart: isServerSource,
+    shouldRestart,
     command: process.execPath,
     args: [childFile],
     stdio: "ignore",
