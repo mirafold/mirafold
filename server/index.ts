@@ -7,7 +7,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
-import { SessionCheckpointStore } from "./sessions/session-store";
+import { SessionCheckpointStore } from "./sessions/persistence/session-store";
 import { openConnection } from "./sessions/connection";
 import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
@@ -26,7 +26,7 @@ import {
   verifyToken,
 } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
-import { envInt } from "./env";
+import { DEV_PORT_CONFLICT_EXIT_CODE, envFlag, envInt } from "./env";
 import { VERSION } from "./version";
 
 const log = createLogger("mirafold");
@@ -34,7 +34,7 @@ const log = createLogger("mirafold");
 // Last-gasp handlers — a crash stays loud and exits nonzero, it just
 // signs its name first so a stranger's report contains something actionable
 // — and the flight-recorder file keeps it even if the terminal is gone.
-const lastGasp = (kind: string) => (err: unknown) => {
+const lastGasp = (kind: string, exitCode = 1) => (err: unknown) => {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
   log.error(`v${VERSION} crashed (${kind}): ${detail}`);
   log.error(
@@ -42,7 +42,7 @@ const lastGasp = (kind: string) => (err: unknown) => {
       `(include the lines above${logFile ? ` — also in ${logFile}` : ""}; ` +
       "never paste the ?token= URL or a pairing code)",
   );
-  process.exit(1);
+  process.exit(exitCode);
 };
 process.on("uncaughtException", lastGasp("uncaughtException"));
 process.on("unhandledRejection", lastGasp("unhandledRejection"));
@@ -307,9 +307,13 @@ wss.on("close", () => clearInterval(heartbeat));
 // keeps non-browser LAN clients — which send no Origin and so pass the guard
 // — off the socket entirely. Remote viewports never reach this listener: the
 // relay path is an outbound dial (below).
-// A second daemon (another project, another terminal) must not crash on
-// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
+// A second installed daemon (another project, another terminal) must not crash
+// on EADDRINUSE — walk up a few ports; the launcher reads the final URL off
+// stdout. Development is different: Vite must know the daemon's port before it
+// proxies /ws, so `yarn dev` pins one shared port and asks us to fail instead of
+// silently walking away from its proxy target.
 const basePort = envInt("PORT", 3000);
+const strictPort = envFlag(process.env.MIRAFOLD_STRICT_PORT);
 const listen = (port: number) => {
   const onListening = () => {
     server.removeListener("error", onBusy); // later errors stay loud, as before
@@ -329,6 +333,13 @@ const listen = (port: number) => {
     // walk's eventual success fires EVERY attempt's callback and the log
     // claims "server on" ports we never bound — a line users copy.
     server.removeListener("listening", onListening);
+    if (err.code === "EADDRINUSE" && strictPort) {
+      return lastGasp("uncaughtException", DEV_PORT_CONFLICT_EXIT_CODE)(
+        new Error(`port ${port} is already in use; this launch requires that exact port`, {
+          cause: err,
+        }),
+      );
+    }
     if (err.code === "EADDRINUSE" && port - basePort < 20) {
       log.info(`:${port} busy — trying :${port + 1}`);
       listen(port + 1);

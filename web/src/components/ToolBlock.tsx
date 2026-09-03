@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { diffLines, unifiedDiffLines, wholeFileLines, type DiffLine } from "../diff";
+import { diffLines, unifiedDiffLines, wholeFileLines, type DiffLine } from "../workspace/diff";
 import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 

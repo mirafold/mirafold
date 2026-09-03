@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { RENDER_TOOL_COMPONENT, acceptableRenderId } from "./adapters/render-mcp-cmd";
-import { parseRenderId } from "./adapters/gemini-cli";
+import { parseRenderId } from "./adapters/gemini-cli/gemini-cli";
 
 // The compiled stdio render-MCP server over a real Electron-as-Node handshake —
 // the process Codex/Gemini engines actually spawn. The adapters never see this

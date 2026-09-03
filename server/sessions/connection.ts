@@ -6,9 +6,9 @@ import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import { PROMPT_GATE_REFUSAL, type SessionEntry, type SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
 import { createBangHandlers } from "./bang-handlers";
-import { createFsHandlers } from "./fs-handlers";
-import { createFolderPickerHandler } from "./folder-picker-handler";
-import { createUploadHandlers } from "./upload-handlers";
+import { createFsHandlers } from "./workspace/filesystem/fs-handlers";
+import { createFolderPickerHandler } from "./workspace/folder-picker-handler";
+import { createUploadHandlers } from "./workspace/upload/upload-handlers";
 import {
   ADAPTER_AGENTS,
   availableAgents,

@@ -248,7 +248,7 @@ has a home in this plan, the entry points there instead of duplicating it.
     line diff of a made/proposed change, one entry per file. Schema takes
     BEFORE/AFTER SNIPPETS, never unified-patch text (models botch @@ line
     math; snippets need no bookkeeping) — the client diffs them via
-    `web/src/diff.ts`, the LCS differ hoisted out of ToolBlock so
+    `web/src/workspace/diff.ts`, the LCS differ hoisted out of ToolBlock so
     agent-painted diffs and Edit/Write tool diffs render identically.
     Empty before = new file (pure +), empty after = deletion (pure −).
     Same full seam; all three tiers green.

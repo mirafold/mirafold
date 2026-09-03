@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
-import { startOllamaFixture, type OllamaFixture } from "../testing/ollama-fixture";
+import { startOllamaFixture, type OllamaFixture } from "../testing/fixtures/ollama-fixture";
 import type { ClientMsg, WireMsg } from "../protocol";
 
 // N.5 against the real daemon: the create.backend choice is honored (the log

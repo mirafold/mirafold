@@ -1,5 +1,5 @@
-import { shownListing, type DirStore } from "../../folder-tree";
-import { changeStatus } from "../../changes";
+import { shownListing, type DirStore } from "../../workspace/folder-tree";
+import { changeStatus } from "../../workspace/changes";
 import { FolderTreeChevron, FolderTreeNodeGlyph, FolderTreeNodeSpacer } from "./FolderTreeNodeGlyph";
 
 // The folder tree tree's ROWS — the pure recursive renderer split out of

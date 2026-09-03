@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DIFF_LCS_CELL_LIMIT, diffLines, unifiedDiffLines, wholeFileLines } from "../diff";
+import { DIFF_LCS_CELL_LIMIT, diffLines, unifiedDiffLines, wholeFileLines } from "../workspace/diff";
 import { ToolBlock, formatBytes, lastLine } from "./ToolBlock";
 
 test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {

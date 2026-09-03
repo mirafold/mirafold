@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Shell } from "./components/Shell";
 import { FleetView } from "./components/FleetView";
-import { sessionHintFromFragment } from "./relay-pairing";
+import { sessionHintFromFragment } from "./transport/relay-pairing";
 import "highlight.js/styles/github-dark.css";
 // Palettes: base.css (pinned tokens) + every theme file, loaded by glob so a
 // new theme stays "one CSS file + one manifest row" with no import wiring.
@@ -10,7 +10,7 @@ import "highlight.js/styles/github-dark.css";
 // tokens via var(...) only.
 import.meta.glob("./themes/*.css", { eager: true });
 import "./styles.css";
-import { sessionIdFromPath, sessionPath } from "./session-url";
+import { sessionIdFromPath, sessionPath } from "./transport/session-url";
 
 // index.html painted the canvas inline before any stylesheet existed (the
 // anti-white-flash script); the imports above own the pixels from here, so

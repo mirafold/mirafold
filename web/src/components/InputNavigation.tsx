@@ -1,6 +1,6 @@
 import { useEffect, useRef, type PropsWithChildren } from "react";
-import type { InputNavigationDirection } from "../input-navigation";
-import type { InputNavigationTarget } from "../use-input-navigation";
+import type { InputNavigationDirection } from "../input/input-navigation";
+import type { InputNavigationTarget } from "../input/use-input-navigation";
 
 export type PhoneInputNavigationModel = {
   available: boolean;

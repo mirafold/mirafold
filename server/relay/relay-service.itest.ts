@@ -27,7 +27,7 @@ import {
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
 } from "../../../mirafold-relay/src/contract";
-import { viewportRefusalReason } from "../../web/src/ws";
+import { viewportRefusalReason } from "../../web/src/transport/ws";
 
 // Mints a token the exact way the R.5 billing backend does — the compact
 // "<b64url({exp})>.<b64url(Ed25519 sig)>" the relay verifies offline.
@@ -88,7 +88,7 @@ test("the relay's routing contract matches the daemon's relay-protocol", () => {
     MAX_ENVELOPE >= SERVICE_LIMITS.maxPayloadBytes,
     `daemon MAX_ENVELOPE (${MAX_ENVELOPE}) < relay maxPayloadBytes (${SERVICE_LIMITS.maxPayloadBytes})`,
   );
-  // 2026-07-29 bughunt: web/src/ws.ts hand-mirrors the viewport refusal
+  // 2026-07-29 bughunt: web/src/transport/ws.ts hand-mirrors the viewport refusal
   // codes, and its comment CLAIMED this guard pinned them — it didn't
   // (CLOSE_FORBIDDEN_ORIGIN exists only in contract.ts). Now it does: the
   // phone's refusal wording must track the codes the relay actually sends.

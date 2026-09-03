@@ -1,7 +1,7 @@
 import type { FsChangeRepo } from "@protocol";
-import { changeStatus, repoLabel, type ChangeItem } from "../../changes";
+import { changeStatus, repoLabel, type ChangeItem } from "../../workspace/changes";
 import { RefreshIcon } from "../RefreshIcon";
-import type { ReviewProgress } from "../../review-progress";
+import type { ReviewProgress } from "../../workspace/review-progress";
 import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 
 export function ChangesHeader({

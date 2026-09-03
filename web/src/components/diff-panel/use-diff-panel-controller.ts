@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FsChangeRepo, WireMsg } from "@protocol";
-import type { VersionedReviewSelection } from "../../change-review";
+import type { VersionedReviewSelection } from "../../workspace/change-review";
 import {
   changeItems,
   changeSetIncomplete,
@@ -8,8 +8,8 @@ import {
   changesStateMessage,
   chooseChange,
   type ChangeItem,
-} from "../../changes";
-import { createChangesRequests } from "../../changes-requests";
+} from "../../workspace/changes";
+import { createChangesRequests } from "../../workspace/changes-requests";
 import {
   emptyReviewProgress,
   fileIsReviewed,
@@ -19,8 +19,8 @@ import {
   reviewedFileCount,
   setFileReviewed,
   type ReviewProgress,
-} from "../../review-progress";
-import type { ZoneMsg } from "../../session-bus";
+} from "../../workspace/review-progress";
+import type { ZoneMsg } from "../../transport/session-bus";
 import { useFileView } from "../folder-tree/use-file-view";
 
 type ChangeSetReply = Extract<WireMsg, { type: "fs_change_set" }>;

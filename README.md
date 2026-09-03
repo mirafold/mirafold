@@ -1,7 +1,7 @@
 # Mirafold
 
-**Mirafold is a browser interface for the terminal coding agent you already
-use—Claude Code, Codex, OpenCode, or Gemini CLI—with generative UI layered on
+**Mirafold is a browser interface for the coding agents you already
+use—Claude Agent, Codex, OpenCode, or Gemini CLI—with generative UI layered on
 top.** The agent still runs on your machine with its own engine, credentials,
 configuration, and permission model.
 
@@ -12,7 +12,7 @@ configuration, and permission model.
 
 ## Highlights
 
-- Faithful integrations with Claude Code, Codex, OpenCode, and Gemini CLI—one
+- Faithful integrations with Claude Agent, Codex, OpenCode, and Gemini CLI—one
   adapter per agent, with no generic replacement agent in the middle.
 - Streamed markdown plus live tables, charts, diffs, task lists, diagrams,
   images, and other interactive components generated through Model Context
@@ -156,6 +156,6 @@ Mirafold's own code is licensed under the [MIT License](LICENSE). Integrated
 agent engines and third-party packages retain their own licenses; bundled web
 dependencies are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-Claude Code, Codex, OpenCode, and Gemini CLI are trademarks of their respective
-owners. Mirafold is not affiliated with or endorsed by Anthropic, OpenAI, the
-OpenCode project, or Google.
+All product names and trademarks belong to their respective owners. Mirafold is
+not affiliated with or endorsed by Anthropic, OpenAI, the OpenCode project, or
+Google.

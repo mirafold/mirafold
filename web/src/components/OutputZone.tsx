@@ -13,7 +13,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
-import type { ZoneMsg } from "../session-bus";
+import type { ZoneMsg } from "../transport/session-bus";
 import { RenderBlock, RenderBoundary } from "../registry/RenderBlock";
 import { workspaceMarkdown } from "../registry/Md";
 import { PinDock } from "./PinDock";
@@ -23,26 +23,26 @@ import { Artifact } from "./Artifact";
 import { PickerBlock } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { ResponseDocument } from "./ResponseDocument";
-import { useFollowTail } from "../use-follow-tail";
-import { loadPins, savePins } from "../pin-store";
-import { sessionIdFromPath } from "../session-url";
-import { createTranscriptIngress } from "../delta-queue";
-import { deckElapsedSeconds } from "../subagent-deck";
-import { groupResponseDocuments } from "../response-document";
-import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
+import { useFollowTail } from "../hooks/use-follow-tail";
+import { loadPins, savePins } from "../transcript/pin-store";
+import { sessionIdFromPath } from "../transport/session-url";
+import { createTranscriptIngress } from "../transcript/delta-queue";
+import { deckElapsedSeconds } from "../transcript/subagent-deck";
+import { groupResponseDocuments } from "../transcript/response-document";
+import { shouldFocusPromptFromTranscriptPointer } from "../transcript/transcript-focus";
 import {
   useInputNavigation,
   type InputNavigationHandle,
   type InputNavigationState,
   type InputNavigationTarget,
-} from "../use-input-navigation";
+} from "../input/use-input-navigation";
 import {
   createTranscriptProjection,
   type OutputZoneRow,
   type SubagentDeckRow,
   type ThinkingRow,
   type ToolFoldRow,
-} from "../transcript-projection";
+} from "../transcript/transcript-projection";
 
 type ToolToggle = (id: number, expanded: boolean) => void;
 

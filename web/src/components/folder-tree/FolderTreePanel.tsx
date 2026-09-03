@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
-import type { ZoneMsg } from "../../session-bus";
-import { rootNameOf, shownListing } from "../../folder-tree";
-import { useEscapeKey } from "../../use-escape";
-import { useFocusTrap } from "../../use-focus-trap";
-import { useIsPhone } from "../../use-is-phone";
+import { useWorkspacePanelFrame } from "../../hooks/use-workspace-panel-frame";
+import type { ZoneMsg } from "../../transport/session-bus";
+import { rootNameOf, shownListing } from "../../workspace/folder-tree";
+import { useEscapeKey } from "../../hooks/use-escape";
+import { useFocusTrap } from "../../hooks/use-focus-trap";
+import { useIsPhone } from "../../hooks/use-is-phone";
 import { FileView } from "./FileView";
 import { FolderTreeChevron, FolderTreeNodeSpacer } from "./FolderTreeNodeGlyph";
 import { DirChildren } from "./FolderTreeRows";

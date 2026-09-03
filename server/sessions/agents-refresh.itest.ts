@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
-import { startOllamaFixture, type OllamaFixture } from "../testing/ollama-fixture";
+import { startOllamaFixture, type OllamaFixture } from "../testing/fixtures/ollama-fixture";
 import type { AgentBackend, AgentName, WireMsg } from "../protocol";
 
 // N.3 against the real daemon: a fixture "ollama" reaches the hello's

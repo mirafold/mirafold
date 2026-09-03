@@ -259,7 +259,7 @@ records of later unplanned polish batches.
   Mirafold works with nothing painting, something visibly alive says so.
   `ActivityLine.tsx` chrome above the prompt box + Shell-owned label +
   replay-safe open-turn counter — now the pure reducer
-  `web/src/turn-busy.ts`, whose Tier-1 pin is the dependable guard (the
+  `web/src/transcript/turn-busy.ts`, whose Tier-1 pin is the dependable guard (the
   e2e's queued-turn boundary assertion remains a smoke test; its
   honest-limits caveat is preserved verbatim in the archive). Full record →
   PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
@@ -594,7 +594,7 @@ notifications are **not** part of the launch and are not sold until built.
     data — a marginal link, not a strong one. Then the **wifi→LTE mid-turn
     flip, twice**: wifi dropped while a turn was streaming, and the session
     recovered on its own both times with the transcript intact. The
-    machinery behind that is `web/src/ws.ts` — 25s ping / 8s pong deadline
+    machinery behind that is `web/src/transport/ws.ts` — 25s ping / 8s pong deadline
     to catch the half-open socket, 500ms→5s reconnect backoff
     short-circuited by the browser's `online` event and tab-visible. The
     styling/UX punch list that first phone session surfaced is R.4l
@@ -861,7 +861,7 @@ with it. Both sequence BEFORE R.5.**
     same day): Gemini CLI 0.53.0 stopped loading project settings in
     untrusted folders, so the adapter's auth selection was ignored. Fixed
     by the shell-owned once-per-workspace trust ask (P.6b,
-    `server/sessions/workspace-trust.ts`), mutation-checked. **Standing
+    `server/security/workspace-trust.ts`), mutation-checked. **Standing
     caveat: Gemini is the most volatile of the three engines — re-run
     R.6's live-Gemini check after Google releases.** Full diagnosis, incl.
     the two measured negatives that each cost a round of wrong belief →
@@ -1168,7 +1168,7 @@ with it. Both sequence BEFORE R.5.**
   related in symptom, NOT in cause).
   - **The defect:** `server/sessions/registry.ts` treats `turn_end` OR
     `error` as terminal — that is what flips the session to idle and clears
-    the burst gate. The shell's counter (`web/src/turn-busy.ts`) decremented
+    the burst gate. The shell's counter (`web/src/transcript/turn-busy.ts`) decremented
     only on `turn_end`. So any turn dying by error — an adapter crash, an
     engine killed mid-stream, a dropped frame — left the count permanently
     high: the indicator read "working…" for the LIFE of the session, on
@@ -1212,7 +1212,7 @@ with it. Both sequence BEFORE R.5.**
     **Verified: 0 failures in 8 runs of the file that failed ~64%.**
   - **What it cost, and the lesson:** most of a session, nearly all of it
     before the instrumentation existed. The trace
-    (`web/src/turn-trace.ts` + `waitTurnIdle`'s two-sided dump) is what
+    (`web/src/transcript/turn-trace.ts` + `waitTurnIdle`'s two-sided dump) is what
     turned it from guessing into reading, and it should have been the first
     move rather than the fifth. Both halves stay in the tree for next time.
 
@@ -1334,7 +1334,7 @@ Full bodies + dated status in PLAN-ARCHIVE.md ("Moved 2026-07-19").
 - [x] **V.2 — Codex (and Gemini) rendering + command fidelity** — done 2026-07-19; Codex chart-degradation root-caused (Codex hides MCP tools behind tool-search) and fixed (deferred-tools addendum + a deterministic mermaid backstop); `/model` re-skinned for BOTH Codex and Gemini from each binary's own catalog (Codex app-server JSON-RPC / Gemini ACP); Codex-on-OpenRouter probed. **Follow-up:** the `/effort` reasoning-effort scaffold landed 2026-07-19 (mock-built; TWO fidelity questions — per-model effort availability, and fold-into-`/model`-vs-standalone — pending a live Codex pass). → PLAN-ARCHIVE.md.
 - [x] **V.3 — Truthful full-optionality Codex backend picker** — done 2026-07-19; every way codex can run is a picker row from config.toml ground truth (all `[model_providers]`), key-gated, provider carried on the wire, per-session enforced. → PLAN-ARCHIVE.md.
 - [x] **V.4 — In-session ergonomics: a "new" button, prompt focus, terminal scrollback** — done 2026-07-20 (Kyle-directed, same day); `new` button beside home opening the startup screen in a fresh tab, `end` moved far right, caret starts in the prompt box on entering a session (never stolen from an open overlay or a live selection), and terminal-scrollback conditional autoscroll. → PLAN-ARCHIVE.md.
-  - **⚠ The one thing still open:** the phone half of the scroll work is unverified by hand. Follow-the-tail detaches on a downward finger drag with **no minimum distance**, so a tap whose thumb wobbles a pixel (expanding a tool block, a pin button, a question option) silently stops auto-scrolling and the agent then looks stalled with nothing on screen explaining why. Kyle's call 2026-07-20 was to ship it and find out by hand. If it bites: require ~8px of travel before a drag counts as steering, in `onTouchMove` (`web/src/use-follow-tail.ts`) — a real swipe is hundreds of px, thumb noise is 1–2. The touch handlers are also **not proven necessary at all** (touch held correctly without them); they are kept only as a guard for iOS Safari, untestable on this machine.
+  - **⚠ The one thing still open:** the phone half of the scroll work is unverified by hand. Follow-the-tail detaches on a downward finger drag with **no minimum distance**, so a tap whose thumb wobbles a pixel (expanding a tool block, a pin button, a question option) silently stops auto-scrolling and the agent then looks stalled with nothing on screen explaining why. Kyle's call 2026-07-20 was to ship it and find out by hand. If it bites: require ~8px of travel before a drag counts as steering, in `onTouchMove` (`web/src/hooks/use-follow-tail.ts`) — a real swipe is hundreds of px, thumb noise is 1–2. The touch handlers are also **not proven necessary at all** (touch held correctly without them); they are kept only as a guard for iOS Safari, untestable on this machine.
   - **Note for anyone touching `use-follow-tail.ts`:** following scrolls **instantly, never smoothly**, and the reader's **input** is what detaches, not a position delta. Both were bought with a bug — a permanently in-flight smooth animation owned `scrollTop` and made the wheel inert during streaming. The trace and evidence are in commit `00288c6`; re-read it before reintroducing either.
 - [x] **V.5 — The one-click picker row names its backing** — done 2026-07-20 (Kyle-directed, same day). Choosing Gemini started a session without ever saying an API key was what it ran on; `AgentInfo` gained an additive optional `kind` (set only when `live`) and the row renders `backingLine()` — the wire carries the *kind* as a fact, the client owns the wording, so the one-click row and the second step say the same words. Same day, Kyle's call: credential labels now use each vendor's OWN name — **"Gemini API key"** (not "Google API key" — that's the Vertex path), **"Claude API key"** (the API was rebranded from Anthropic API); the "ChatGPT subscription" / "OpenAI API key" asymmetry is OpenAI's own brand split, inherited deliberately and documented at `backendLabel`. → PLAN-ARCHIVE.md.
   - **The principle, worth keeping:** a single usable backend isn't "no choice to show," it's *a choice made on the user's behalf* — a menu you don't need can be skipped, but a decision made **for** the user must still be stated.
@@ -1546,7 +1546,7 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
 
 ## Phase D — Decompose the Codex adapter (opened 2026-07-20)
 
-At the 2026-08-11 refactor start, `server/adapters/codex.ts` was **1,004 lines**
+At the 2026-08-11 refactor start, `server/adapters/codex/codex.ts` was **1,004 lines**
 and carried at least five separable concerns. Size alone did not justify the
 step; two separate 2026-07-20 bugs both lived in the seams between those
 concerns — the engine-default lookup did not know what provider binding had
@@ -1587,9 +1587,9 @@ list honored; all tiers green (318/86/37). Full detail → PLAN-ARCHIVE.md
     5. **Prompt constants** — `CODEX_DEFERRED_TOOLS_ADDENDUM` and friends.
   - Keep `codex.ts` as the class + its lifecycle; the extracted units should be
     importable and testable without constructing a session where possible.
-  - Files: `server/adapters/codex.ts` → new siblings (`codex-binding.ts`,
+  - Files: `server/adapters/codex/codex.ts` → new siblings (`codex-binding.ts`,
     `codex-commands.ts`, `codex-events.ts`, `codex-rollout.ts` or as the seams
-    suggest); `server/adapters/codex.test.ts` imports follow.
+    suggest); `server/adapters/codex/codex.test.ts` imports follow.
   - Done when: `yarn typecheck` clean; `yarn test` still **318 pass / 0 fail**
     (count as of 2026-07-23)
     with no test rewritten to accommodate the move (import paths may change,
@@ -1729,8 +1729,8 @@ anywhere; each is independent.
     todo-list block in the DOM; a pin e2e: pin a component, drive an update
     (dock copy repaints), reload mid-session (pin survives the replay),
     unpin returns it to the transcript.
-  - Files: `server/adapters/mock.ts` (malformed hook),
-    `server/testing/app.e2e.ts`.
+  - Files: `server/adapters/mock/mock.ts` (malformed hook),
+    `server/testing/e2e/app.e2e.ts`.
   - Done when: malformed instructions visibly degrade instead of crashing in
     a real browser, the five-frame checklist paints one block not five, and a
     pinned widget stays live across an update and a reload.
@@ -2216,7 +2216,7 @@ surfaces one notice and leaves turn-end refresh + the button as the floor.
 The E.5 turn-end refresh stays as belt-and-suspenders.
 
 - [x] **W.1, W.B, W.A, W.2** — all done 2026-07-26, phase complete
-  (`@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`; paths hint capped
+  (`@parcel/watcher@2.6.0` + `server/sessions/workspace/filesystem/fs-watch.ts`; paths hint capped
   by count AND bytes (`FS_WATCH_MAX_PATH_BYTES` 16,000); `git-trust.ts` +
   `trusted-repos.json` neutralize the three probe-proven git execute vectors
   unless the repo is user-trusted; per-viewport `fs_changed`, client
@@ -2397,7 +2397,7 @@ text.
 
 **Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
 GitHub stars) is now the dominant open-source terminal agent and becomes the
-fourth adapter. The feasibility spike is **`server/adapters/opencode.spike.md`**
+fourth adapter. The feasibility spike is **`server/adapters/opencode/opencode.spike.md`**
 (verdict GREEN) — its live-probe appendices remain the shape record.
 
 - [x] **OC.0–OC.5 — ALL COMPLETE 2026-08-13**, live-verified same day
@@ -2857,10 +2857,10 @@ glyph beside the chevron.
     trailing boundary; short-text absorption beside thinking absorption;
     tool disclosure state lifted into `OutputZone` keyed by tool id (the
     `expandedThinking` pattern). Fold label by turn state.
-  - Files: `web/src/tool-visibility.ts` (+test), `transcript-projection.ts`
+  - Files: `web/src/transcript/tool-visibility.ts` (+test), `transcript-projection.ts`
     (+test), `components/OutputZone.tsx`, `ToolBlock.tsx`; mock scenario
     `tool-activity` gains a one-line narration between calls and a longer
-    paragraph; `server/testing/shell-effects.e2e.ts`.
+    paragraph; `server/testing/e2e/shell-effects.e2e.ts`.
   - Done when: e2e shows, mid-turn, one growing `.tool-activity-group` with
     only the running call outside it; the short narration is inside the
     fold and the paragraph outside; a click-expanded call is still expanded
@@ -2887,7 +2887,7 @@ glyph beside the chevron.
     label; `aria-label="Jump to latest"`.
   - Build: `use-follow-tail.ts` surfaces `following` as render state;
     the pill component; CSS in `01-frame.css`.
-  - Files: `web/src/use-follow-tail.ts` (+test), `components/OutputZone.tsx`,
+  - Files: `web/src/hooks/use-follow-tail.ts` (+test), `components/OutputZone.tsx`,
     `styles/01-frame.css`; e2e in `document.e2e.ts` or a new
     `follow-tail.e2e.ts`.
   - Done when: e2e — scroll up during a streaming mock turn → pill visible;
@@ -2959,7 +2959,7 @@ permission bar. `app-server` is already spawned for the model and skills
 catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
 
 - [x] **Step CA.1 — The spike (throwaway, time-boxed)** — done 2026-08-25:
-  findings in `server/adapters/codex.spike.md`, "CA.1 spike". Verdict GREEN:
+  findings in `server/adapters/codex/codex.spike.md`, "CA.1 spike". Verdict GREEN:
   observed approval round trips for an out-of-workspace write (declined →
   denied) and a network call (accepted → re-ran outside the sandbox);
   `thread/resume`, `turn/interrupt`, and `developerInstructions` all work.
@@ -2977,7 +2977,7 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
     answering approve/deny does; thread resume; the first-open "trust this
     folder?" dialog (surfaced, or client-owned?); how the `-c` config
     overrides and `model_provider` binding ride along. Record all of it,
-    including the no-go list, in `server/adapters/codex.spike.md`.
+    including the no-go list, in `server/adapters/codex/codex.spike.md`.
   - Done when: the spike doc records a real observed approval round trip
     (a sandboxed commit produced a request; approving it made it succeed)
     and names every place terminal-equal behavior is or isn't reachable.
@@ -3516,13 +3516,18 @@ incomplete one-job OIDC assertion. All were corrected; live GitHub readback,
 the focused workflow test, YAML parsing, TypeScript, and the final re-review
 are clean. Kyle confirmed both required npm package settings through npm's UI.
 
-- [ ] **PLR.REL — publish v0.8.3 (2026-09-02, in progress)** — security and
-  launch hardening merged into `next` through PR #95. Fixed-snapshot sync PR
-  #96 restored the v0.8.2 production ancestry and package version before
-  `release/0.8.3` was cut from synchronized `next` at `ec4f22e`. Remaining:
-  release PR and review into `main`, signed tag, protected-environment
-  approval, registry-byte verification, published-package smoke, and the
-  fixed-snapshot `main` → `next` synchronization.
+- [x] **PLR.REL — published v0.8.3 (2026-09-02)** — security and launch
+  hardening merged into `next` through PR #95; fixed-snapshot PR #96 first
+  restored v0.8.2's production ancestry and package version. Release PR #97
+  merged reviewed commit `63fb7d6` into `main` at `db4520e`; its Fleet tooltip
+  fix traveled through `next` in PR #98, while bounded folder-list pagination
+  remains explicit follow-up #99 rather than a weakened security cap. Signed
+  tag `v0.8.3` and protected release workflow #33636620275 published with npm
+  provenance. The registry tarball matched signed SHA-256
+  `254683d07ab3c95e1756358ee8f80cb70b4ce18ca7f8aaf092bcca2c0da3f9f8`;
+  the public-package browser pass was 9/9; Cloudflare production and the
+  GitHub Release are live. This fixed production snapshot closes the loop by
+  returning the release merge and version to `next`.
 
 ## Test-audit pass (2026-08-26) — the whole suite
 
@@ -3776,10 +3781,11 @@ an existing panel.
   `close()` to discard — the forwarder now picks the newest READY socket
   (`ws.test.ts`, first test, which owns the once-installed page listener).
 
-**Files.** `server/protocol.ts`; `server/sessions/{registry,connection,
-transcript-tail}.ts`; `web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;
+**Files.** `server/protocol.ts`; `server/sessions/{registry,connection}.ts`;
+`server/sessions/persistence/transcript-tail.ts`;
+`web/src/components/{Shell,CockpitPanel,CockpitGlyph}.tsx`;
 panel state, shared fleet ordering, structural CSS, and the supplemental-socket
-error-forwarding lifecycle in `web/src/ws.ts`; focused tests in all three tiers
+error-forwarding lifecycle in `web/src/transport/ws.ts`; focused tests in all three tiers
 plus a committed visual baseline; README/architecture/backlog synced. No new
 dependency was added — the panel composes the existing React, socket, action,
 and two-click-confirm machinery.
@@ -4065,8 +4071,8 @@ here, not chased on this branch.
   Codex session runs on a provider that defers MCP tools, say so where the
   user reads it instead of silently degrading. Not started.
 
-**Files.** `server/render-tools.ts`, `server/adapters/codex-prompt.ts`,
-`server/adapters/codex.ts`, tests in `claude-code.test.ts` and
+**Files.** `server/render-tools.ts`, `server/adapters/codex/codex-prompt.ts`,
+`server/adapters/codex/codex.ts`, tests in `claude-code.test.ts` and
 `codex.test.ts`, `docs/ADAPTERS.md` §5.
 
 ---

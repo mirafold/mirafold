@@ -3,11 +3,11 @@ import os from "node:os";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
-import { ClaudeCodeSession } from "./claude-code";
-import { CodexSession } from "./codex";
-import { GeminiCliSession } from "./gemini-cli";
-import { OpenCodeSession, parseModelPin } from "./opencode";
-import { MockSession } from "./mock";
+import { ClaudeCodeSession } from "./claude-code/claude-code";
+import { CodexSession } from "./codex/codex";
+import { GeminiCliSession } from "./gemini-cli/gemini-cli";
+import { OpenCodeSession, parseModelPin } from "./opencode/opencode";
+import { MockSession } from "./mock/mock";
 import { installedAgentBin } from "./types";
 import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
@@ -17,9 +17,8 @@ import {
   type CredentialKind,
 } from "../provider-policy";
 import { cachedLocalServers, hostKey, probeTargets, type LocalDialect, type LocalServer } from "../local-models";
-import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
+import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex/codex-config";
 import { wasLoadedFromProjectEnv } from "../project-env";
-import type { StoredSession } from "../sessions/session-store";
 
 export type { AgentName, AgentSession, Backend } from "./types";
 export { errText } from "./types";
@@ -762,7 +761,7 @@ export function dormantKindPending(backend: Backend): boolean {
  * against current detection, exactly as a fresh pick would be. Throws with
  * the user-facing reason when the saved backend is unavailable.
  */
-export function restoreBackend(stored: Pick<StoredSession, "id" | "backend" | "model">): Backend {
+export function restoreBackend(stored: { id: string; backend: Backend; model?: string }): Backend {
   const saved = stored.backend;
   if (!saved.live) return saved;
   if (saved.kind === "local" && saved.endpoint) {

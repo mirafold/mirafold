@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { SessionMeta } from "@protocol";
 import { cockpitPreviewText } from "../cockpit-preview";
 import { cockpitOrder } from "../fleet-order";
-import { useArmedConfirm } from "../use-armed-confirm";
-import { SocketClient } from "../ws";
+import { useArmedConfirm } from "../hooks/use-armed-confirm";
+import { SocketClient } from "../transport/ws";
 import { ArmedButton } from "./ArmedButton";
 import { SessionName } from "./SessionName";
 

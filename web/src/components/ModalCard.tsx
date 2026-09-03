@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
-import { useEscapeKey } from "../use-escape";
-import { useFocusTrap } from "../use-focus-trap";
+import { useEscapeKey } from "../hooks/use-escape";
+import { useFocusTrap } from "../hooks/use-focus-trap";
 
 /**
  * The one modal idiom every card shares (pairing, settings, agent picker): a

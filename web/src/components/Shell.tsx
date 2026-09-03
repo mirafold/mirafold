@@ -13,32 +13,32 @@ import { DiffPanel } from "./diff-panel/DiffPanel";
 import { CockpitPanel } from "./CockpitPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
-import { createSessionBus } from "../session-bus";
+import { createSessionBus } from "../transport/session-bus";
 import type { SubscriptionReply } from "../subscription-card";
-import { IDLE_TURN, reduceTurn, type TurnInput } from "../turn-state";
-import { traceTurn } from "../turn-trace";
-import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
+import { IDLE_TURN, reduceTurn, type TurnInput } from "../transcript/turn-state";
+import { traceTurn } from "../transcript/turn-trace";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../transport/daemon-hello";
 import { ThemePicker } from "./ThemePicker";
-import { useThemeSlots } from "../use-theme-slots";
-import { useNotifyPreference } from "../use-notify-preference";
-import { useFileDropZone } from "../use-file-drop-zone";
-import { tildify } from "../tildify";
+import { useThemeSlots } from "../hooks/use-theme-slots";
+import { useNotifyPreference } from "../hooks/use-notify-preference";
+import { useFileDropZone } from "../hooks/use-file-drop-zone";
+import { tildify } from "../workspace/tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { createDomNotifier, folderTitle } from "../notify";
-import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
+import { createFileDrop, quoteForPrompt, type UploadEntry } from "../workspace/file-drop";
 import type { WireMsg } from "@protocol";
-import { useEscapeKey } from "../use-escape";
+import { useEscapeKey } from "../hooks/use-escape";
 import { Announcer, useAnnouncer } from "./Announcer";
 import { PermissionBar } from "./PermissionBar";
-import type { InputNavigationDirection } from "../input-navigation";
-import { sessionIdFromPath } from "../session-url";
+import type { InputNavigationDirection } from "../input/input-navigation";
+import { sessionIdFromPath } from "../transport/session-url";
 import { cockpitPanelWasOpen, rememberCockpitPanel } from "../cockpit-panel-state";
-import { useIsPhone } from "../use-is-phone";
+import { useIsPhone } from "../hooks/use-is-phone";
 import type {
   InputNavigationHandle,
   InputNavigationState,
-} from "../use-input-navigation";
+} from "../input/use-input-navigation";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 type AuxiliarySurface = WorkspaceSurface | "cockpit";
@@ -150,6 +150,10 @@ export function Shell() {
     // detection that masks the stdin field. One bang per session, so untagged.
     tail: string;
   }>({ my: null, tail: "" });
+  // A bang_start is broadcast to every viewport, so only ids minted by this
+  // viewport may claim its stdin/kill controls. Keep each id until the daemon
+  // either accepts it with bang_start or rejects it with a private bang_end.
+  const ownBangRequests = useRef(new Set<string>());
 
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
@@ -318,11 +322,15 @@ export function Shell() {
           // render in the output zone (the turn reducer brought busy down).
           setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
-          setBang((b) => ({ ...b, tail: "" }));
+          const mine = ownBangRequests.current.delete(m.id);
+          setBang((b) =>
+            mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
+          );
         } else if (m.type === "bang_output") {
           // Only the tail matters (prompt detection) — keep it tiny.
           setBang((b) => ({ ...b, tail: (b.tail + m.data).slice(-400) }));
         } else if (m.type === "bang_end") {
+          ownBangRequests.current.delete(m.id);
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
@@ -431,7 +439,13 @@ export function Shell() {
     if (m) {
       const silent = m[1] === "!";
       const command = m[2].trim();
-      setBang({ my: { id: bus.sendBang(command, silent), command }, tail: "" });
+      const id = bus.sendBang(command, silent);
+      ownBangRequests.current.add(id);
+      // The daemon may reject this request because the previous PTY is still
+      // running. Keep that PTY's stdin/kill controls until its own bang_end.
+      setBang((current) =>
+        current.my ? current : { my: { id, command }, tail: "" },
+      );
     } else {
       bus.sendPrompt(text);
     }

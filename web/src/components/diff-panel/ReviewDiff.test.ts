@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MAX_INTERACTIVE_REVIEW_LINES } from "../../change-review";
+import { MAX_INTERACTIVE_REVIEW_LINES } from "../../workspace/change-review";
 import { ReviewDiff } from "./ReviewDiff";
 
 const renderAddedLines = (count: number): { html: string; elapsedMs: number } => {

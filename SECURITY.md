@@ -31,9 +31,9 @@ an unattributed Mirafold instruction.
 Subagent decks (Phase SA, 2026-08-14) put a subagent's own narration and
 reasoning inside shell chrome: it renders as inert plain text only, never
 markdown or HTML, and a subagent cannot paint generative-UI components — on
-OpenCode the adapter's lane refuses it, and on Claude Code the SDK withholds
-the MCP render tools from subagent contexts (verified against the real
-adapter — a live-tier fact no Tier 1–3 test can hold, so an SDK upgrade
+OpenCode the adapter's lane refuses it, and in the Claude Agent integration the
+SDK withholds the MCP render tools from subagent contexts (verified against the
+real adapter — a live-tier fact no Tier 1–3 test can hold, so an SDK upgrade
 re-verifies it under `yarn test:live`; 2026-08-26 test-audit). Per-subagent narration is byte-capped with an explicit elision
 marker, and the cap's ledger bounds distinct subagents per turn, so a
 hostile or looping engine cannot grow it — or the wire — without bound.
@@ -275,10 +275,11 @@ of what the daemon reads compared to Phase E, so it is stated here rather
 than left implied.
 
 **Every engine asks "trust this folder?" before its first spawn in a folder
-(2026-08-26 audit).** All four agents apply the folder's own configuration
-the moment they start — Claude Code its `.claude/settings.json` (hooks
-included), `.mcp.json` servers and `CLAUDE.md`; OpenCode its `opencode.json`
-and `.opencode`; Gemini its `.gemini/settings.json`; Codex its `.codex`
+(2026-08-26 audit).** All four integrations apply the folder's own configuration
+the moment their engines start — the Claude Agent integration inherits Claude
+Code's `.claude/settings.json` (hooks included), `.mcp.json` servers and
+`CLAUDE.md`; OpenCode its `opencode.json` and `.opencode`; Gemini its
+`.gemini/settings.json`; Codex its `.codex`
 (which Codex's own engine refuses until trusted). Their terminals ask first;
 headless does not — probed: a hostile checkout's `SessionStart` hook, its
 `.mcp.json` server and its `opencode.json` MCP command all ran at session
@@ -354,9 +355,9 @@ daemon's exact commands:
   refused git entirely, degrading to the plain listing rather than building an
   unbounded command line.
 
-Pinned by `server/sessions/git-trust.itest.ts`, which plants real programs in
-all three settings and fails if any of them leaves a mark on disk — verified
-to fail when the protection is removed.
+Pinned by `server/sessions/workspace/git/git-trust.itest.ts`, which plants real
+programs in all three settings and fails if any of them leaves a mark on disk
+— verified to fail when the protection is removed.
 
 Three bypasses of that guard were found and closed on 2026-08-26 (each
 proven with a marker program first): a `=` inside a filter's name split the

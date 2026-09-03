@@ -1,4 +1,4 @@
-import { useCopyFeedback } from "../use-copy-feedback";
+import { useCopyFeedback } from "../hooks/use-copy-feedback";
 
 const LABEL = { idle: "copy", copied: "copied", failed: "copy failed" } as const;
 

@@ -4,10 +4,17 @@
 // pieces that must behave identically no matter which engine is underneath.
 
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { SessionMsg } from "../protocol";
 import type { TodoItem } from "./types";
 
 type Emit = (msg: SessionMsg) => void;
+
+export function displayPath(p: string, workspaceDir: string): string {
+  if (!path.isAbsolute(p)) return p;
+  const rel = path.relative(workspaceDir, p);
+  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : p;
+}
 
 /** Why an ask resolved. Adapters that must answer their engine use it to
  *  tell a resolution they own (answer / timeout / teardown) from one the
