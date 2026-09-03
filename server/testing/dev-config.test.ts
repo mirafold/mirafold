@@ -2,11 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import {
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
+  watch as fsWatch,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -16,7 +18,11 @@ import { fileURLToPath } from "node:url";
 import concurrently from "concurrently";
 import type { ConfigEnv, UserConfig } from "vite";
 import makeViteConfig from "../../vite.config";
-import { runWatchedProcess } from "../../scripts/watch-server";
+import {
+  isServerSource,
+  runWatchedProcess,
+  watchRecursively,
+} from "../../scripts/watch-server";
 import { DEV_PORT_CONFLICT_EXIT_CODE } from "../env";
 import { waitFor } from "./wait-for";
 
@@ -263,6 +269,46 @@ test("ordinary server failures wait for an edit and restart", async () => {
   }
 });
 
+test("runtime output under the server tree does not restart the dev server", async () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-dev-watch-output-"));
+  const watched = path.join(fixture, "watched");
+  const { childFile, stateFile } = countingChild(fixture);
+  const sourceFile = path.join(watched, "source.ts");
+  const logFile = path.join(watched, "dev.log");
+  mkdirSync(watched);
+  writeFileSync(sourceFile, "first");
+  writeFileSync(logFile, "first\n");
+  assert.equal(isServerSource("dev.log"), false);
+  assert.equal(isServerSource("source.ts"), true);
+
+  const controller = new AbortController();
+  const result = runWatchedProcess({
+    watchRoot: watched,
+    shouldRestart: isServerSource,
+    command: process.execPath,
+    args: [childFile],
+    stdio: "ignore",
+    signal: controller.signal,
+    restartDelayMs: 10,
+    log: silent,
+  });
+  try {
+    await waitFor(() => startCount(stateFile) === 1, "the initial output-filter child start");
+    appendFileSync(logFile, "second\n");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(startCount(stateFile), 1);
+
+    writeFileSync(sourceFile, "second");
+    await waitFor(() => startCount(stateFile) === 2, "the source-triggered child restart");
+    controller.abort();
+    assert.equal(await result, 0);
+  } finally {
+    controller.abort();
+    await result;
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("an atomically replaced watched file keeps restarting after the first save", async () => {
   const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-dev-watch-file-"));
   const watched = path.join(fixture, "watched");
@@ -347,6 +393,87 @@ test("a rapidly created nested source directory remains watched", async () => {
   } finally {
     controller.abort();
     await result;
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("the portable watcher fallback follows rapidly created nested directories", async () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-dev-watch-fallback-"));
+  const watched = path.join(fixture, "watched");
+  mkdirSync(watched);
+  const changes: Array<string | null> = [];
+  let watchError: unknown;
+  let nativeAttempted = false;
+  let attachmentRaceInjected = false;
+  const vanishing = path.join(watched, "vanishing");
+  mkdirSync(vanishing);
+  const fallbackError = Object.assign(new Error("recursive watch unavailable"), {
+    code: "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM",
+  });
+  const handle = watchRecursively(
+    watched,
+    (relativePath) => changes.push(relativePath),
+    (error) => {
+      watchError = error;
+    },
+    {
+      recursive: () => {
+        nativeAttempted = true;
+        throw fallbackError;
+      },
+      directory: (directory, listener) => {
+        if (directory === vanishing && !attachmentRaceInjected) {
+          attachmentRaceInjected = true;
+          rmSync(vanishing, { recursive: true, force: true });
+          throw Object.assign(new Error("nested directory disappeared"), { code: "ENOENT" });
+        }
+        return fsWatch(directory, listener);
+      },
+    },
+  );
+  try {
+    assert.equal(nativeAttempted, true);
+    assert.equal(attachmentRaceInjected, true);
+    assert.equal(watchError, undefined);
+    const runtimeOutput = path.join(watched, "runtime", "nested", "output.log");
+    mkdirSync(path.dirname(runtimeOutput), { recursive: true });
+    writeFileSync(runtimeOutput, "runtime output");
+    await waitFor(() => changes.length > 0, "the fallback runtime-tree change");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(changes.some(isServerSource), false);
+    changes.length = 0;
+
+    const deep = path.join(watched, "a", "b", "c");
+    const source = path.join(deep, "source.ts");
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(source, "first");
+    await waitFor(() => changes.some(isServerSource), "the fallback nested-tree change");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    changes.length = 0;
+
+    writeFileSync(source, "second");
+    await waitFor(
+      () => changes.includes(path.join("a", "b", "c", "source.ts")),
+      "the fallback nested-source edit",
+    );
+
+    changes.length = 0;
+    const replaced = path.join(watched, "a", "b", "replaced-c");
+    renameSync(deep, replaced);
+    mkdirSync(deep);
+    writeFileSync(source, "replacement");
+    await waitFor(() => changes.length > 0, "the fallback directory replacement");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    changes.length = 0;
+
+    writeFileSync(source, "after replacement");
+    await waitFor(
+      () => changes.includes(path.join("a", "b", "c", "source.ts")),
+      "the fallback replacement-directory edit",
+    );
+    assert.equal(watchError, undefined);
+  } finally {
+    handle.close();
     rmSync(fixture, { recursive: true, force: true });
   }
 });

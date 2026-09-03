@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_PORT_CONFLICT_EXIT_CODE } from "../server/env";
@@ -14,8 +14,182 @@ const TSX_IMPORT = import.meta.resolve("tsx");
 const SERVER_TEST_PATH =
   /(^|\/)testing(\/|$)|\.(?:test|itest|e2e|uitest|ltest)\.ts$/;
 
-const isServerSource = (relativePath: string | null): boolean =>
-  relativePath === null || !SERVER_TEST_PATH.test(relativePath.replaceAll("\\", "/"));
+export const isServerSource = (relativePath: string | null): boolean => {
+  if (relativePath === null) return true;
+  const normalized = relativePath.replaceAll("\\", "/");
+  return normalized.endsWith(".ts") && !SERVER_TEST_PATH.test(normalized);
+};
+
+type RootWatchHandle = { close: () => void };
+type RootWatchListener = (relativePath: string | null) => void;
+type NativeRecursiveWatch = (
+  root: string,
+  options: { recursive: true },
+  listener: (event: string, filename: string | Buffer | null) => void,
+) => FSWatcher;
+type NativeDirectoryWatch = (
+  directory: string,
+  listener: (event: string, filename: string | Buffer | null) => void,
+) => FSWatcher;
+type WatchImplementations = {
+  recursive?: NativeRecursiveWatch;
+  directory?: NativeDirectoryWatch;
+};
+
+const isMissing = (error: unknown): boolean =>
+  (error as NodeJS.ErrnoException).code === "ENOENT";
+
+/**
+ * Portable fallback for platforms where Node cannot watch a tree recursively.
+ * Each directory is watched before it is scanned, so a directory created
+ * during the scan schedules another pass instead of falling into a gap.
+ */
+function watchDirectoryTree(
+  root: string,
+  onChange: RootWatchListener,
+  onError: (error: unknown) => void,
+  directoryWatch: NativeDirectoryWatch,
+): RootWatchHandle {
+  const watchers = new Map<string, { watcher: FSWatcher; identity: string }>();
+  let closed = false;
+  let initialized = false;
+  let knownFiles = new Map<string, string>();
+  let rescanTimer: NodeJS.Timeout | undefined;
+
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(rescanTimer);
+    rescanTimer = undefined;
+    for (const { watcher: directoryWatcher } of watchers.values()) directoryWatcher.close();
+    watchers.clear();
+  };
+
+  const rescan = (): void => {
+    if (closed) return;
+    const found = new Set<string>();
+    const foundFiles = new Map<string, string>();
+    const pending = [root];
+
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let identity: string;
+      try {
+        const stats = statSync(directory, { bigint: true });
+        if (!stats.isDirectory()) continue;
+        identity = `${stats.dev}:${stats.ino}`;
+      } catch (error) {
+        if (directory !== root && isMissing(error)) continue;
+        throw error;
+      }
+      found.add(directory);
+      const existing = watchers.get(directory);
+      if (!existing || existing.identity !== identity) {
+        existing?.watcher.close();
+        watchers.delete(directory);
+        let directoryWatcher: FSWatcher;
+        try {
+          directoryWatcher = directoryWatch(directory, (_event, changed) => {
+            if (changed !== null) {
+              onChange(path.relative(root, path.join(directory, changed.toString())));
+            }
+            scheduleRescan();
+          });
+        } catch (error) {
+          if (directory !== root && isMissing(error)) {
+            found.delete(directory);
+            continue;
+          }
+          throw error;
+        }
+        directoryWatcher.once("error", onError);
+        watchers.set(directory, { watcher: directoryWatcher, identity });
+      }
+
+      let entries;
+      try {
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch (error) {
+        if (directory !== root && isMissing(error)) continue;
+        throw error;
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+          continue;
+        }
+        try {
+          const stats = statSync(entryPath, { bigint: true });
+          foundFiles.set(
+            path.relative(root, entryPath),
+            `${stats.dev}:${stats.ino}:${stats.mtimeNs}:${stats.size}`,
+          );
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+        }
+      }
+    }
+
+    for (const [directory, { watcher: directoryWatcher }] of watchers) {
+      if (found.has(directory)) continue;
+      directoryWatcher.close();
+      watchers.delete(directory);
+    }
+    if (initialized) {
+      for (const [file, fingerprint] of foundFiles) {
+        if (knownFiles.get(file) !== fingerprint) onChange(file);
+      }
+      for (const file of knownFiles.keys()) {
+        if (!foundFiles.has(file)) onChange(file);
+      }
+    }
+    knownFiles = foundFiles;
+    initialized = true;
+  };
+
+  const scheduleRescan = (): void => {
+    if (closed || rescanTimer) return;
+    rescanTimer = setTimeout(() => {
+      rescanTimer = undefined;
+      try {
+        rescan();
+      } catch (error) {
+        onError(error);
+      }
+    }, 0);
+  };
+
+  try {
+    rescan();
+  } catch (error) {
+    close();
+    throw error;
+  }
+  return { close };
+}
+
+/** Use Node's recursive watcher when available, with a portable tree fallback. */
+export function watchRecursively(
+  root: string,
+  onChange: RootWatchListener,
+  onError: (error: unknown) => void,
+  implementations: WatchImplementations = {},
+): RootWatchHandle {
+  const nativeWatch = implementations.recursive ?? watch;
+  try {
+    const rootWatcher = nativeWatch(root, { recursive: true }, (_event, changed) => {
+      onChange(changed?.toString() ?? null);
+    });
+    rootWatcher.once("error", onError);
+    return rootWatcher;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM") {
+      throw error;
+    }
+    return watchDirectoryTree(root, onChange, onError, implementations.directory ?? watch);
+  }
+}
 
 export type WatchedProcessOptions = {
   watchRoot: string;
@@ -66,7 +240,7 @@ export async function runWatchedProcess(options: WatchedProcessOptions): Promise
   const restartDelayMs = options.restartDelayMs ?? 75;
   const forceKillAfterMs = options.forceKillAfterMs ?? 3_000;
   let child: ChildProcess | undefined;
-  const fileWatchers: FSWatcher[] = [];
+  const fileWatchers: RootWatchHandle[] = [];
   let restartTimer: NodeJS.Timeout | undefined;
   let restarting = false;
   let restartQueued = false;
@@ -146,12 +320,10 @@ export async function runWatchedProcess(options: WatchedProcessOptions): Promise
 
   try {
     if (settled) return result;
-    const rootWatcher = watch(options.watchRoot, { recursive: true }, (_event, changed) => {
-      const relativePath = changed?.toString() ?? null;
+    const rootWatcher = watchRecursively(options.watchRoot, (relativePath) => {
       if (options.shouldRestart?.(relativePath) ?? true) scheduleRestart();
-    });
-    rootWatcher.once("error", (error) => {
-      void finish(1, `[mirafold] ${label} source watcher failed: ${error.message}`);
+    }, (error) => {
+      void finish(1, `[mirafold] ${label} source watcher failed: ${String(error)}`);
     });
     fileWatchers.push(rootWatcher);
 
