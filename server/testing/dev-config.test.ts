@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:net";
 import {
   appendFileSync,
@@ -10,6 +11,7 @@ import {
   rmSync,
   watch as fsWatch,
   writeFileSync,
+  type FSWatcher,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +24,7 @@ import {
   createServerRestartFilter,
   isServerSource,
   runWatchedProcess,
+  watchFileByDirectory,
   watchRecursively,
 } from "../../scripts/watch-server";
 import { DEV_PORT_CONFLICT_EXIT_CODE } from "../env";
@@ -64,6 +67,12 @@ const startCount = (stateFile: string): number => {
   } catch {
     return 0;
   }
+};
+
+const inertWatcher = (): FSWatcher => {
+  const watcher = new EventEmitter() as unknown as FSWatcher;
+  watcher.close = () => {};
+  return watcher;
 };
 
 test("the Vite WebSocket proxy follows the daemon PORT", async () => {
@@ -312,6 +321,87 @@ test("runtime output under the server tree does not restart the dev server", asy
   } finally {
     controller.abort();
     await result;
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("filename-less recursive events recover the exact changed path", () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-dev-watch-null-tree-"));
+  const watched = path.join(fixture, "watched");
+  const sourceFile = path.join(watched, "source.ts");
+  const logFile = path.join(watched, "runtime.ts");
+  mkdirSync(watched);
+  writeFileSync(sourceFile, "first");
+  writeFileSync(logFile, "first");
+  const shouldRestart = createServerRestartFilter(watched, fixture, logFile);
+  const changes: string[] = [];
+  let listener:
+    | ((event: string, filename: string | Buffer | null) => void)
+    | undefined;
+  const handle = watchRecursively(
+    watched,
+    (relativePath) => {
+      if (relativePath === null) assert.fail("expected an exact changed path");
+      changes.push(relativePath);
+    },
+    (error) => assert.fail(String(error)),
+    {
+      recursive: (_root, _options, nextListener) => {
+        listener = nextListener;
+        return inertWatcher();
+      },
+    },
+  );
+  try {
+    assert.ok(listener);
+    writeFileSync(logFile, "second");
+    listener("change", null);
+    assert.deepEqual(changes, ["runtime.ts"]);
+    assert.equal(changes.some(shouldRestart), false);
+
+    changes.length = 0;
+    writeFileSync(sourceFile, "second");
+    listener("change", null);
+    assert.deepEqual(changes, ["source.ts"]);
+    assert.equal(changes.some(shouldRestart), true);
+  } finally {
+    handle.close();
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("filename-less directory events only restart for the watched file", () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-dev-watch-null-file-"));
+  const packageFile = path.join(fixture, "package.json");
+  const runtimeFile = path.join(fixture, "runtime.ts");
+  writeFileSync(packageFile, "first");
+  writeFileSync(runtimeFile, "first");
+  let changes = 0;
+  let listener:
+    | ((event: string, filename: string | Buffer | null) => void)
+    | undefined;
+  const handle = watchFileByDirectory(
+    packageFile,
+    () => {
+      changes += 1;
+    },
+    (error) => assert.fail(String(error)),
+    (_directory, nextListener) => {
+      listener = nextListener;
+      return inertWatcher();
+    },
+  );
+  try {
+    assert.ok(listener);
+    writeFileSync(runtimeFile, "second");
+    listener("change", null);
+    assert.equal(changes, 0);
+
+    writeFileSync(packageFile, "second");
+    listener("change", null);
+    assert.equal(changes, 1);
+  } finally {
+    handle.close();
     rmSync(fixture, { recursive: true, force: true });
   }
 });

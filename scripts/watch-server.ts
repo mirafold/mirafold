@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type BigIntStats, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_PORT_CONFLICT_EXIT_CODE } from "../server/env";
@@ -58,6 +58,57 @@ type WatchImplementations = {
 
 const isMissing = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException).code === "ENOENT";
+
+const fingerprint = (stats: BigIntStats): string =>
+  `${stats.dev}:${stats.ino}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.size}:${stats.mode}`;
+
+const fileFingerprint = (file: string): string | null => {
+  try {
+    return fingerprint(statSync(file, { bigint: true }));
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+};
+
+const snapshotFiles = (root: string): Map<string, string> => {
+  const files = new Map<string, string>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    let entries;
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      if (directory !== root && isMissing(error)) continue;
+      throw error;
+    }
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+      const current = fileFingerprint(entryPath);
+      if (current !== null) files.set(pathKey(path.relative(root, entryPath)), current);
+    }
+  }
+  return files;
+};
+
+const changedFiles = (
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): string[] => {
+  const changed: string[] = [];
+  for (const [file, current] of after) {
+    if (before.get(file) !== current) changed.push(file);
+  }
+  for (const file of before.keys()) {
+    if (!after.has(file)) changed.push(file);
+  }
+  return changed;
+};
 
 /**
  * Portable fallback for platforms where Node cannot watch a tree recursively.
@@ -143,7 +194,7 @@ function watchDirectoryTree(
           const stats = statSync(entryPath, { bigint: true });
           foundFiles.set(
             path.relative(root, entryPath),
-            `${stats.dev}:${stats.ino}:${stats.mtimeNs}:${stats.size}`,
+            fingerprint(stats),
           );
         } catch (error) {
           if (!isMissing(error)) throw error;
@@ -198,10 +249,47 @@ export function watchRecursively(
 ): RootWatchHandle {
   const nativeWatch = implementations.recursive ?? watch;
   try {
+    let knownFiles = new Map<string, string>();
     const rootWatcher = nativeWatch(root, { recursive: true }, (_event, changed) => {
-      onChange(changed?.toString() ?? null);
+      try {
+        if (changed === null) {
+          const currentFiles = snapshotFiles(root);
+          for (const file of changedFiles(knownFiles, currentFiles)) onChange(file);
+          knownFiles = currentFiles;
+          return;
+        }
+
+        const relativePath = pathKey(changed.toString());
+        const changedPath = path.resolve(root, relativePath);
+        let stats: BigIntStats;
+        try {
+          stats = statSync(changedPath, { bigint: true });
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+          const currentFiles = snapshotFiles(root);
+          for (const file of changedFiles(knownFiles, currentFiles)) onChange(file);
+          knownFiles = currentFiles;
+          return;
+        }
+        if (stats.isDirectory()) {
+          const currentFiles = snapshotFiles(root);
+          for (const file of changedFiles(knownFiles, currentFiles)) onChange(file);
+          knownFiles = currentFiles;
+          return;
+        }
+        knownFiles.set(relativePath, fingerprint(stats));
+        onChange(relativePath);
+      } catch (error) {
+        onError(error);
+      }
     });
     rootWatcher.once("error", onError);
+    try {
+      knownFiles = snapshotFiles(root);
+    } catch (error) {
+      rootWatcher.close();
+      throw error;
+    }
     return rootWatcher;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM") {
@@ -209,6 +297,38 @@ export function watchRecursively(
     }
     return watchDirectoryTree(root, onChange, onError, implementations.directory ?? watch);
   }
+}
+
+/** Watch one replaceable file without treating unrelated filename-less events as changes. */
+export function watchFileByDirectory(
+  file: string,
+  onChange: () => void,
+  onError: (error: unknown) => void,
+  directoryWatch: NativeDirectoryWatch = watch,
+): RootWatchHandle {
+  const filename = path.basename(file);
+  let knownFingerprint = fileFingerprint(file);
+  const fileWatcher = directoryWatch(path.dirname(file), (_event, changed) => {
+    try {
+      if (changed !== null && pathKey(changed.toString()) !== pathKey(filename)) return;
+      const currentFingerprint = fileFingerprint(file);
+      const definitelyChanged = currentFingerprint !== knownFingerprint;
+      knownFingerprint = currentFingerprint;
+      if (changed !== null || definitelyChanged) onChange();
+    } catch (error) {
+      onError(error);
+    }
+  });
+  fileWatcher.once("error", onError);
+  try {
+    const attachedFingerprint = fileFingerprint(file);
+    if (attachedFingerprint !== knownFingerprint) onChange();
+    knownFingerprint = attachedFingerprint;
+  } catch (error) {
+    fileWatcher.close();
+    throw error;
+  }
+  return fileWatcher;
 }
 
 export type WatchedProcessOptions = {
@@ -351,12 +471,9 @@ export async function runWatchedProcess(options: WatchedProcessOptions): Promise
       // Watch the directory, not the file's current inode. Editors commonly
       // save by renaming a replacement over the original; an inode watch fires
       // once for that replacement and then stays attached to the dead file.
-      const filename = path.basename(file);
-      const fileWatcher = watch(path.dirname(file), (_event, changed) => {
-        if (changed === null || changed.toString() === filename) scheduleRestart();
-      });
-      fileWatcher.once("error", (error) => {
-        void finish(1, `[mirafold] ${label} source watcher failed: ${error.message}`);
+      const fileWatcher = watchFileByDirectory(file, scheduleRestart, (error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        void finish(1, `[mirafold] ${label} source watcher failed: ${detail}`);
       });
       fileWatchers.push(fileWatcher);
     }
