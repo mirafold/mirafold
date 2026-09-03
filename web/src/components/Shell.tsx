@@ -150,6 +150,10 @@ export function Shell() {
     // detection that masks the stdin field. One bang per session, so untagged.
     tail: string;
   }>({ my: null, tail: "" });
+  // A bang_start is broadcast to every viewport, so only ids minted by this
+  // viewport may claim its stdin/kill controls. Keep each id until the daemon
+  // either accepts it with bang_start or rejects it with a private bang_end.
+  const ownBangRequests = useRef(new Set<string>());
 
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
@@ -318,11 +322,15 @@ export function Shell() {
           // render in the output zone (the turn reducer brought busy down).
           setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
-          setBang((b) => ({ ...b, tail: "" }));
+          const mine = ownBangRequests.current.delete(m.id);
+          setBang((b) =>
+            mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
+          );
         } else if (m.type === "bang_output") {
           // Only the tail matters (prompt detection) — keep it tiny.
           setBang((b) => ({ ...b, tail: (b.tail + m.data).slice(-400) }));
         } else if (m.type === "bang_end") {
+          ownBangRequests.current.delete(m.id);
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
@@ -432,6 +440,7 @@ export function Shell() {
       const silent = m[1] === "!";
       const command = m[2].trim();
       const id = bus.sendBang(command, silent);
+      ownBangRequests.current.add(id);
       // The daemon may reject this request because the previous PTY is still
       // running. Keep that PTY's stdin/kill controls until its own bang_end.
       setBang((current) =>

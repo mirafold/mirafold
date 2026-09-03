@@ -296,7 +296,7 @@ test("the vendored protocol digest matches the installed Codex (TS.7)", { skip: 
   type Digest = { items: Record<string, unknown>; notifications: string[]; fields: Record<string, unknown> };
   // A plain .mjs script with no declaration file; the specifier is widened so
   // TypeScript does not try to type it.
-  const { generateDigest } = (await import("../../scripts/codex-protocol-digest.mjs" as string)) as {
+  const { generateDigest } = (await import("../../../scripts/codex-protocol-digest.mjs" as string)) as {
     generateDigest: () => Digest;
   };
   const { readFileSync } = await import("node:fs");

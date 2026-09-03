@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
+import { envInt } from "./server/env";
 
 export default defineConfig(() => {
-  const daemonPort = process.env.PORT?.trim() || "3000";
+  const daemonPort = envInt("PORT", 3000);
 
   return {
     root: "web",

@@ -280,6 +280,50 @@ test("a rejected second bang leaves the first PTY's controls usable", async () =
   });
 });
 
+test("an accepted second bang replaces controls after the first PTY exits", async () => {
+  await withFreshMockSession(browser, "e2e-bang-replace-9c2f", async (page) => {
+    const prompt = page.locator(".prompt-box textarea");
+    const bar = page.locator(".bang-bar");
+    const firstCommand = `node -e "console.log('first-pty-ready'); setInterval(() => {}, 1000)"`;
+    const secondCommand = `node -e "console.log('replacement-pty-ready'); setInterval(() => {}, 1000)"`;
+
+    await prompt.fill(`!! ${firstCommand}`);
+    await prompt.press("Enter");
+    await bar.waitFor();
+    await page.locator(".bang-output", { hasText: "first-pty-ready" }).waitFor();
+
+    // Kill the first process, but hold the browser's event loop so its inbound
+    // bang_end stays queued. The daemon has time to finish the kill and accepts
+    // the command submitted at the end of the same browser task.
+    await prompt.fill(`!! ${secondCommand}`);
+    await page.evaluate(() => {
+      document.querySelector<HTMLButtonElement>(".bang-bar-kill")?.click();
+      const until = performance.now() + 1_400;
+      while (performance.now() < until) {
+        // Deliberately keep inbound WebSocket messages queued.
+      }
+      document.querySelector<HTMLTextAreaElement>(".prompt-box textarea")?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    await page.locator(".bang-output", { hasText: "replacement-pty-ready" }).waitFor();
+    await bar.waitFor();
+    assert.equal(
+      await bar.locator(".bang-bar-cmd").getAttribute("title"),
+      secondCommand,
+      "the accepted replacement PTY lost its controls",
+    );
+    await bar.locator(".bang-bar-kill").click();
+    await bar.waitFor({ state: "detached" });
+  });
+});
+
 test("NF: hidden viewport toasts a permission then the turn end; visibility closes both", async () => {
   const token = "e2e-notify-7b31";
   type ToastRec = { title: string; body?: string; tag?: string; closed: boolean };
