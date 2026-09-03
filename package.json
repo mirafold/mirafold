@@ -49,7 +49,7 @@
   "scripts": {
     "dev:server": "MIRAFOLD_TOKEN= tsx watch server/index.ts",
     "dev:web": "vite",
-    "dev": "concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
+    "dev": "PORT=${PORT:-3100} MIRAFOLD_STRICT_PORT=1 concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
     "build": "vite build && yarn build:server",
     "build:server": "esbuild server/index.ts server/render-mcp.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server",
     "prepack": "yarn build",

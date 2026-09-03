@@ -26,7 +26,7 @@ import {
   verifyToken,
 } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
-import { envInt } from "./env";
+import { envFlag, envInt } from "./env";
 import { VERSION } from "./version";
 
 const log = createLogger("mirafold");
@@ -307,9 +307,13 @@ wss.on("close", () => clearInterval(heartbeat));
 // keeps non-browser LAN clients — which send no Origin and so pass the guard
 // — off the socket entirely. Remote viewports never reach this listener: the
 // relay path is an outbound dial (below).
-// A second daemon (another project, another terminal) must not crash on
-// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
+// A second installed daemon (another project, another terminal) must not crash
+// on EADDRINUSE — walk up a few ports; the launcher reads the final URL off
+// stdout. Development is different: Vite must know the daemon's port before it
+// proxies /ws, so `yarn dev` pins one shared port and asks us to fail instead of
+// silently walking away from its proxy target.
 const basePort = envInt("PORT", 3000);
+const strictPort = envFlag(process.env.MIRAFOLD_STRICT_PORT);
 const listen = (port: number) => {
   const onListening = () => {
     server.removeListener("error", onBusy); // later errors stay loud, as before
@@ -329,6 +333,12 @@ const listen = (port: number) => {
     // walk's eventual success fires EVERY attempt's callback and the log
     // claims "server on" ports we never bound — a line users copy.
     server.removeListener("listening", onListening);
+    if (err.code === "EADDRINUSE" && strictPort) {
+      throw new Error(
+        `port ${port} is already in use; this launch requires that exact port`,
+        { cause: err },
+      );
+    }
     if (err.code === "EADDRINUSE" && port - basePort < 20) {
       log.info(`:${port} busy — trying :${port + 1}`);
       listen(port + 1);
