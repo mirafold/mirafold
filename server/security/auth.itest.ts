@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { DEV_PORT_CONFLICT_EXIT_CODE } from "../env";
 
 // The 4.5 auth gate over real HTTP and a real ws handshake. The token
 // gates both surfaces; `?token=` mints the SameSite cookie then redirects (L.2b).
@@ -47,6 +48,7 @@ test("strict port mode refuses a collision instead of leaving a fixed proxy behi
   await assert.rejects(
     startDaemon({ PORT: String(d.port), MIRAFOLD_STRICT_PORT: "1" }),
     (err: Error) => {
+      assert.match(err.message, new RegExp(`daemon exited \\(${DEV_PORT_CONFLICT_EXIT_CODE}\\)`));
       assert.match(err.message, new RegExp(`port ${d.port} is already in use`));
       assert.match(err.message, /requires that exact port/);
       assert.doesNotMatch(err.message, /busy — trying/);
