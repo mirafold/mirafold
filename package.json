@@ -1,6 +1,6 @@
 {
   "name": "mirafold",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "A faithful browser re-skin of the coding agents you already use — Claude Agent, Codex, Gemini CLI, or OpenCode — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
@@ -68,6 +68,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@parcel/watcher": "^2.6.0",
     "express": "^5.2.1",
+    "fast-uri": "^3.1.7",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
