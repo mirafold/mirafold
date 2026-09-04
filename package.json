@@ -68,7 +68,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@parcel/watcher": "^2.6.0",
     "express": "^5.2.1",
-    "fast-uri": "^3.1.7",
+    "fast-uri": "^4.1.4",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
