@@ -81,3 +81,20 @@ test("CS: garbled dates degrade to dateless lines, never 'Invalid Date'", () => 
   });
   assert.ok(!confirmLede(reply({ status: "active", periodEnd: "garbage" })).includes("Invalid"));
 });
+
+test("DA.5: arbitrary status text and malformed cancellation dates cannot become shell claims", () => {
+  for (const status of ["\u202eactive — renewed", "active\nsubscription ended", "future_status", undefined]) {
+    assert.deepEqual(describeSubscription(reply({ status })), {
+      line: "subscription status unavailable",
+      action: null,
+    });
+  }
+  for (const cancelAt of ["soon", "0", "1", "999", "09/01/2026", "2026-09-01", "2026-02-30T00:00:00Z"]) {
+    assert.deepEqual(
+      describeSubscription(reply({ status: "active", periodEnd: "2026-09-01T12:00:00Z", cancelAt })),
+      { line: "active — renews Sep 1, 2026", action: "cancel" },
+      cancelAt,
+    );
+    assert.equal(day(cancelAt), null, cancelAt);
+  }
+});

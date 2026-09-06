@@ -309,6 +309,9 @@ export type ViewportMsgBody =
   // clients strip it and keep the one-row-per-agent picker.
   | {
       type: "agents";
+      // A private Desktop launch changes only local trusted-shell copy.
+      // Absent for terminal launches and every remote viewport.
+      host?: "desktop";
       agents: AgentInfo[];
       default: AgentName;
       cwd?: string;
@@ -323,9 +326,15 @@ export type ViewportMsgBody =
       // `unentitled` = nothing configured (the button offers Mirafold Pro);
       // `opt-out` = MIRAFOLD_RELAY_URL=off; `malformed-url` = the explicit
       // relay URL was refused at boot. LOCAL viewports only — a remote
-      // viewport is proof the relay is on; it gets neither field. Old
-      // clients strip it and keep no button.
+      // viewport is proof the relay is on; it gets neither field.
       relayOff?: "unentitled" | "opt-out" | "malformed-url";
+      // Optional/additive: an operations override cannot ride the gated
+      // relay's HTTP header. This needs its own field because the previous
+      // shell renders unknown values of the already-recognized `relayOff`
+      // field as raw text. Previous clients ignore this field and keep no
+      // Pair button; current clients map only this exact literal to the
+      // actionable off state. LOCAL viewports only.
+      relayConfigProblem?: "invalid-entitlement-token";
       version?: string;
       // Optional/additive: this daemon runs on a license key and can manage
       // the subscription behind it — the "manage subscription" affordance's
@@ -364,7 +373,7 @@ export type ViewportMsgBody =
   // refused (`reason` is the billing backend's line, capped) — no QR, the
   // offer instead; `unreachable` = the backend couldn't be asked — `cached`
   // says whether an unexpired token still carries the relay meanwhile;
-  // `checking` = the first exchange hasn't answered yet. Never a claim of
+  // `checking` = awaiting an exchange at boot or after token expiry. Never a claim of
   // validity the backend didn't make. Old clients strip it.
   | {
       type: "entitlement";
@@ -778,7 +787,9 @@ export type ClientMsg =
   | { type: "client_error"; message: string; clientVersion?: string };
 
 /** Why remote access is off (`agents.relayOff`) — declared once here. */
-export type RelayOffReason = NonNullable<Extract<WireMsg, { type: "agents" }>["relayOff"]>;
+export type RelayOffReason = NonNullable<
+  Extract<WireMsg, { type: "agents" }>["relayOff" | "relayConfigProblem"]
+>;
 
 /** The daemon's license-key read (`entitlement`), minus the tag — declared once here. */
 export type EntitlementView = Omit<Extract<WireMsg, { type: "entitlement" }>, "type">;

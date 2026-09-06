@@ -172,7 +172,11 @@ export function startRelayClient(opts: {
       // proxy: ~5 s) must not have already reset it.
       confirmTimer = setTimeout(() => {
         confirmed = true;
-        log.info(`paired with ${opts.url}`);
+        // The configured URL may contain userinfo or a secret-bearing path or
+        // query. The terminal already printed it in the explicitly
+        // non-paste-safe boot block; the persistent flight recorder gets only
+        // this fixed connection-state label.
+        log.info("paired with relay");
       }, PAIR_CONFIRM_MS);
     });
     ws.on("message", (data) => {
@@ -269,13 +273,23 @@ export function startRelayClient(opts: {
       // long the close took to arrive (a wall it can't beat, e.g. a lapsed
       // license, keeps widening toward RECONNECT_MAX_MS instead of churning).
       if (confirmed && !refusal) backoff = RECONNECT_MIN_MS;
-      const t = setTimeout(() => void dial(pair), backoff);
+      const t = setTimeout(() => ownDial(pair), backoff);
       t.unref();
       backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
     });
   };
 
-  void derivePair(opts.code).then((pair) => void dial(pair));
+  // `new WebSocket()` can reject a URL synchronously, while token and crypto
+  // setup are asynchronous. Own every dial promise so no malformed edge (or
+  // unexpected setup failure) can reach the process-wide unhandled-rejection
+  // exit path and take local sessions down with remote access.
+  const setupFailed = () => {
+    if (!stopped) log.info("relay setup failed — remote access is off for this launch; local sessions are unaffected");
+  };
+  const ownDial = (pair: PairSecret) => {
+    void dial(pair).catch(setupFailed);
+  };
+  void derivePair(opts.code).then(ownDial, setupFailed);
   return {
     stop: () => {
       stopped = true;

@@ -130,6 +130,9 @@ export function scrub(msg: string): string {
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
       // OpenAI / Anthropic / OpenRouter style: sk-…, sk-ant-…, sk-or-…
       .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted-key]")
+      // Mirafold license keys, including a key embedded in a diagnostic's
+      // longer base32 run. The log sink must never retain a key prefix.
+      .replace(/mf_[a-z2-7]{20,}/g, "[redacted-key]")
       // Google API keys
       .replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, "[redacted-key]")
       // GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_)

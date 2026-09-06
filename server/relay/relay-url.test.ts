@@ -4,6 +4,7 @@ import {
   carriesCredentialInClear,
   DEFAULT_APP_URL,
   DEFAULT_RELAY_URL,
+  relayLogLabel,
   resolveRelayPlan,
 } from "./relay-url";
 
@@ -31,11 +32,46 @@ test("a hand-issued token counts as entitled too", () => {
   assert.equal(plan.kind === "dial" && plan.url, DEFAULT_RELAY_URL);
 });
 
+test("DA.4C: every header-invalid override keeps a gated relay off without license fallback", () => {
+  for (const token of ["bad\ntoken", "bad\rtoken", "bad\u000btoken", "bad☃token"]) {
+    for (const withFallbackKey of [false, true]) {
+      assert.deepEqual(
+        resolveRelayPlan({
+          MIRAFOLD_ENTITLEMENT_TOKEN: token,
+          ...(withFallbackKey ? { MIRAFOLD_LICENSE_KEY: "mf_fallback_must_not_win" } : {}),
+        }),
+        { kind: "off", reason: "invalid-entitlement-token" },
+        `${JSON.stringify(token)}, fallback=${withFallbackKey}`,
+      );
+    }
+  }
+
+  // Match Node's actual header boundary: Latin-1 remains valid.
+  assert.equal(resolveRelayPlan({ MIRAFOLD_ENTITLEMENT_TOKEN: "custom.é" }).kind, "dial");
+});
+
+test("DA.6 review: an invalid override blocks every explicit relay", () => {
+  for (const withEntitlementUrl of [false, true]) {
+    assert.deepEqual(
+      resolveRelayPlan({
+        MIRAFOLD_RELAY_URL: "ws://127.0.0.1:9100",
+        MIRAFOLD_ENTITLEMENT_TOKEN: "bad\ntoken",
+        MIRAFOLD_LICENSE_KEY: "mf_fallback_must_not_win",
+        ...(withEntitlementUrl
+          ? { MIRAFOLD_ENTITLEMENT_URL: "http://127.0.0.1:9200/api/entitlement" }
+          : {}),
+      }),
+      { kind: "off", reason: "invalid-entitlement-token" },
+      `entitlement URL configured=${withEntitlementUrl}`,
+    );
+  }
+});
+
 test("whitespace-only entitlement is NOT entitled", () => {
   assert.equal(resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "   " }).kind, "off");
 });
 
-// The self-host / dev-stub path: an explicit URL keeps pre-bake behavior
+// The self-host / dev-stub path: a valid explicit URL keeps pre-bake behavior
 // verbatim — dialed entitled or not (an ungated relay accepts tokenless
 // dials), and NO app-origin default (the HTTP-twin fallback serves dev).
 test("explicit URL dials with no entitlement and no default app origin", () => {
@@ -59,6 +95,42 @@ test("explicit MIRAFOLD_APP_URL rides any dial, trailing slash trimmed", () => {
     MIRAFOLD_APP_URL: "https://app.example",
   });
   assert.equal(defaulted.kind === "dial" && defaulted.appUrl, "https://app.example");
+});
+
+test("DA.5: persistent relay labels never repeat a configured URL", () => {
+  const secretBearing = resolveRelayPlan({
+    MIRAFOLD_RELAY_URL:
+      "wss://alice:password@relay.example/private-route-credential?sig=query-secret",
+  });
+  assert.equal(secretBearing.kind, "dial");
+  if (secretBearing.kind !== "dial") return;
+  const label = relayLogLabel(secretBearing);
+  assert.equal(label, "configured relay");
+  for (const secret of ["alice", "password", "private-route-credential", "query-secret"]) {
+    assert.ok(!label.includes(secret), secret);
+  }
+
+  const hosted = resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_test" });
+  assert.equal(hosted.kind === "dial" && relayLogLabel(hosted), "hosted relay");
+});
+
+test("DA.5: every relay URL fragment delimiter is refused during planning", () => {
+  for (const raw of [
+    "wss://relay.example/private#fragment-secret",
+    "ws://127.0.0.1:1#",
+    "ws://127.0.0.1:1/#",
+    "ws://127.0.0.1:1/path?#",
+  ]) {
+    assert.deepEqual(resolveRelayPlan({ MIRAFOLD_RELAY_URL: raw }), {
+      kind: "off",
+      reason: "malformed-url",
+      raw,
+    });
+  }
+
+  const encoded = "ws://127.0.0.1:1/path%23segment";
+  const plan = resolveRelayPlan({ MIRAFOLD_RELAY_URL: encoded });
+  assert.equal(plan.kind === "dial" && plan.url, encoded, "an encoded path octet is not a fragment");
 });
 
 test("the documented opt-outs turn remote access off quietly", () => {
@@ -130,9 +202,10 @@ test("presentsOnEntitlement: the hosted default, or an operator's own backend �
 
 test("review 2026-08-29: the hosted relay spelled out by hand keeps the hosted semantics", async () => {
   const { presentsOnEntitlement } = await import("./relay-url");
-  // A user who copies the default into .env must get exactly what leaving it
-  // unset gets: the hosted app origin (the relay host serves no app) and the
-  // license gate — never an "explicit" self-host plan with a twin-fallback QR.
+  // A user who sets the default explicitly in the parent shell environment
+  // must get exactly what leaving it unset gets: the hosted app origin (the
+  // relay host serves no app) and the license gate — never an "explicit"
+  // self-host plan with a twin-fallback QR.
   const byHand = resolveRelayPlan({ MIRAFOLD_RELAY_URL: DEFAULT_RELAY_URL, MIRAFOLD_LICENSE_KEY: "mf_x" });
   assert.deepEqual(byHand, resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_x" }));
   assert.equal(byHand.kind === "dial" && byHand.appUrl, DEFAULT_APP_URL);

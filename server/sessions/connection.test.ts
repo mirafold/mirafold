@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeBackendForLog, escapeTranscriptFence } from "./connection";
+import { describeBackendForLog, escapeTranscriptFence, openConnection, type ConnectionOptions } from "./connection";
+import { SessionRegistry } from "./registry";
+import type { WireMsg } from "../protocol";
 import { escapeTranscriptAttr } from "./bang-handlers";
 
 // 2026-07-17 audit, finding 4: a `!` command's output rides to the agent
@@ -48,4 +50,83 @@ test("UX.8: backend logs never contain configured URL authentication or query da
   });
   assert.equal(summary, "local via configured endpoint (model forged-log-line)");
   assert.doesNotMatch(summary, /alice|password|example\.test|topsecret|\n/);
+});
+
+
+test("DA.2: only a Desktop startup option marks local hellos, including refreshes and forged client input", async (t) => {
+  // This test triggers a real refresh, but no network discovery. Restore the
+  // process settings after the connection closes.
+  const names = ["MIRAFOLD_LOCAL_DISCOVERY", "MIRAFOLD_LOCAL_ENDPOINTS"] as const;
+  const saved = names.map((name) => process.env[name]);
+  process.env.MIRAFOLD_LOCAL_DISCOVERY = "off";
+  process.env.MIRAFOLD_LOCAL_ENDPOINTS = "";
+  t.after(() => names.forEach((name, i) => {
+    if (saved[i] === undefined) delete process.env[name];
+    else process.env[name] = saved[i];
+  }));
+
+  for (const options of [
+    {},
+    { host: "desktop" },
+    { host: "desktop", remote: true },
+  ] satisfies ConnectionOptions[]) {
+    await t.test(JSON.stringify(options), async (t) => {
+      const reg = new SessionRegistry({ backend: { agent: "claude-code", kind: "none", live: false } });
+      const seen: WireMsg[] = [];
+      const actions = { status: async () => ({ view: { status: "active" as const } }) };
+      const conn = openConnection(reg, (m) => seen.push(m), {
+        ...options,
+        relayOff: "unentitled",
+        subscription: { ...actions, cancel: actions.status, uncancel: actions.status },
+        entitlement: { state: () => ({ state: "invalid" }), onChange: () => () => {} },
+      });
+      t.after(() => conn.close());
+      const hellos = () => seen.filter((m) => m.type === "agents");
+      assert.equal(hellos().length, 1);
+      // Neither a client-forged server frame nor extra refresh properties
+      // can override the startup option in either direction.
+      conn.handleMessage(JSON.stringify({ type: "agents", host: "desktop", agents: [] }));
+      conn.handleMessage(JSON.stringify({ type: "refresh_agents", host: "terminal" }));
+      conn.handleMessage(JSON.stringify({ type: "refresh_agents", host: "desktop" }));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.ok(hellos().length >= 2, "the refresh must actually produce another hello");
+      for (const hello of hellos()) {
+        const desktop = "host" in options && options.host === "desktop" && !("remote" in options && options.remote);
+        assert.equal(Object.hasOwn(hello, "host"), desktop);
+        assert.equal(hello.host, desktop ? "desktop" : undefined);
+        if ("remote" in options && options.remote) {
+          for (const field of ["host", "relayOff", "relayConfigProblem", "billing", "entitlement"]) {
+            assert.equal(Object.hasOwn(hello, field), false, `remote hello carried ${field}`);
+          }
+        }
+      }
+    });
+  }
+});
+
+test("DA.4C: the invalid-token state uses a new local field that the previous client ignores", () => {
+  const reg = new SessionRegistry({ backend: { agent: "claude-code", kind: "none", live: false } });
+  const local: WireMsg[] = [];
+  const localConnection = openConnection(reg, (message) => local.push(message), {
+    relayOff: "invalid-entitlement-token",
+  });
+  localConnection.close();
+  const localHello = local.find((message) => message.type === "agents");
+  assert.ok(localHello?.type === "agents");
+  assert.equal(localHello.relayOff, undefined, "the previous client must not receive an unknown old-field value");
+  assert.equal(localHello.relayConfigProblem, "invalid-entitlement-token");
+  // The previous client knows only `relayOff`; absence means it keeps no Pair
+  // card instead of rendering a future machine value as text.
+  assert.equal((localHello as { relayOff?: string }).relayOff ?? "", "");
+
+  const remote: WireMsg[] = [];
+  const remoteConnection = openConnection(reg, (message) => remote.push(message), {
+    relayOff: "invalid-entitlement-token",
+    remote: true,
+  });
+  remoteConnection.close();
+  const remoteHello = remote.find((message) => message.type === "agents");
+  assert.ok(remoteHello?.type === "agents");
+  assert.equal(Object.hasOwn(remoteHello, "relayOff"), false);
+  assert.equal(Object.hasOwn(remoteHello, "relayConfigProblem"), false);
 });

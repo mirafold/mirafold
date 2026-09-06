@@ -26,15 +26,32 @@ import {
 // ws(s) origin, present when `url` is a separate static app origin — it rides
 // the QR fragment so the loaded page knows where to dial.
 export type { EntitlementView, RelayInfo } from "../transport/daemon-hello";
-import type { AgentsHello, EntitlementView, RelayInfo } from "../transport/daemon-hello";
+import type {
+  AgentsHello,
+  EntitlementView,
+  RelayInfo,
+  RelayOffReason,
+} from "../transport/daemon-hello";
 
 /** Why remote access is off (hello `relayOff`) — the card's state when there
  *  is no relay to draw a QR for. */
-export type RelayOff = NonNullable<AgentsHello["relayOff"]>;
+export type RelayOff = RelayOffReason;
+export type DaemonHost = NonNullable<AgentsHello["host"]>;
 
 /** Where "get Mirafold Pro" goes. A plain link (new tab, no opener): the
  *  destination is visible on hover and nothing about it is scripted. */
 export const PAY_URL = "https://mirafold.com/pay";
+// Fixed, non-secret marker for Desktop's protected browser flow. Electron
+// main supplies callback/state; this renderer supplies no URL parameters.
+export const DESKTOP_ACTIVATION_URL = "https://mirafold.com/activate";
+
+function DesktopActivationHint() {
+  return (
+    <div className="pair-hint pair-hint-sub">
+      Activation finishes in your system browser and returns to Mirafold Desktop automatically.
+    </div>
+  );
+}
 
 // Names the dialog for a screen reader. A constant is safe: the card is
 // mounted only while open, and one status bar means one of these.
@@ -152,7 +169,7 @@ function ManageSubscription({
 // The card's body when there is no relay: the honest reason, and — when the
 // reason is that nothing is configured — the one way to get one. Shell-owned
 // copy; the pay link is an ordinary anchor so the browser shows where it goes.
-export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
+export function RemoteAccessOff({ reason, host }: { reason: RelayOff; host?: DaemonHost }) {
   if (reason === "unentitled") {
     return (
       <>
@@ -160,11 +177,21 @@ export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
           Pair your phone and open this daemon's sessions from anywhere — end-to-end
           encrypted, through the Mirafold relay. Remote access is part of Mirafold Pro.
         </div>
-        <a className="pair-cta" href={PAY_URL} target="_blank" rel="noopener noreferrer">
+        <a className="pair-cta" href={host === "desktop" ? DESKTOP_ACTIVATION_URL : PAY_URL} target="_blank" rel="noopener noreferrer">
           get Mirafold Pro ↗
         </a>
+        {host === "desktop" && <DesktopActivationHint />}
         <div className="pair-hint pair-hint-sub">
-          Already have a license key? Set <code>MIRAFOLD_LICENSE_KEY</code> and relaunch.
+          {host === "desktop" ? (
+            <>
+              Already have a license key?{" "}
+              <a href={DESKTOP_ACTIVATION_URL} target="_blank" rel="noopener noreferrer">
+                connect it in your system browser ↗
+              </a>.
+            </>
+          ) : (
+            <>Already have a license key? Set <code>MIRAFOLD_LICENSE_KEY</code> and relaunch.</>
+          )}
         </div>
       </>
     );
@@ -180,8 +207,17 @@ export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
   if (reason === "malformed-url") {
     return (
       <div className="pair-hint">
-        <code>MIRAFOLD_RELAY_URL</code> is not a valid <code>ws://</code> or <code>wss://</code>{" "}
-        address, so remote access is off for this launch. Fix it and relaunch to pair a phone.
+        <code>MIRAFOLD_RELAY_URL</code> is not a usable Mirafold relay address. Use{" "}
+        <code>ws://</code> or <code>wss://</code> with no fragment, then relaunch to pair a phone.
+      </div>
+    );
+  }
+  if (reason === "invalid-entitlement-token") {
+    return (
+      <div className="pair-hint">
+        <code>MIRAFOLD_ENTITLEMENT_TOKEN</code> cannot be used as an HTTP request header, so
+        remote access is off for this launch. Fix or remove that setting and relaunch to pair a
+        phone.
       </div>
     );
   }
@@ -201,7 +237,7 @@ export function entitlementGates(view: EntitlementView | undefined): boolean {
 // The card's body when the relay is configured but the license key doesn't
 // carry it. Shell-owned copy; the backend's refusal line is quoted as its
 // own, never dressed up as ours. The parent keeps the manage link under it.
-export function LicenseGate({ view }: { view: EntitlementView }) {
+export function LicenseGate({ view, host }: { view: EntitlementView; host?: DaemonHost }) {
   if (view.state === "checking") {
     return <div className="sub-line sub-dim">checking your license key…</div>;
   }
@@ -217,9 +253,10 @@ export function LicenseGate({ view }: { view: EntitlementView }) {
           ) : null}
           . Remote access is off until a subscription is active — local sessions are unaffected.
         </div>
-        <a className="pair-cta" href={PAY_URL} target="_blank" rel="noopener noreferrer">
+        <a className="pair-cta" href={host === "desktop" ? DESKTOP_ACTIVATION_URL : PAY_URL} target="_blank" rel="noopener noreferrer">
           renew or get Mirafold Pro ↗
         </a>
+        {host === "desktop" && <DesktopActivationHint />}
       </>
     );
   }
@@ -249,6 +286,7 @@ export function pairTitle(a: { href?: string; gated: boolean; relayOff?: RelayOf
  *  when this daemon runs on a key — a subscriber must never lose the one
  *  path to their subscription, whatever the relay is doing. */
 export function PairCardBody({
+  host,
   href,
   relayOff,
   entitlement,
@@ -260,6 +298,7 @@ export function PairCardBody({
   copyState,
   onCopy,
 }: {
+  host?: DaemonHost;
   href?: string;
   relayOff?: RelayOff;
   entitlement?: EntitlementView;
@@ -290,7 +329,7 @@ export function PairCardBody({
     const gate = relayOff === undefined && entitlement;
     return (
       <>
-        {gate ? <LicenseGate view={entitlement} /> : <RemoteAccessOff reason={relayOff as RelayOff} />}
+        {gate ? <LicenseGate view={entitlement} host={host} /> : <RemoteAccessOff reason={relayOff as RelayOff} host={host} />}
         {manageLink}
       </>
     );
@@ -340,6 +379,7 @@ export function PairCardBody({
 // `entitlement`: the daemon's license-key read. A read that doesn't carry
 // the relay replaces the QR with the truth (LicenseGate) — the button stays.
 export function ConnectDevice({
+  host,
   relay,
   relayOff,
   entitlement,
@@ -348,6 +388,7 @@ export function ConnectDevice({
   subRequest,
   subReply,
 }: {
+  host?: DaemonHost;
   relay?: RelayInfo;
   relayOff?: RelayOff;
   entitlement?: EntitlementView;
@@ -397,6 +438,7 @@ export function ConnectDevice({
             </button>
           </div>
           <PairCardBody
+            host={host}
             href={href}
             relayOff={relayOff}
             entitlement={gated ? entitlement : relay ? entitlement : undefined}

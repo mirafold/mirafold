@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -47,6 +47,18 @@ test("scrub redacts known provider key shapes anywhere in the line", () => {
   assert.match(scrub("AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q rejected"), /\[redacted-key\]/);
   assert.match(scrub("using ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"), /\[redacted-key\]/);
   assert.equal(scrub("sk-abcdefghijklmnopqrstuvwx").includes("abcdefghij"), false);
+});
+
+test("DA.3: Mirafold license keys are removed even when adjacent to ordinary text or clipped by the sink", async () => {
+  const { sanitizeLogLine } = await import("./log");
+  for (const size of [20, 26, 40]) {
+    const key = `mf_${"b".repeat(size)}`;
+    assert.equal(scrub(`denied ${key}`), "denied [redacted-key]");
+    assert.equal(scrub(`prefix${key}abc`), "prefix[redacted-key]");
+    const clipped = sanitizeLogLine(`${"x".repeat(3995)}${key}`);
+    assert.ok(!clipped.includes("mf_"));
+  }
+  assert.equal(scrub("mf_not_a_license"), "mf_not_a_license");
 });
 
 test("AUDIT: scrub redacts AWS and Google Vertex credential families", () => {
@@ -99,6 +111,89 @@ test("the scrubber is actually WIRED to both sinks, not just exported", () => {
     assert.equal((onDisk.match(/\[redacted\]/g) ?? []).length, 2); // error() and file()
     assert.match(onDisk, /gemini exited 1/); // still a useful diagnostic
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("DA.5: the real startup file sink never records a configured relay URL", { timeout: 20_000 }, async () => {
+  // Exercise server/index.ts itself: a helper-only assertion would survive a
+  // regression that put relay.url back into this one production call site.
+  // The fresh cwd contains no project configuration file, and the child gets
+  // an explicit minimal environment so it cannot inherit credentials or call
+  // a paid backend.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-relay-log-"));
+  const logPath = path.join(dir, "mirafold.log");
+  const relayUrl =
+    "ws://relay-user:relay-password@127.0.0.1:1/private-relay-path-credential?sig=query-secret";
+  const serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const child = spawn(
+    process.execPath,
+    ["--import", fileURLToPath(import.meta.resolve("tsx")), path.join(serverDir, "index.ts")],
+    {
+      cwd: dir,
+      env: {
+        PATH: process.env.PATH ?? "",
+        PORT: "0",
+        MIRAFOLD_AGENT: "claude-code",
+        MIRAFOLD_TOKEN: "",
+        MIRAFOLD_LOG_FILE: logPath,
+        MIRAFOLD_SESSION_DIR: path.join(dir, "sessions"),
+        MIRAFOLD_LOCAL_DISCOVERY: "off",
+        MIRAFOLD_LOCAL_ENDPOINTS: "",
+        MIRAFOLD_RELAY_URL: relayUrl,
+        MIRAFOLD_RELAY_CODE: "da5-production-sink-test-code",
+        MIRAFOLD_APP_URL: "",
+        MIRAFOLD_LICENSE_KEY: "",
+        MIRAFOLD_ENTITLEMENT_TOKEN: "",
+        MIRAFOLD_ENTITLEMENT_URL: "",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_BASE_URL: "",
+        OPENAI_API_KEY: "",
+        GEMINI_API_KEY: "",
+        GOOGLE_API_KEY: "",
+        CODEX_HOME: path.join(dir, "no-codex-home"),
+        CLAUDE_CONFIG_DIR: path.join(dir, "no-claude-home"),
+        OPENCODE_BIN: path.join(dir, "no-opencode"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (data: Buffer) => (stdout += String(data)));
+  child.stderr.on("data", (data: Buffer) => (stderr += String(data)));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(
+        () => reject(new Error(`daemon did not start; stdout:\n${stdout}\nstderr:\n${stderr}`)),
+        15_000,
+      );
+      const poll = setInterval(() => {
+        if (!stdout.includes("server on http://127.0.0.1:0/")) return;
+        clearInterval(poll);
+        clearTimeout(deadline);
+        resolve();
+      }, 20);
+      child.once("exit", (code, signal) => {
+        clearInterval(poll);
+        clearTimeout(deadline);
+        reject(new Error(`daemon exited (${code ?? signal}); stdout:\n${stdout}\nstderr:\n${stderr}`));
+      });
+    });
+
+    const onDisk = fs.readFileSync(logPath, "utf8");
+    assert.ok(stdout.includes(relayUrl), "the explicitly warned terminal boot block lost the configured URL");
+    assert.match(onDisk, /dialing configured relay \(pairing code elided\)/);
+    for (const marker of ["relay-user", "relay-password", "private-relay-path-credential", "query-secret"]) {
+      assert.ok(!onDisk.includes(marker), `${marker} reached the persistent startup log:\n${onDisk}`);
+    }
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      child.kill();
+      await exited;
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
