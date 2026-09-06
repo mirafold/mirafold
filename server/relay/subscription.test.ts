@@ -109,10 +109,34 @@ test("CS: oversized billing JSON and date fields never reach the subscription vi
     assert.deepEqual(await actions.status(), { error: SUPPORT_FALLBACK });
     oversizedBody = false;
     assert.deepEqual(await actions.status(), {
-      view: { status: "active", cancelAt: "soon" },
+      view: { status: "active" },
     });
   } finally {
     m.mock.restore();
+  }
+});
+
+test("DA.5: only known subscription states and strict ISO instants reach the shell", async (t) => {
+  let body: Record<string, unknown> = { status: "active" };
+  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(body));
+  const actions = createSubscriptionActions({ MIRAFOLD_LICENSE_KEY: KEY })!;
+  try {
+    for (const status of ["\u202eactive — renewed", "active\nsubscription ended", "future_status", "x".repeat(100)]) {
+      body = { status, periodEnd: "not-a-date", cancelAt: "soon" };
+      assert.deepEqual(await actions.status(), { view: { status: "unknown" } });
+    }
+    for (const status of ["trialing", "active", "past_due", "paused", "canceled"]) {
+      body = { status, periodEnd: "2026-09-01T00:00:00Z", cancelAt: null };
+      assert.deepEqual(await actions.status(), {
+        view: { status, periodEnd: "2026-09-01T00:00:00Z" },
+      });
+    }
+    for (const malformed of ["soon", "0", "1", "999", "09/01/2026", "2026-09-01", "2026-02-30T00:00:00Z"]) {
+      body = { status: "active", periodEnd: malformed, cancelAt: malformed };
+      assert.deepEqual(await actions.status(), { view: { status: "active" } }, malformed);
+    }
+  } finally {
+    fetch.mock.restore();
   }
 });
 
@@ -122,4 +146,39 @@ test("CS: the throttle admits one in-flight action and floors restarts", () => {
   assert.equal(t.tryStart(), false, "second start while in flight is refused");
   t.done();
   assert.equal(t.tryStart(), false, "the min gap holds even after completion");
+});
+
+test("DA.3: every billing string removes the exact license key before any truncation", async (t) => {
+  const actions = createSubscriptionActions({ MIRAFOLD_LICENSE_KEY: KEY })!;
+  for (const [status, body] of [
+    [403, { reason: `prefix${KEY}${KEY}: refused` }],
+    [400, { error: `bad ${KEY}` }],
+    [403, { reason: `${"x".repeat(195)}${KEY}` }],
+    [200, { status: `${"x".repeat(35)}${KEY}`, periodEnd: KEY, cancelAt: `date ${KEY}` }],
+  ] as const) {
+    const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(body, { status }));
+    try {
+      for (const act of [actions.status, actions.cancel, actions.uncancel]) {
+        const result = JSON.stringify(await act());
+        assert.ok(!result.includes(KEY));
+        assert.ok(!result.includes("mf_"), "clipping retained the beginning of the credential");
+        if (status !== 200) {
+          assert.ok(result.includes("[lice"), "a displayed refusal must retain the replacement marker");
+        }
+      }
+    } finally { fetch.mock.restore(); }
+  }
+});
+
+test("DA.5 cold review: status redaction precedes the known-state allowlist", async (t) => {
+  const licenseKey = "active";
+  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({ status: licenseKey }));
+  try {
+    const actions = createSubscriptionActions({ MIRAFOLD_LICENSE_KEY: licenseKey })!;
+    const result = await actions.status();
+    assert.deepEqual(result, { view: { status: "unknown" } });
+    assert.ok(!JSON.stringify(result).includes(licenseKey), "the configured key reached the viewport result");
+  } finally {
+    fetch.mock.restore();
+  }
 });

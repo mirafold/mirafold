@@ -18,9 +18,11 @@
 // the dial-out carries no header — a gated relay refuses it with 4007 and
 // relay-client already prints the actionable line.
 
+import { performance } from "node:perf_hooks";
 import { createLogger } from "../log";
 import type { EntitlementView } from "../protocol";
 import { carriesCredentialInClear } from "./relay-url";
+import { isEntitlementHeaderValue } from "./relay-protocol";
 export type { EntitlementView };
 
 const log = createLogger("relay");
@@ -33,7 +35,18 @@ const FORCED_REFRESH_MIN_GAP_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 const BILLING_RESPONSE_MAX_BYTES = 64 * 1024;
 const ENTITLEMENT_TOKEN_MAX_BYTES = 8_192;
-// A backend line rides to the pair/manage card verbatim — bounded. Shared
+// Exact equality is unambiguous for every custom key. Embedded containment is
+// meaningful only once the value is specific enough: otherwise a supported
+// one-character custom key such as `a` would reject ordinary tokens like
+// `safe.token`. Sixteen characters covers every official mf_ key and useful
+// custom credentials without turning incidental short overlaps into outages.
+const EMBEDDED_LICENSE_KEY_MIN_CHARS = 16;
+
+const tokenReflectsLicenseKey = (token: string, licenseKey: string): boolean =>
+  token === licenseKey ||
+  (licenseKey.length >= EMBEDDED_LICENSE_KEY_MIN_CHARS && token.includes(licenseKey));
+// A backend line rides to the pair/manage card with the known key removed
+// and its length bounded. Shared
 // with subscription.ts so both cards cap alike.
 export const MAX_REASON_CHARS = 200;
 
@@ -54,6 +67,11 @@ export type EntitlementMode = "token-override" | "license-key" | "none";
 // Never key bytes in a log line, not even a prefix — the flight recorder
 // is promised paste-safe (audit 2026-08-26).
 const mask = (_s: string) => "[license key]";
+
+/** A billing service already knows this key and can echo it in any string.
+ * Remove the exact value before clipping, logging, or publishing that text. */
+export const redactLicenseKey = (text: string, licenseKey: string): string =>
+  licenseKey ? text.split(licenseKey).join(mask(licenseKey)) : text;
 
 export const DEFAULT_ENTITLEMENT_URL = "https://mirafold.com/api/entitlement";
 
@@ -105,15 +123,24 @@ export function createEntitlementTokenSource(env: {
   MIRAFOLD_LICENSE_KEY?: string;
   MIRAFOLD_ENTITLEMENT_URL?: string;
 }): EntitlementTokenSource & { mode: EntitlementMode } {
-  const override = env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim();
+  const suppliedOverride = env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim();
+  const override = suppliedOverride && isEntitlementHeaderValue(suppliedOverride)
+    ? suppliedOverride
+    : undefined;
   const licenseKey = env.MIRAFOLD_LICENSE_KEY?.trim();
   const url = resolveEntitlementUrl(env);
 
-  if (override) {
+  if (suppliedOverride) {
     if (licenseKey) {
       log.warn(
         `both MIRAFOLD_ENTITLEMENT_TOKEN and MIRAFOLD_LICENSE_KEY are set — ` +
           `the token override wins; the license key is ignored`,
+      );
+    }
+    if (!override) {
+      log.warn(
+        "MIRAFOLD_ENTITLEMENT_TOKEN is not usable as a request header and will be omitted — " +
+          "the selected relay may refuse a tokenless dial; local sessions are unaffected",
       );
     }
     return {
@@ -145,42 +172,91 @@ export function createEntitlementTokenSource(env: {
   // sets it, and only a CHANGED read reaches listeners.
   let view: EntitlementView = { state: "checking" };
   const listeners = new Set<(v: EntitlementView) => void>();
+  let dispatching = false;
+  let pendingDispatch = false;
   // Dispatch runs OUTSIDE the exchange's try/catch (below) and each listener
   // is guarded: a throwing subscriber must not relabel the read or turn the
-  // fire-and-forget refresh into an unhandled rejection.
+  // fire-and-forget refresh into an unhandled rejection. A listener can read
+  // state() reentrantly; finish that newer transition before notifying any
+  // remaining listeners so nobody receives a stale or duplicate read.
   const setView = (next: EntitlementView) => {
     if (next.state === view.state && next.reason === view.reason && next.cached === view.cached) return;
     view = next;
-    for (const cb of listeners) {
-      try {
-        cb(view);
-      } catch (err) {
-        log.warn(`entitlement listener threw: ${String(err)}`);
+    if (dispatching) {
+      pendingDispatch = true;
+      return;
+    }
+    dispatching = true;
+    try {
+      for (;;) {
+        pendingDispatch = false;
+        const delivering = view;
+        for (const cb of [...listeners]) {
+          if (view !== delivering) {
+            pendingDispatch = true;
+            break;
+          }
+          try {
+            cb(delivering);
+          } catch (err) {
+            let detail = "[unprintable thrown value]";
+            try { detail = String(err); } catch {}
+            log.warn(`entitlement listener threw: ${detail}`);
+          }
+          if (view !== delivering) {
+            pendingDispatch = true;
+            break;
+          }
+        }
+        if (!pendingDispatch) break;
       }
+    } finally {
+      dispatching = false;
     }
   };
-  // `unreachable` + a cached token: the QR stays only while that token is
-  // unexpired, so its expiry must flip the read — not wait for the next
-  // 12-hourly exchange.
-  // Node clamps a delay past 2^31-1 ms (~24.8 days) to 1 ms, so a long-lived
-  // token is watched in chained hops and the flip re-checks the clock.
+  // Every cached token has a wall-clock deadline, including one from a
+  // successful exchange. Node timers use a separate monotonic clock, so a
+  // long sleep or forward clock correction can cross that deadline without
+  // completing one long relative timeout. Recheck wall time in one-second
+  // hops, and also reconcile synchronously whenever state() is read.
+  // A previously valid read checks again, observing the same request floor
+  // as on-demand refresh; an outage read loses its cached-token allowance.
   const MAX_DELAY_MS = 2 ** 31 - 1;
+  const EXPIRY_WALL_CHECK_MS = 1_000;
   let expiry: ReturnType<typeof setTimeout> | undefined;
-  const watchExpiry = (expMs: number) => {
+  let stopped = false;
+  let lastFetchAt = -Infinity;
+  const armTimer = (delayMs: number, callback: () => void) => {
     clearTimeout(expiry);
-    expiry = setTimeout(() => {
-      if (view.state !== "unreachable" || !view.cached) return;
-      if (expMs > Date.now()) watchExpiry(expMs);
-      else setView({ state: "unreachable", cached: false });
-    }, Math.min(MAX_DELAY_MS, Math.max(0, expMs - Date.now())));
+    if (stopped) return;
+    expiry = setTimeout(callback, Math.min(MAX_DELAY_MS, Math.max(0, delayMs)));
     expiry.unref();
   };
+  const reconcileExpiry = () => {
+    if (stopped || !cached || cached.expMs > Date.now()) return;
+    const expiredView = view;
+    cached = undefined;
+    clearTimeout(expiry);
+    expiry = undefined;
+    if (expiredView.state === "valid") {
+      setView({ state: "checking" });
+      armTimer(lastFetchAt + FORCED_REFRESH_MIN_GAP_MS - performance.now(), () => void refresh());
+    } else if (expiredView.state === "unreachable" && expiredView.cached) {
+      setView({ state: "unreachable", cached: false });
+    }
+  };
+  const watchExpiry = (expMs: number) => {
+    armTimer(Math.min(EXPIRY_WALL_CHECK_MS, expMs - Date.now()), () => {
+      if (!cached || cached.expMs !== expMs) return;
+      if (expMs > Date.now()) watchExpiry(expMs);
+      else reconcileExpiry();
+    });
+  };
   let denied = false; // a 403 already warned — suppresses repeat WARNINGS only (the request throttle is FORCED_REFRESH_MIN_GAP_MS)
-  let lastFetchMs = 0;
   let inflight: Promise<void> | undefined;
 
   const exchange = async (): Promise<void> => {
-    lastFetchMs = Date.now();
+    lastFetchAt = performance.now();
     let next: EntitlementView;
     try {
       const res = await postLicenseKey(url, licenseKey, FETCH_TIMEOUT_MS);
@@ -189,7 +265,7 @@ export function createEntitlementTokenSource(env: {
         // only a string `reason` is quoted, and nothing here may throw.
         const body: unknown = await readBillingJson(res).catch(() => undefined);
         const raw = body && typeof body === "object" ? (body as { reason?: unknown }).reason : undefined;
-        const reason = typeof raw === "string" ? raw.slice(0, MAX_REASON_CHARS) : undefined;
+        const reason = typeof raw === "string" ? redactLicenseKey(raw, licenseKey).slice(0, MAX_REASON_CHARS) : undefined;
         if (!denied) {
           log.warn(
             `entitlement refused for license ${mask(licenseKey)}: ` +
@@ -207,8 +283,13 @@ export function createEntitlementTokenSource(env: {
           typeof body.token !== "string" ||
           body.token.length === 0 ||
           Buffer.byteLength(body.token, "utf8") > ENTITLEMENT_TOKEN_MAX_BYTES ||
+          !isEntitlementHeaderValue(body.token) ||
+          // Reject exact credential reuse at every length and embedded reuse
+          // once the key is specific enough (see the threshold above).
+          tokenReflectsLicenseKey(body.token, licenseKey) ||
           typeof body.exp !== "number" ||
-          !Number.isFinite(body.exp)
+          !Number.isFinite(body.exp * 1000) ||
+          body.exp * 1000 <= Date.now()
         ) {
           throw new Error("malformed response");
         }
@@ -222,8 +303,16 @@ export function createEntitlementTokenSource(env: {
       // refusal line at dial time is the terminal's signal; the pair card
       // gets the honest read (and whether the cached token still carries it).
       const carried = !!cached && cached.expMs > Date.now();
-      if (carried) watchExpiry(cached!.expMs);
+      if (!carried) cached = undefined;
       next = { state: "unreachable", cached: carried };
+    }
+    // Install the cache's watch before publishing the read. A listener may
+    // reconcile expiry reentrantly and replace it with a floor-delayed refresh;
+    // the completing exchange must not overwrite that newer scheduling choice.
+    if (cached) watchExpiry(cached.expMs);
+    else {
+      clearTimeout(expiry);
+      expiry = undefined;
     }
     setView(next);
   };
@@ -241,17 +330,23 @@ export function createEntitlementTokenSource(env: {
   return {
     mode: "license-key",
     get: async ({ refresh: forced = false } = {}) => {
-      const stale = !cached || cached.expMs <= Date.now();
-      const throttled = Date.now() - lastFetchMs < FORCED_REFRESH_MIN_GAP_MS;
+      reconcileExpiry();
+      const stale = !cached;
+      const throttled = performance.now() - lastFetchAt < FORCED_REFRESH_MIN_GAP_MS;
       if ((forced || stale) && !throttled) await refresh();
       else if (inflight) await inflight;
-      return cached && cached.expMs > Date.now() ? cached.token : undefined;
+      reconcileExpiry();
+      return cached?.token;
     },
     stop: () => {
+      stopped = true;
       clearInterval(timer);
       clearTimeout(expiry);
     },
-    state: () => view,
+    state: () => {
+      reconcileExpiry();
+      return view;
+    },
     onChange: (cb) => {
       listeners.add(cb);
       return () => listeners.delete(cb);

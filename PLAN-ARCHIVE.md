@@ -11756,3 +11756,561 @@ The mirror contained no real dotenv file and exposed no secret, but the command
 still violated the opacity rule; its 874/874 result is discarded and is not
 audit evidence. The corrected final command explicitly enumerated and validated
 the 87 safe paths before running 817/817.
+
+## Moved 2026-09-05 — Shell DA.1
+
+- [x] **Step DA.1 — add a bounded private credential source without an
+  environment mutation.** Introduce one pure credential-resolution seam used
+  by relay planning, entitlement exchange, and subscription actions. In the
+  Desktop-flagged path, consume a maximum-bounded UTF-8 key from standard input
+  before boot, reject extra bytes/newlines/malformed keys or missing EOF at a
+  short deadline, close the descriptor, remove internal flags from the long-
+  lived argument view, and overlay the valid key only in the in-memory config
+  passed to those three consumers. Preserve terminal env behavior, ops-token
+  precedence, custom
+  entitlement URLs, self-host opt-out/explicit relay behavior, and the rule
+  that any malformed/missing Desktop input disables only remote access—not the
+  local product. Done when unit and spawned-process tests prove pipe/env
+  precedence, EOF/timeout/size/shape/error handling, no pipe-supplied key in
+  `process.env` or argv at any observation point, descriptor closure, and no
+  key-bearing output; Tier 1, typecheck, and server build pass.
+
+**Completed 2026-09-05.** Created `server/desktop-credential.ts`,
+`server/desktop-credential.test.ts`, and `server/desktop-credential.itest.ts`;
+modified `server/index.ts` to await private input before constructing the
+server/session registry and pass `resolveCredentialConfig`'s explicit object
+to relay planning, entitlement exchange, subscription actions, and the existing
+entitlement-presentation selector. The three consumer implementations themselves
+are unchanged. No dependency, wire field, UI change, persistent credential
+store, adapter change, release, or Site implementation was added.
+
+The exact internal flag is `--mirafold-desktop`; all exact occurrences are
+removed from `process.argv` before reading. Unflagged/lookalike-flag launches
+never consume or close stdin. Flagged input has a 43-byte maximum, a fixed
+44-byte OS-read buffer, a two-second absolute deadline unaffected by incoming
+bytes, strict UTF-8 and the existing `mf_` plus 20–40 lowercase base32-character
+shape, and mandatory EOF without a newline or BOM. The stream handle is stopped
+before an explicit fd-0 close: a direct Linux probe showed libuv leaves standard
+descriptors open after stream destruction alone. Temporary byte buffers are
+cleared. Missing, oversized, invalid, timed-out, and failed reads return only a
+fixed problem code; input/error text is never logged.
+
+The pipe key replaces an ambient license key only in the runtime configuration,
+with one credential-free conflict warning. A failed Desktop handoff never falls
+back to an ambient key. The existing hand-issued operations-token override still
+wins, including after a failed handoff; terminal values, custom entitlement/app
+URLs, relay opt-outs, and explicit self-host behavior retain their established
+meaning. Without an override, unusable private input disables hosted admission
+and billing while real local mock sessions remain usable. The key is never
+assigned to `process.env` or argv. Linux spawned-process tests inspect both the
+JavaScript views and `/proc/self/environ` plus `/proc/self/cmdline` before,
+during, and after reads, and observe every environment/argument assignment.
+
+Verification:
+
+- `MIRAFOLD_LOG_FILE= yarn -s node --import tsx --test server/desktop-credential.test.ts`:
+  11/11 focused unit and spawned-process tests passed; the final version,
+  including Linux process-metadata observations, also passed within Tier 1.
+  The tests cover minimum/maximum length, split input, missing EOF, slow input,
+  invalid UTF-8/BOM/newlines/extra frames, oversized input, descriptor/read errors,
+  early stream closure, pipe/env/ops precedence, custom URLs, descriptor closure,
+  unchanged ordinary stdin behavior, and absence of key-bearing output.
+- `MIRAFOLD_LOG_FILE= yarn -s node --import tsx --test server/desktop-credential.itest.ts`:
+  7/7 against the newly built daemon and real WebSockets. Private-key local billing,
+  one ambient-conflict warning, explicit opt-out, ordinary startup, and completed
+  local mock turns after malformed/missing/oversized/unterminated input passed.
+  The first harness run used `PORT=0`, while the existing daemon prints its requested
+  port; that made the harness connect to port 0. Only the new harness was corrected
+  to use the existing harness's randomized-port convention; daemon port behavior
+  was not changed.
+- `yarn typecheck`: passed. The first check identified a `Uint8Array` callback
+  type being treated as `Buffer`; the copy now uses the common typed-array `set`.
+  `yarn build:server`: passed.
+- Permitted Tier 1: 1,145/1,145 across 123 explicitly enumerated test files using
+  the existing Node/tsx runner. Eight tests were excluded, rather than reading
+  dotenv files or running a recursive listing that includes them: all four tests
+  in `server/project-env.test.ts`; the dotenv-inheritance test in
+  `server/pty/pty.test.ts`; the skip-worktree secret test in
+  `server/sessions/workspace/git/git.test.ts` (its Git fixture reads the file);
+  and the secret-file listing plus secret-read/tree-listing tests in
+  `server/sessions/workspace/filesystem/fs-folder-tree.test.ts`. An unrestricted
+  `yarn test` was not run, and those eight cases are not claimed as verified.
+- Builds and broad/focused daemon checks used an isolated copy excluding every
+  dotenv filename, with existing dependencies shared by symlink. All four changed
+  source/test files were SHA-256-equal to the real checkout at verification.
+  `git diff --check` passed. No metered model or production billing call was made.
+
+The prior uncommitted Phase DA plan was preserved. The next authorized chunk
+within this phase is DA.2 (local-only host identity); the deeper real-relay/child
+inheritance proof, correctness hunt, security audit/freeze, and publication remain
+DA.3–DA.6 respectively.
+
+## Moved 2026-09-05 — Shell DA.2
+
+- [x] **Step DA.2 — make only the trusted local shell host-aware.** Add one
+  optional additive Desktop-host marker to the local hello and carry it through
+  the existing hello state. In Desktop mode, the Pro/renew anchor gets a fixed
+  `/activate` marker Electron recognizes and the card says activation finishes
+  in the system browser and returns automatically; the existing-key instruction
+  sends the user through that same protected browser flow. Terminal/browser
+  mode retains the exact `MIRAFOLD_LICENSE_KEY` instruction and plain pay URL.
+  Remote viewports receive no host marker and gain no activation or billing
+  surface. Done when protocol parsers tolerate absence, yesterday-client
+  fixtures still parse, every ConnectDevice arm is pinned in both host modes,
+  agent-rendered content cannot set the marker, and focused plus Tier-1 tests,
+  typecheck, and build pass.
+
+**Completed 2026-09-05.** The local WebSocket connection gets its host identity
+only from DA.1's parsed internal launch flag. Every local `agents` hello,
+including refreshes, carries `host: "desktop"` for that launch; ordinary
+terminal launches and all remote connections omit the property entirely.
+Missing/rejected private credentials still identify a Desktop launch so an
+unactivated local session can offer activation. No credential or identifier
+was added to the wire. The existing entitlement and subscription rules remain
+in place.
+
+The existing hello state admits only the literal Desktop value, clears it on a
+later hello without that value, and preserves it across entitlement updates.
+The session's Shell → StatusBar → ConnectDevice path and FleetView's existing
+ConnectDevice path forward it. A dated boundary amendment added these three
+existing forwarding files before their six forwarding lines were applied; no
+new UI surface, dependency, adapter, relay protocol, or persistent store was
+introduced.
+
+Desktop's Pro and renewal anchors now use the exact non-secret
+`https://mirafold.com/activate` marker, without query parameters or fragments.
+The card says activation finishes in the system browser and returns to
+Mirafold Desktop automatically; its existing-key instruction uses the same
+anchor. Electron's interception, protected browser flow, and restart remain
+future Desktop work. Terminal mode retains `https://mirafold.com/pay` and the
+exact `MIRAFOLD_LICENSE_KEY`/relaunch instruction. Opt-out, malformed relay URL,
+checking, outage, valid/cached QR, self-host, copy feedback, and subscription
+management keep their existing behavior in both host modes. A host/billing hint
+alone never creates a Pair card when the local relay fields are absent.
+
+Source changes: `server/index.ts`, `server/protocol.ts`,
+`server/sessions/connection.ts`, `web/src/transport/daemon-hello.ts`,
+`ConnectDevice.tsx`, and the three forwarding components. Tests: extended the
+existing connection, hello-state, and ConnectDevice unit tests plus DA.1's
+built-daemon test; created `server/testing/e2e/desktop-host.e2e.ts`. Planning:
+updated this archive, Shell's plan, and the cross-repository roadmap. DA.1's
+prior changes and unrelated untracked `decks/` were preserved. No commit,
+push, release, or public Desktop positioning occurred.
+
+Verification:
+
+- Permitted Tier 1: **1,177/1,177**, across 123 explicitly enumerated files,
+  using the existing Node/tsx runner. The same eight dotenv-related tests
+  named in DA.1's evidence were excluded under the global opacity rule; an
+  unrestricted `yarn test` was not run. The ConnectDevice matrix pins all 12
+  pre-DA.2 terminal renders by SHA-256 and checks each arm in Desktop mode.
+  Other new cases exercise refreshed/forged client frames, remote omission,
+  legacy/unknown host values, and entitlement updates that cannot set host.
+- `MIRAFOLD_LOG_FILE= yarn -s node --import tsx --test --test-concurrency=1 server/desktop-credential.itest.ts`:
+  **7/7** against the built daemon. Flagged valid and rejected/absent private
+  input advertise Desktop, ordinary startup omits host, and billing plus local
+  mock sessions retain DA.1's results.
+- `MIRAFOLD_LOG_FILE= yarn -s node --import tsx --test --test-concurrency=1 server/testing/e2e/desktop-host.e2e.ts`:
+  **5/5**. Real session and fleet components render activation/renewal in both
+  modes; a subsequent hello clears host; a remote-shaped hello removes the
+  surface. Agent text and a real sandboxed artifact attempt parent-DOM access,
+  a forged hello, and a nonce-stamped state action; terminal Pair remains on
+  its pay link and existing-key wording. axe and horizontal-overflow checks
+  pass for the cards. Only daemon hello data is varied in this browser fixture;
+  actual startup identity is covered by the built-daemon tests.
+- `yarn -s typecheck` and `yarn -s build`: **passed**. The build emits only the
+  existing large-chunk advisory. `yarn -s test:ui:built`: **11/11**, including
+  managed Chromium, Firefox, WebKit, and every existing visual baseline.
+  An initial visual run differed only because the sanitized copy was named
+  `verify` and the status bar displays that folder name; the committed images
+  show `mirafold`. After inspecting actual/diff/baseline images, renaming only
+  the temporary directory made the focused failure and complete suite pass.
+  No source or snapshot was changed to repair that environment mismatch.
+- The actual `admitWireFrame` function extracted from the released `v0.8.5`
+  source admits both the legacy and Desktop hello fixtures. It is byte-identical
+  to this branch's parser (SHA-256
+  `d407fdc8612ad57ee9df1481dbad0bdce0b0dc46ea600144d76c8a20f15366ec`).
+- Every build and daemon/browser gate ran in a sanitized copy with all dotenv
+  filename variants excluded. Final location: `/tmp/mirafold-da2/mirafold`;
+  existing dependencies and the sibling Relay source were linked for the
+  normal build/type graph. All 13 changed source/test files match the real
+  checkout by SHA-256; `git diff --check` passes. No real-model or production
+  billing call was made. All test-owned browsers and daemons were closed.
+
+Downstream integration constraint recorded in roadmap DPC.3: Desktop Step 13.3
+currently withholds the internal flag until a stored key exists, which would
+leave first-time users on the terminal pay path. Reconcile that no-key launch
+contract before implementing Desktop 13.3; Shell recognizes Desktop from the
+flag even when the pipe is empty. No Desktop executable changed in this step.
+
+The next Shell chunk is **DA.3**, the real-relay and child-inheritance secret
+boundary proof. DA.4 correctness, DA.5 security/freeze, and DA.6 publication
+remain unfinished.
+
+## Moved 2026-09-05 — Shell DA.3
+
+- [x] **Step DA.3 — prove the secret boundary through the real daemon and
+  relay path.** Extend the integration harness to spawn the built daemon with a
+  seeded private-stdin key against fake billing and a gated real relay. Prove
+  entitlement exchange, QR availability, encrypted pairing, and local
+  subscription management; then spawn each reachable engine/PTY/MCP child seam
+  and prove it cannot read the key from environment, argv, inherited file
+  descriptors, transcript, checkpoint, or WireMsg. Seed the key across split
+  output chunks and every error path and search stdout, stderr, flight-recorder
+  logs, crash text, serialized sessions, and browser messages. Include
+  malformed/oversized/early-close input and daemon restart cases; local sessions
+  must remain usable throughout. Done when the focused integration tests and
+  all normally permitted release gates pass, and mutations removing stdin
+  closure, `DAEMON_ONLY_ENV`, log redaction, or remote-viewport omission are
+  caught.
+
+**Completed 2026-09-05.** The new built-daemon harness delivers only a synthetic
+license key over private stdin, split across writes, with isolated working,
+credential-probe, trust, session, and diagnostic directories. A local fake
+billing HTTP server splits responses across transport chunks. The real sibling
+Relay, with its Ed25519 entitlement gate enabled, admits the exchanged signed
+token; a real encrypted remote client pairs using the advertised QR inputs and
+completes a mock turn. All three local subscription actions use the private key.
+The remote hello omits host, relay, relayOff, entitlement, and billing; remote
+subscription requests never reach billing. DA.2's browser suite still proves
+the actual activation cards and QR rendering behavior.
+
+The child probes exercise production launch paths for the real Claude SDK,
+Codex app-server, Gemini CLI, OpenCode serve, and Codex/Gemini model-list
+processes. Engine executables are fixtures with production spawn options;
+the PTY and compiled render-MCP processes are real. Fixture engine executables
+read their own environment/argv and Linux process metadata, reporting hashes
+only. Their actual injected MCP configurations launch the production compiled
+render-MCP child and acknowledge a real render call. Claude's render server is
+in-process. No real model engine or metered model is run. The original stdin
+descriptor identity is absent before server creation and from every observed
+child. Private input is absent from daemon/child OS environment and argv;
+agent children also omit all four daemon-only environment fields, including a
+deliberately supplied stale ambient license. The official-Desktop PTY case has
+no ambient license, as the locked launcher contract requires; this does not
+claim that an ordinary terminal's user-requested shell command loses its own
+environment.
+
+All rejected-input classes preserve local turns: empty and early EOF, newline,
+invalid UTF-8, oversized input, missing EOF, and non-pipe stdin. DA.1's existing
+tests retain the slower-chunk, buffer, and injected read-error cases. Billing
+400/403/503 refusals, malformed/oversized JSON, wrong field types, connection
+closure, and the real ten-second request deadline preserve local turns. A
+three-launch test restores the same saved session with valid, empty, and fresh
+private input: the empty restart cannot reload a license from disk, and a new
+private handoff restores billing. Explicit uncaught-exception and unhandled-
+rejection probes verify the production last-gasp handler and exit code 1.
+Searches cover stdout, stderr, flight-recorder/crash text, local/remote WireMsg,
+and every non-dotenv file in the owned fixture trees, including transcripts and
+checkpoints. The happy-path search also excludes the signed entitlement token.
+
+**Proved defect and executable change.** Before editing, the real daemon with
+a billing 403 that echoed its received key leaked that key into stderr, local
+WireMsg, and the flight-recorder file. The billing consumers bounded strings
+without removing their known credential, and the shared logger did not
+recognize the Mirafold license family. Entitlement/subscription now remove the
+exact key before clipping or returning backend strings, including subscription
+status/date fields; the existing shared scrubber recognizes Mirafold key shapes
+before log clipping. A dated plan-boundary amendment added the logger before
+its edit. Exact-value tests also cover a terminal-supplied key outside the
+Desktop grammar; log tests cover embedded, minimum/maximum, repeated, and
+clipping-edge keys. Adapter, persistence, and relay implementations were not
+modified. The former starting-state claim that entitlement never logged key
+bytes is corrected in PLAN.md: only its fixed prefix had been masked.
+
+**Test-only correction found by the broad gate.** The existing phone QR test
+counted FleetView's Pair button immediately after navigation, before the
+WebSocket hello could render it. The full browser run failed once; five
+unchanged focused runs passed. A separate controlled probe held one real hello
+and observed zero buttons, then released it and observed the button. The test
+now waits for that button's visibility. Its entire ten-test phone fixture
+passes. No application behavior or visual baseline changed for this finding.
+
+Verification, using the isolated dotenv-excluded copy at
+`/tmp/mirafold-da3/mirafold` and existing dependencies:
+
+- Focused billing/log units: **32/32**. New built-daemon boundary/child tests:
+  **27/27** (22 boundary cases and five child-launch cases), also covered by
+  the broad integration run. DA.1's seven built-daemon checks also pass.
+- Permitted Tier 1: **1,180/1,180**, 123 enumerated files. The same eight
+  dotenv-related exclusions named under DA.1 apply.
+- Permitted Tier 2: **182 checks passed** across 28 files. The broad run
+  passed 177 checks; the Electron test file could not load because its binary
+  needed installation in read-only shared node_modules. With the required
+  filesystem access, that unchanged file passed all five checks. No source
+  fix or broad rerun was needed for the installation failure. Additionally
+  excluded under the global rule: all 13 tests in
+  `server/sessions/workspace/filesystem/fs-folder-tree.itest.ts` (shared dotenv
+  fixture/listings), and `E.2: diffs — modified, added, deleted, rename target`
+  in `server/sessions/workspace/git/fs-git.itest.ts` (a dotenv request).
+- Tier 3: **140 checks passed** across 16 files, including DA.2's five browser
+  checks. The initial run passed 139; the diagnosed Pair timing correction
+  passed its complete ten-test phone fixture. The other files already passed.
+- `yarn -s test:ui:built`: **11/11**, managed Chromium/Firefox/WebKit and every
+  committed visual baseline. `yarn -s typecheck`, `yarn -s build`, and
+  `git diff --check` pass. Build output has only the existing large-chunk
+  advisory. Third-party notices regenerate byte-identically, with explicit
+  dotenv exclusions added to the temporary checker; no dependency was added.
+- `node server/testing/desktop-mutations.mjs`: **5/5 faults caught** by their
+  intended regression. Temporary bundles remove stdin closure, remove
+  DAEMON_ONLY_ENV filtering, remove Mirafold log redaction, publish the Desktop
+  marker on an actual remote hello, or remove exact billing-value redaction.
+  Mutations never alter reviewed source and their bundles are removed.
+- `npm pack --ignore-scripts --json --pack-destination /tmp/mirafold-da3`
+  after the final build produced **20 files**, **1,465,617 bytes**,
+  SHA-256 `1be51d08b43e6b472e7e0a22eaf4f6cc005ebfb7e6eb525acfb9d4acfa2812e9`. No test/mutant fixture ships. The tarball was unpacked
+  under an isolated dot-directory global prefix with the existing dependency
+  tree linked; `scripts/packaged-pass.mjs` passed **9/9** against those bytes.
+  This proves the packed runtime with existing dependencies, not a clean
+  dependency installation or a published release. Package version remains
+  0.8.5; DA.5's freeze and DA.6's release versioning are still future work.
+
+The executable changes are limited to `server/log.ts`,
+`server/relay/entitlement.ts`, and `server/relay/subscription.ts`. Tests extend
+their three unit files and the phone browser fixture; seven new integration/
+observation/mutation files live under `server/desktop-*.itest.ts` and
+`server/testing/`. All 14 DA.3 source/test files match the actual checkout by
+SHA-256. This archive, PLAN.md, and the cross-repository roadmap record the
+result. Prior DA.1/DA.2 work, unrelated `decks/`, and sibling working changes
+were preserved. Test-owned processes are closed. No production billing call,
+commit, push, deployment, or publication occurred. The next chunk is **DA.4**,
+the separate feature-delta correctness hunt; DA.5 security/freeze and DA.6
+publication remain unfinished.
+
+## Moved 2026-09-05 — Shell DA.4 and DA.4C correctness hunt
+
+**Scope and method.** DA.4 reviewed the exact 31-file DA.1–DA.3 delta from
+base `8765de5` plus 11 adjacent seams: startup/config resolution, entitlement
+and subscription behavior, relay planning/dial/refusal, the local/remote hello,
+Pair presentation, protocol compatibility, child environments, the launcher,
+and project-config identity rejection. Each confirmed behavior was reproduced
+before editing, repaired serially, and covered by a bounded class regression.
+Six successive fresh read-only reviews followed the first fixes; each proved
+its finding before another edit. The first batch stopped at ten repairs as
+required. Its next cold review proved an eleventh defect, so DA.4C was inserted
+before DA.5 and received two repairs plus its own final fresh review. No dotenv
+file, `decks/`, live model, production billing/relay service, or unrelated
+subsystem was inspected or changed.
+
+**The ten DA.4 findings, all confirmed and repaired:**
+
+1. A successful billing response with an expired or exactly-due expiry could
+   publish `valid` even though `get()` returned no token.
+2. Unsafe seconds-to-milliseconds conversion could turn a finite expiry into an
+   effectively infinite one, and a newly accepted token had no owned deadline
+   watch to withdraw its advertised access.
+3. Header-invalid exchanged or operations tokens reached WebSocket header
+   construction, where Node's synchronous rejection could terminate the daemon
+   and every local session.
+4. If synchronous change-listener work crossed the token deadline, scheduling
+   skipped the already-due cache and left both valid and cached-outage reads
+   advertised.
+5. A forward wall-clock correction or Linux suspend could pass the absolute
+   deadline while the event-loop timer still had monotonic delay remaining.
+6. A backward wall-clock correction could suppress a relay-requested refresh
+   far beyond the promised 60-second request floor.
+7. After expiry had been observed, moving the wall clock backward could revive
+   cached token bytes without restoring a coherent published state.
+8. Reentrant `state()` reconciliation could duplicate a listener delivery and
+   replace the correct expiry-refresh timer.
+9. A failed exchange that observed cache expiry published an uncached outage
+   without retiring the cache object, so listener-time clock correction could
+   revive it.
+10. The listener exception guard called `String()` on the thrown value without
+    its own guard. A value whose conversion threw rejected the exchange, skipped
+    later listeners, and could reach the process last-gasp exit path.
+
+The final entitlement source validates finite, future deadlines before cache
+replacement; owns a one-second wall-time watcher for every advertised cache;
+uses `performance.now()` for the request floor; retires a cache irreversibly
+once expiry is observed; queues reentrant listener delivery without surrendering
+timer ownership; preserves single flight and stop guards; and reports even an
+unprintable listener failure with a fixed fallback before continuing. Node's
+`validateHeaderValue()` is the exact token transport boundary, including valid
+Latin-1 values rather than a narrower invented token grammar.
+
+**DA.4C findings, both confirmed and repaired.** First, a nonempty operations
+override which failed that header rule still counted as configured entitlement
+in relay planning. The gated hosted relay was dialed without a header, the Pair
+surface advertised a link because override mode has no entitlement read, and
+the relay necessarily refused it with 4007 retry churn. Planning and token
+supply now share the exact header predicate. The invalid override continues to
+suppress license-key fallback; default and explicitly spelled canonical hosted
+relays stand down; an explicit relay with an operator entitlement backend also
+stands down; a genuinely ungated explicit self-host still dials tokenless; and
+valid overrides remain unchanged. Boot and Pair messages name only the setting
+and repair, never the credential, QR, payment link, or pairing code.
+
+The first DA.4C cold review then proved that adding this reason to the existing
+`relayOff` enum broke the stated previous-client contract: the `8765de5` bundle
+retained an unknown value in that recognized field and React rendered the raw
+text `invalid-entitlement-token`. A plan correction withdrew that enum change
+before repair. The three old `relayOff` values remain unchanged; the daemon now
+sends one optional local-only
+`relayConfigProblem: "invalid-entitlement-token"` field. The previous bundle
+does not forward that new field and draws no Pair surface. The current reducer
+maps only the exact literal to its actionable state and drops unknown future
+values from both fields. Remote hellos receive neither field. The final fresh
+review executed the actual previous reducer/forwarders and found **no confirmed
+correctness finding**; its focused suite passed 114/114 and its cross-layer
+probe matched Node on 1,025 header inputs, including real loopback WebSocket
+upgrades for accepted Latin-1 and tokenless self-host behavior.
+
+**Final verification on the sanitized mirror.** The candidate passed:
+
+- typecheck and the full production browser/server build (only the established
+  large-bundle advisory);
+- permitted Tier 1: **1,205/1,205** across 123 files. Excluded were the entire
+  `server/project-env.test.ts` file and four named tests whose operation reads or
+  requests dotenv fixtures: inherited checkout environment, skip-worktree
+  secret changes, secret-file listing, and secret-file reading—eight cases in
+  total;
+- permitted Tier 2: **182/182** across 28 files. Excluded were all 13 cases in
+  `server/sessions/workspace/filesystem/fs-folder-tree.itest.ts` and the one
+  dotenv-requesting diff case in `fs-git.itest.ts`—14 cases in total;
+- Tier 3: **140/140** across 16 files; managed Chromium, Firefox, WebKit, and
+  committed visual baselines: **11/11**;
+- all five DA.3 secret-boundary mutations caught by their intended regressions;
+- third-party notices unchanged at 212 packages, SHA-256
+  `74ff44734a59d1fab32e0d3a713ce4752265324ead3f599b8a3d49852b449c3c`;
+  no dependency was added; and
+- a post-build `npm pack --ignore-scripts` artifact with **20 files** and
+  **1,466,534 bytes**, SHA-256
+  `f16eac33288ae3c756979e5a21e48c691103df30bca1d01033bca88177c338ba`.
+  It contains no test or mutation fixture. Extracted under an isolated global
+  prefix with the existing dependency tree linked, those exact bytes passed the
+  packaged-install smoke **9/9**. This proves the package runtime with existing
+  dependencies, not a clean dependency installation or a published release.
+
+The DA.4/DA.4C executable delta is confined to entitlement validation/cache/
+listener behavior, shared relay-header validation and planning, boot handling,
+the additive local hello problem field, current-client normalization, and Pair
+copy. Corresponding unit/integration tests carry every hunter. The ordinary
+three-value `relayOff` wire, explicit ungated self-host path, remote hello,
+Desktop private credential boundary, terminal credential precedence, relay
+cryptography/service, package version `0.8.5`, and dependencies remain
+behaviorally unchanged. No commit, push, deployment, npm publication, Desktop
+executable change, or DA.5 security audit occurred. The next chunk is **DA.5 —
+audit and freeze the Shell security boundary**.
+
+## Moved 2026-09-05 — Shell DA.5 security audit and candidate freeze
+
+Step DA.5 audited the complete uncommitted DA.1–DA.4C Shell candidate based on
+commit `8765de5fe5900b18414c49ff4494b7c6d146d44c`. The review covered the exact
+feature delta and adjacent startup, stdin, descriptor, environment, process,
+child-launch, billing, relay, local/remote hello, log, persistence, browser,
+package, CI, and repository-history boundaries. No dotenv file was opened,
+read, searched, printed, parsed, sourced, diffed, or created; the permitted
+suite and every recursive search excluded all dotenv filename forms
+explicitly. The unrelated untracked `decks/` work stayed outside the audit and
+candidate.
+
+The pre-fix boundary amendment in `PLAN.md` recorded every finding before its
+product edit. Ten confirmed findings were repaired, exactly at the Step's cap:
+
+1. **Configured relay URLs reached persistent logs.** A URL containing
+   userinfo, a private path, or a signed query reached both the startup flight
+   recorder and the successful-pair record. Persistent records now use fixed
+   destination labels and fixed paired text. The deliberately secret-bearing
+   terminal boot block remains terminal-only and retains its warning.
+2. **WebSocket setup rejection escaped its owner.** A relay fragment could
+   make initial or reconnect setup reject inside an unowned asynchronous dial,
+   reaching the daemon's fatal unhandled-rejection path. Planning now refuses
+   every literal fragment delimiter, and the client owns every asynchronous
+   setup failure. Remote access stays off while local sessions stay alive.
+3. **A billing exchange could reflect the permanent key as a relay bearer.**
+   A loopback proof showed the returned value reaching the
+   `mirafold-entitlement` WebSocket header. Exact key reuse is now refused at
+   every length; embedded reuse is refused for key values at least 16
+   characters long. A bad refresh cannot displace an unexpired safe token.
+4. **Billing-controlled status and date text could become Shell-owned claims.**
+   The daemon now admits only the five supported subscription states, maps all
+   others to `unknown`, and forwards only bounded valid timestamps. The
+   browser independently applies the same defensive timestamp rule, handles
+   `paused`, and renders fixed unavailable text for unknown states.
+5. **The production lock selected vulnerable `qs@6.15.3`.** It was covered by
+   GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g. No Mirafold route into the
+   affected parser modes was found: Express retains its simple query parser,
+   Mirafold does not use the Express body parser, and MCP is carried over
+   stdio. The lock and real installed tree now select `qs@6.16.0`. This patch
+   adds no package or transitive dependency; the package itself costs 20 files,
+   about 76.5 kB packed and 374.9 kB unpacked.
+6. **Git permitted common dotenv secret-name variants.** The ignore policy now
+   covers exact, suffixed, service-named, and nested variants while retaining
+   the intentional root `.env.example` template. The regression passes only
+   filenames to `git check-ignore --no-index`; it creates and reads no dotenv
+   file. A filename-only history check found only the public template, and a
+   masked credential-pattern history scan found only explicit test fixtures.
+7. **`Date.parse` alone accepted malformed billing dates.** Inputs such as
+   `"0"`, legacy slash dates, and impossible calendar days could still produce
+   a false cancellation claim. Server and browser now require a bounded RFC
+   3339 shape, valid calendar and clock components, a valid offset, and a
+   finite parse before displaying a date.
+8. **An empty fragment delimiter bypassed the first fragment repair.** The URL
+   API exposes an empty `.hash` for a trailing `#`; Mirafold's appended daemon
+   route then turns it into a nonempty fragment and WebSocket setup rejects.
+   The planner now checks the original value for every literal `#` while
+   retaining encoded `%23` in paths and queries.
+9. **Status validation ran before permanent-key redaction.** A deliberately
+   low-entropy license key equal to a supported state such as `active` could be
+   republished to the viewport as the subscription status. Exact-key redaction
+   now precedes the allowlist.
+10. **The first token-reflection guard overmatched low-entropy custom keys.** A
+    one-character key such as `a` caused an unrelated token such as
+    `safe.token` to be refused. Exact reflection remains forbidden for every
+    key; containment is applied only at the 16-character specificity threshold.
+
+No finding was deferred. Fresh reviewers additionally required a real
+`server/index.ts` persistent-log regression, enumeration of every `qs` lock
+stanza, nested ignore-boundary probes, and corrections to stale comments and
+the malformed-relay Pair-card explanation. The final independent review
+reverse-applied and inspected the exact patch, reran the focused boundary
+tests, exercised adversarial fragment/reflection/status/date variants, and
+found **no confirmed issue remaining**.
+
+The final DA.5 patch relative to the pre-DA.5 working candidate affects 17
+files and is 817 lines, SHA-256
+`9e8045d4ff3862e9c23ee2d283f6736c5967547a30cee2ec78144a42dfff057b`.
+Source changes are confined to `server/index.ts`, the relay URL/client,
+entitlement and subscription modules, the browser subscription presenter, and
+the Pair card's malformed-relay explanation. Repository/dependency changes are
+`.gitignore` and `yarn.lock`. Corresponding tests extend seven existing test
+files and add `server/security/repository-hygiene.test.ts`. Relay cryptography
+and service code, Desktop code, the public wire shape, and package version
+`0.8.5` are unchanged. Terminal process and pairing behavior are unchanged;
+only the malformed-configuration explanation changed. No dependency was added.
+
+Final verification:
+
+- the exact changed security surfaces pass **125/125** against the real
+  installed dependency tree; typecheck and the production browser/server build
+  pass, with only the established large-chunk advisory;
+- permitted Tier 1 passes **1,222/1,222**. Excluded were
+  `server/project-env.test.ts` and five named cases that read, create, request,
+  or bundle a dotenv fixture: inherited checkout environment, a skip-worktree
+  secret, secret-file listing, secret-file reading, and the secret-basename
+  image refusal;
+- permitted Tier 2 passes **183/183** across 28 files. Excluded were all 13
+  cases in `server/sessions/workspace/filesystem/fs-folder-tree.itest.ts` and
+  the one dotenv-requesting diff case in `fs-git.itest.ts`;
+- freshly built Tier 3 passes **140/140** across 16 files; managed Chromium,
+  Firefox, WebKit, and committed visual baselines pass **11/11**;
+- all five Desktop secret-boundary mutations are caught by their intended
+  regressions; third-party notices remain byte-identical for 212 browser
+  packages, SHA-256
+  `74ff44734a59d1fab32e0d3a713ce4752265324ead3f599b8a3d49852b449c3c`;
+- a frozen, script-disabled install in the real repository resolves
+  `qs@6.16.0` both at the root and through Express. A fresh registry audit
+  reports zero vulnerabilities across 131 production dependencies; and
+- the final `npm pack --ignore-scripts` artifact contains exactly 20
+  allowlisted runtime files, is **1,467,431 bytes**, and has SHA-256
+  `43361561d5cc2a8879ce3a8e536fc21735f8cc8c27f63c487bdeca96a15b3ef2`.
+  Extracted under a new isolated global prefix and linked to the real frozen
+  dependency tree, those exact bytes pass the installed-package smoke **9/9**.
+
+No commit, push, deployment, npm publication, Desktop executable change, paid
+billing call, or live Relay change occurred. The frozen candidate remains base
+commit `8765de5fe5900b18414c49ff4494b7c6d146d44c` plus the reviewed working-tree
+delta; the runtime identity is the 20-file tarball hash above. The next chunk
+is DA.6, which alone may version and publish these reviewed bytes through the
+protected release path.

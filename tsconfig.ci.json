@@ -1,9 +1,9 @@
 {
   // Single-repo typecheck config. Identical to tsconfig.json except it excludes
-  // the one cross-repo file: server/relay/relay-service.itest.ts imports the
-  // relay under test from the SIBLING ../mirafold-relay checkout (see
-  // docs/ARCHITECTURE.md's relay overview), which a lone checkout of this repo
-  // doesn't have.
+  // cross-repo integration tests. server/relay/relay-service.itest.ts and
+  // server/desktop-boundary.itest.ts import the relay under test from the
+  // SIBLING ../mirafold-relay checkout (see docs/ARCHITECTURE.md's relay
+  // overview), which a lone checkout of this repo doesn't have.
   //
   // Used by .github/workflows/release.yml ONLY, and now for a different reason
   // than it was written for (2026-08-02). The original reason — the relay repo
@@ -13,10 +13,14 @@
   //
   // The publish path deliberately did NOT follow. Keeping release.yml a
   // single-repo checkout means no push to another repo's default branch can
-  // block a release, and the file this excludes is a test that never ships in
+  // block a release, and the files excluded here are tests that never ship in
   // the package. Contract drift is still caught — loudly — by ci.yml on every
   // PR. Delete this file only if the release workflow is ever given the sibling
   // checkout too, which would trade that isolation away.
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "server/relay/relay-service.itest.ts"]
+  "exclude": [
+    "node_modules",
+    "server/desktop-boundary.itest.ts",
+    "server/relay/relay-service.itest.ts"
+  ]
 }

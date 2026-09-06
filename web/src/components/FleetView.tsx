@@ -279,6 +279,7 @@ export function FleetView() {
           </span>
           <span className="fleet-spacer" />
           <ConnectDevice
+            host={daemon.host}
             relay={daemon.relay}
             relayOff={daemon.relayOff}
             entitlement={daemon.entitlement}

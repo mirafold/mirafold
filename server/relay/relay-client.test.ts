@@ -144,3 +144,56 @@ test("dial-out with no token source sends no entitlement header", async () => {
     });
   }
 });
+
+test("DA.5: a successful pairing log never repeats the configured relay URL", async (t) => {
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => lines.push(String(line)));
+  let opened!: () => void;
+  const connected = new Promise<void>((resolve) => (opened = resolve));
+  const server = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      opened();
+      ws.on("error", () => {});
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const marker = "private-relay-path-credential";
+  const url = `ws://127.0.0.1:${port}/${marker}`;
+  const client = startRelayClient({
+    url,
+    code: "a-strong-pairing-code-for-tests",
+    registry: {} as SessionRegistry,
+  });
+  try {
+    await connected;
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    assert.ok(lines.some((line) => line.includes("paired with relay")), lines.join("\n"));
+    assert.ok(lines.every((line) => !line.includes(marker)));
+  } finally {
+    client.stop();
+    wss.close();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections?.();
+    });
+  }
+});
+
+test("DA.5: a rejected WebSocket setup is owned instead of becoming an unhandled rejection", async (t) => {
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => lines.push(String(line)));
+  const client = startRelayClient({
+    url: "ws://127.0.0.1:1/path#fragment-that-ws-rejects",
+    code: "a-strong-pairing-code-for-tests",
+    registry: {} as SessionRegistry,
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(lines.some((line) => line.includes("relay setup failed")), lines.join("\n"));
+  } finally {
+    client.stop();
+  }
+});

@@ -82,7 +82,8 @@ test("desktop: the shell-owned pair affordance shows the QR of the pairing URL",
 
   // …and in the fleet header on the way back.
   await desktop.goto(`http://127.0.0.1:${d.port}/`);
-  assert.ok(await desktop.locator(".fleet-head .sb-pair").count(), "pair button on the fleet page");
+  // Navigation can finish before the daemon hello makes Pair available.
+  await desktop.locator(".fleet-head .sb-pair").waitFor();
 });
 
 test("phone: pairs by URL, opens the session, drives a turn with a rendered component", async () => {

@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createElement } from "react";
+import { createHash } from "node:crypto";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ConnectDevice,
+  DESKTOP_ACTIVATION_URL,
   LicenseGate,
   PAY_URL,
   PairCardBody,
@@ -45,8 +47,17 @@ test("relay off by the user's own setting: the card says which setting, and sell
   assert.match(optOut, /MIRAFOLD_RELAY_URL=off/);
   assert.doesNotMatch(optOut, /pair-cta|mirafold\.com\/pay/);
   const malformed = renderToStaticMarkup(createElement(RemoteAccessOff, { reason: "malformed-url" }));
-  assert.match(malformed, /not a valid/);
+  assert.match(malformed, /not a usable Mirafold relay address/);
+  assert.match(malformed, /no fragment/);
   assert.doesNotMatch(malformed, /pair-cta|mirafold\.com\/pay/);
+
+  const invalidToken = renderToStaticMarkup(
+    createElement(RemoteAccessOff, { reason: "invalid-entitlement-token" }),
+  );
+  assert.match(invalidToken, /MIRAFOLD_ENTITLEMENT_TOKEN/);
+  assert.match(invalidToken, /request header/);
+  assert.match(invalidToken, /remove that setting and relaunch/i);
+  assert.doesNotMatch(invalidToken, /pair-cta|mirafold\.com\/pay|pair-qr/);
 });
 
 // Phase PB.2: with a relay configured, the license-key read decides whether
@@ -83,10 +94,11 @@ test("a refused key: no QR, the backend's reason quoted, the pay link, the butto
 });
 
 // Review 2026-08-26: the tooltip is part of what the button claims at rest.
-test("pairTitle sells only to the unentitled; an opt-out or a bad URL gets a plain off-line", () => {
+test("pairTitle sells only to the unentitled; configuration refusals get a plain off-line", () => {
   assert.match(pairTitle({ gated: false, relayOff: "unentitled" }), /Mirafold Pro/);
   assert.doesNotMatch(pairTitle({ gated: false, relayOff: "opt-out" }), /Mirafold Pro/);
   assert.doesNotMatch(pairTitle({ gated: false, relayOff: "malformed-url" }), /Mirafold Pro/);
+  assert.doesNotMatch(pairTitle({ gated: false, relayOff: "invalid-entitlement-token" }), /Mirafold Pro/);
   assert.match(pairTitle({ gated: true }), /license key/);
   assert.match(pairTitle({ href: "http://x/#code=y", gated: false }), /scan a QR/);
 });
@@ -122,4 +134,62 @@ test("a refusal reason's control characters are made visible, not obeyed", () =>
   );
   assert.match(gate, /‹U\+202E›active/);
   assert.doesNotMatch(gate, /\u202E/);
+});
+
+
+// Captured from the existing pre-DA.2 render, before host support was added.
+// The requirement is exact terminal/browser output, across every card arm.
+const CARD_BASE = {
+  billing: true, subRequest: () => "id", manage: false, setManage() {},
+  copyState: "idle" as const, onCopy() {},
+};
+const PAIR_HREF = "http://phone.example/#code=abcdefghijklmnop";
+const CARD_CASES: [string, Partial<ComponentProps<typeof PairCardBody>>, string][] = [
+  ["unentitled", { relayOff: "unentitled", billing: false }, "1858caa8951f4eb4f38dcd68bb469b1557ff0078da6282027d5c05efac119ede"],
+  ["opt-out", { relayOff: "opt-out" }, "42ced1c4d4488d1cb1cc6810da7a3cecd93a353284ce3538d89bc98bc9f6d1bf"],
+  ["malformed URL", { relayOff: "malformed-url" }, "631dd99a4574a48aa71a82d23a56e35edc02835fd6dc15af481ad031433ff99e"],
+  ["invalid token", { relayOff: "invalid-entitlement-token", billing: false }, "f934ff19827dd25c0224aee283db195ef9d57f60b28f4e636c227782de5a9e92"],
+  ["checking", { entitlement: { state: "checking" } }, "1f96a7db617f5a9b9d19c837717eacb927bca7b43e5a3c10c13aa61649cb2a59"],
+  ["invalid", { entitlement: { state: "invalid", reason: "subscription lapsed" } }, "f860db1356163bb874230e9cc6684fdc3c06c86b6641e808914d9348f1f0986b"],
+  ["unreachable", { entitlement: { state: "unreachable", cached: false } }, "1eafc7b26c896c3fdc51fd4a064390417928fc960a41eab3b21196fc1e37b42d"],
+  ["valid", { href: PAIR_HREF, entitlement: { state: "valid" } }, "2028ac70af1293e7fa33d73b035656a057aa9440ecd69d3fc494abe9cbccd2bc"],
+  ["cached", { href: PAIR_HREF, entitlement: { state: "unreachable", cached: true } }, "088b95955b37068148c8507e591db78967bd18194c48d2cfaf8c410be164026c"],
+  ["self-hosted", { href: PAIR_HREF }, "2028ac70af1293e7fa33d73b035656a057aa9440ecd69d3fc494abe9cbccd2bc"],
+  ["copied", { href: PAIR_HREF, copyState: "copied" }, "79a28cfbfbc246ebd2acbf7ff2dc2163cef346098b6dcd7d03949ce29872a01e"],
+  ["copy failed", { href: PAIR_HREF, copyState: "failed" }, "efd4c82258aaceca9598e9c74b9b3c4d64f4df8227095c15501266e3839d951d"],
+  ["manage", { manage: true }, "b80c9c2df88425ecf11b7e341e51da598c9c0eb4394bf4b1a132edfb68071cd2"],
+];
+
+test("DA.2: every Pair card arm keeps the exact terminal markup; Desktop changes only activation offers", async (t) => {
+  assert.equal(DESKTOP_ACTIVATION_URL, "https://mirafold.com/activate");
+  for (const [name, props, beforeHash] of CARD_CASES) {
+    for (const host of [undefined, "desktop"] as const) {
+      await t.test(`${name}: ${host ?? "terminal"}`, () => {
+        const html = renderToStaticMarkup(createElement(PairCardBody, { ...CARD_BASE, ...props, host }));
+        if (host !== "desktop" || !["unentitled", "invalid"].includes(name)) {
+          assert.equal(createHash("sha256").update(html).digest("hex"), beforeHash);
+          assert.ok(!html.includes(DESKTOP_ACTIVATION_URL));
+          return;
+        }
+        assert.match(html, /Activation finishes in your system browser and returns to Mirafold Desktop automatically\./);
+        assert.doesNotMatch(html, /MIRAFOLD_LICENSE_KEY|relaunch|mirafold\.com\/pay|pair-qr/);
+        const anchors = [...html.matchAll(/<a(?: class="[^"]*")? href="([^"]+)" target="_blank" rel="noopener noreferrer"/g)];
+        assert.deepEqual(anchors.map((a) => a[1]), Array(name === "unentitled" ? 2 : 1).fill(DESKTOP_ACTIVATION_URL));
+        if (name === "unentitled") assert.match(html, /Already have a license key\?/);
+        else {
+          assert.match(html, /<q class="pair-quote">subscription lapsed<\/q>/);
+          assert.match(html, /renew or get Mirafold Pro/);
+          assert.match(html, /manage subscription/);
+        }
+      });
+    }
+  }
+});
+
+test("DA.2: host and billing hints alone never add a Pair surface to a remote viewport", () => {
+  for (const host of [undefined, "desktop"] as const) {
+    assert.equal(renderToStaticMarkup(createElement(ConnectDevice, {
+      host, billing: true, subRequest: () => "id", entitlement: { state: "invalid" },
+    })), "");
+  }
 });

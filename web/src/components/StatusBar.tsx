@@ -3,6 +3,7 @@ import { ArmedButton } from "./ArmedButton";
 import {
   ConnectDevice,
   type EntitlementView,
+  type DaemonHost,
   type RelayInfo,
   type RelayOff,
   type SubscriptionRequest,
@@ -51,6 +52,7 @@ export function StatusBar({
   onToggleTheme,
   onOpenSettings,
   onEndSession,
+  host,
   relay,
   relayOff,
   entitlement,
@@ -87,6 +89,7 @@ export function StatusBar({
   // The "connect a device" button's inputs: pairing info for the QR, else
   // why remote access is off; plus the license-key read. Both absent → a
   // remote viewport → no button.
+  host?: DaemonHost;
   relay?: RelayInfo;
   relayOff?: RelayOff;
   entitlement?: EntitlementView;
@@ -249,6 +252,7 @@ export function StatusBar({
         </span>
       )}
       <ConnectDevice
+        host={host}
         relay={relay}
         relayOff={relayOff}
         entitlement={entitlement}

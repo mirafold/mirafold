@@ -4228,6 +4228,247 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   modern API work there directly instead of via the fallback. Its own
   repo, its own permission tests.
 
+## Phase DA — secure Mirafold Pro activation for Desktop (opened 2026-09-04; Kyle-directed)
+
+**Outcome and order.** An installed Linux Desktop user can click the existing
+Pair surface, buy Pro or connect an existing Pro key in the system browser,
+return automatically to the app, and use the hosted relay after the daemon
+restarts—without putting the permanent key in a shell profile or personally
+storing it. This Shell phase lands only after the site's private activation
+backend is production-ready and before the Desktop feature release. Do not
+start Step DA.1 until Site Step DA-S.11 is complete. Nothing in this phase
+authorizes public Desktop copy on mirafold.com; that waits for the
+installed Linux end-to-end acceptance gate.
+
+This is an oversized feature phase. Every numbered Step is one independently
+executable `$next` pass, including tests and its dated plan update. Work in
+order and stop after one Step.
+
+**Current `$next`: Step DA.6.** Site Step DA-S.11 and Shell Steps DA.1–DA.5
+are recorded complete. The reviewed candidate remains local on
+`feature/desktop-pro-activation`, based on `origin/next` at `8765de5`; no Shell
+release or Desktop feature has been published by this work.
+
+### Verified starting state — 2026-09-04
+
+- `server/index.ts` passes `process.env` independently to
+  `resolveRelayPlan`, `createEntitlementTokenSource`, and
+  `createSubscriptionActions`. Those functions recognize only
+  `MIRAFOLD_ENTITLEMENT_TOKEN` and `MIRAFOLD_LICENSE_KEY`; there is no
+  in-memory Desktop credential source or Desktop host marker.
+- `server/relay/entitlement.ts` keeps the permanent key server-side, posts it
+  to `https://mirafold.com/api/entitlement`, caches the returned 48-hour signed
+  token, refreshes every 12 hours, bounds responses/time, and masks the key in its fixed log prefix. DA.3
+  later proved and removed a separate leak through reflected billing text. `server/relay/subscription.ts` deliberately uses that same key for the
+  local-only status/cancel/undo surface.
+- `server/adapters/types.ts` already classifies `MIRAFOLD_LICENSE_KEY`, the
+  relay pairing code, daemon auth token, and hand-issued entitlement token as
+  `DAEMON_ONLY_ENV`; `envWithout()` strips them from every agent engine. The
+  project configuration loader also refuses relay/license identity keys. These
+  are existing second walls, not a substitute for keeping a Desktop key out of
+  the daemon's OS environment in the first place.
+- `web/src/components/ConnectDevice.tsx` always links an unentitled user to
+  plain `https://mirafold.com/pay` and tells an existing subscriber to set
+  `MIRAFOLD_LICENSE_KEY` and relaunch. The daemon hello has no host identity,
+  so terminal/browser and Electron render the same wording today.
+- The pair code and Pro credential are separate. The pair code is random per
+  daemon launch, lives in the QR fragment, derives the end-to-end session keys,
+  and never reaches the relay. A Pro entitlement token admits the daemon to the
+  hosted relay but cannot decrypt or join another user's session without that
+  pair code. This phase does not change either relay protocol.
+
+### Approved implementation boundary
+
+Phase DA may create `server/desktop-credential.ts` and its focused test. It may
+modify `server/index.ts`, `server/relay/relay-url.ts`,
+`server/relay/entitlement.ts`, `server/relay/subscription.ts`, `server/log.ts`,
+`server/protocol.ts`, `server/sessions/handler-context.ts`,
+`server/sessions/connection.ts`, `web/src/transport/daemon-hello.ts`, and
+`web/src/components/ConnectDevice.tsx`, `web/src/components/Shell.tsx`,
+`web/src/components/StatusBar.tsx`, and `web/src/components/FleetView.tsx`, plus
+only their directly corresponding tests and integration fixtures. Tests,
+release evidence, and this plan may be updated; no dependency is added.
+
+Boundary amendment — 2026-09-05, DA.2 execution: the existing session and fleet
+Pair cards receive individually forwarded properties. Add the three existing
+forwarding components above for six lines carrying the host property; this is
+necessary to deliver DA.2's specified behavior, adds no product surface, and
+does not change the locked behavior or trust boundary. Amendment recorded
+before editing those components.
+
+Boundary amendment — 2026-09-05, DA.3 execution: a real-daemon probe confirmed
+that a billing response echoing the private key reaches local messages and
+diagnostic sinks. The existing allowed billing consumers will remove their
+known key before returning text. Add `server/log.ts` and its directly
+corresponding test to recognize the Mirafold license-key family at the existing
+shared log scrubber; this closes the proved paste-safe-log gap and permits the
+Step's required redaction mutation check. No new service or credential store.
+
+Boundary amendment — 2026-09-05, DA.4 continuation: after the first ten fixes,
+the required fresh cold review proved that a nonempty operations token which
+cannot be placed in an HTTP header still selects the gated hosted relay while
+the token source silently supplies no credential. Extend the existing optional,
+local-only `relayOff` value set with `invalid-entitlement-token`; validate that
+override at relay-plan time using the same header rule as the dialer, and give
+the existing Pair card and boot output a credential-free explanation. The
+operator override continues to suppress license fallback. An explicit ungated
+self-host remains dialable without a token, while an explicit entitlement
+backend remains a gate. This adds no field, service, dependency, credential
+store, or remote-relay protocol change. Amendment recorded before product code.
+
+Boundary correction — 2026-09-05, DA.4C cold review: the immediately previous
+browser bundle preserves an unknown value in the already-recognized `relayOff`
+field and its exhaustiveness fallback renders that machine value as text. The
+paragraph above therefore does **not** authorize adding a fourth `relayOff`
+value. Keep that field's three-value wire contract unchanged. Add instead one
+optional, local-only `relayConfigProblem: "invalid-entitlement-token"` hello
+field; the previous bundle does not consume it and keeps no Pair button, while
+the current hello reducer validates the exact literal and maps it to the current
+Pair explanation. Remote viewports receive neither field. This is the one new
+wire field allowed by this correction; it carries no credential or identifier
+and adds no service, dependency, store, or remote-relay protocol change.
+Correction recorded before the compatibility repair.
+
+All agent adapters, project configuration formats, the remote pairing secret
+and cryptography, relay protocol and deployment, session/transcript persistence,
+ordinary terminal/npm credential precedence, and unhosted browser behavior stay
+behaviorally unchanged. The new host field is optional and local-only; it is
+not a general platform-identification mechanism. Any need for another product
+surface, executable file, wire field, service, dependency, or persistent store
+stops the Step for an explicit plan-boundary amendment before the change.
+
+### Locked boundary
+
+Desktop supplies the key over a pipe connected to the daemon's standard input
+and adds one fixed, non-secret internal launch flag. Shell reads only when that
+exact flag is present, enforces the existing license-key shape plus a tiny byte
+ceiling and short startup deadline, requires EOF, and closes the descriptor
+before any session or agent can start. The key is held in an explicit in-memory
+runtime configuration object; Shell must never write it to `process.env`,
+mutate argv with it, serialize it, or expose it through the browser wire.
+Terminal/npm launches continue to read the existing environment variable
+exactly as before. The hand-issued
+`MIRAFOLD_ENTITLEMENT_TOKEN` remains the ops override; in a Desktop-hosted
+launch the private pipe key wins over a stale ambient license key, with one
+credential-free warning if both exist. The official Desktop removes that
+ambient license variable before spawn; Shell's precedence rule is a second wall
+for other internal-flag launchers, not permission to rely on an environment
+secret.
+
+The same non-secret launch flag may add an optional `host: "desktop"` field to
+the local daemon hello. That field changes only trusted-shell wording and gives
+the Pro anchor a fixed Desktop marker for Electron main to intercept. It is
+additive wire data, contains no platform path or identifier, and never reaches
+remote viewports. An ordinary terminal/browser hello remains byte-for-behavior
+compatible. No preload, IPC, Node-enabled renderer, custom scheme, account,
+device token, relay endpoint, or secret-bearing WireMsg is introduced.
+
+The permanent key is more powerful than the 48-hour relay token because it can
+also schedule or undo cancellation under the existing accepted license-as-
+identity model. That is why passing only a relay token would be an incomplete
+substitute: it would silently remove the existing local subscription-management
+surface and require a new refresh service. This phase deliberately reuses the
+audited key path instead.
+
+### Steps
+
+- [x] **Step DA.1 — bounded private credential source.** ✅ 2026-09-05 —
+  `--mirafold-desktop` reads at most 43 bytes, requires EOF within two seconds,
+  closes stdin before boot, and resolves one daemon-only configuration for all
+  three consumers. Pipe/ambient and ops precedence, existing relay settings,
+  credential-free failures, and local mock turns are proved. Permitted Tier 1
+  1,145/1,145; focused built-daemon tests 7/7; typecheck and server build pass.
+  Eight dotenv-related tests were excluded under the global opacity rule.
+  Full step and evidence → `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.1.”
+
+- [x] **Step DA.2 — make only the trusted local shell host-aware.** ✅
+  2026-09-05 — optional local-only `host: "desktop"` reaches the session and
+  fleet Pair cards. Desktop activation/renewal and existing-key links use the
+  fixed `/activate` URL and system-browser return wording. All 12 terminal card
+  arms retain their exact rendered markup; remote views gain no surface.
+  Permitted Tier 1 1,177/1,177; built-daemon tests 7/7; focused browser tests 5/5;
+  required browser/visual checks 11/11; typecheck and full build pass. Same eight
+  dotenv-related exclusions as DA.1. Full step and evidence →
+  `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.2.”
+
+- [x] **Step DA.3 — prove the secret boundary through the real daemon and
+  relay path.** ✅ 2026-09-05 — real gated Relay, encrypted pairing, local
+  subscription actions, every engine/catalog/PTY/MCP child seam, rejected input,
+  billing failures, restarts, crash/log/wire/session searches, and five mutation
+  checks pass. Fixed proved billing-reflection/log leaks and one proved browser
+  test timing race. Permitted Tier 1 1,180; Tier 2 182; Tier 3 140; managed
+  browser/visual 11; packaged smoke 9; typecheck, build, notices, and diff check
+  pass. Eight Tier-1 and fourteen Tier-2 dotenv-related cases were excluded.
+  Full step, exact scope, gate recovery, and artifact evidence →
+  `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.3.”
+
+- [x] **Step DA.4 — run the Shell feature-delta correctness hunt.** ✅
+  2026-09-05 — all 31 DA.1–DA.3 delta files and 11 adjacent seams were covered.
+  Ten proved entitlement correctness defects were repaired serially with
+  class-level regressions: expiry validation/watch ownership, invalid-header
+  survival, wall-clock and monotonic-clock behavior, irreversible cache
+  retirement, reentrant dispatch/timer ownership, failed-refresh expiry, and
+  listener-failure isolation. The next cold review proved an eleventh finding,
+  so the required DA.4C continuation was inserted before DA.5. Full coverage,
+  causes, probes, and review chain → `PLAN-ARCHIVE.md`, “Moved 2026-09-05 —
+  Shell DA.4 and DA.4C.”
+
+- [x] **Step DA.4C — close the over-cap invalid-override planning split.** ✅
+  2026-09-05 — the planner and token source now share Node's exact request-
+  header rule. Invalid overrides keep precedence but cannot advertise or dial
+  a gated relay; valid overrides and explicitly ungated tokenless self-hosts
+  remain usable. A cold review then proved and the Step repaired one previous-
+  client compatibility defect by using an exact, optional local-only
+  `relayConfigProblem` field instead of extending the old `relayOff` enum.
+  Final fresh review found no confirmed correctness issue. Permitted Tier 1
+  1,205/1,205; Tier 2 182/182; Tier 3 140/140; browser/visual 11/11; mutations
+  5/5; packaged smoke 9/9; typecheck and build pass. Eight Tier-1 and fourteen
+  Tier-2 dotenv-related cases were excluded under the global opacity rule.
+  No live service, dependency, commit, publication, or security audit.
+
+- [x] **Step DA.5 — audit and freeze the Shell security boundary.** ✅
+  2026-09-05 — ten findings were proved before their edits and repaired at the
+  Step's cap: configured-relay disclosure through two persistent log paths;
+  unowned WebSocket setup rejection; billing reflection of the permanent key;
+  arbitrary subscription claims; vulnerable `qs@6.15.3`; incomplete dotenv
+  ignore coverage; permissive `Date.parse` validation; an empty-fragment
+  bypass; status validation before key redaction; and a low-entropy false
+  positive in the first reflection guard. Each has a class regression. The
+  final independent review found no confirmed issue remaining. Final gates:
+  focused security surfaces 125/125; permitted Tier 1 1,222/1,222; Tier 2
+  183/183; Tier 3 140/140; browser/visual 11/11; mutations 5/5; installed
+  package 9/9; typecheck, build, notices, frozen real install, and production
+  audit pass. The exact 17-file, 817-line DA.5 patch has SHA-256
+  `9e8045d4ff3862e9c23ee2d283f6736c5967547a30cee2ec78144a42dfff057b`.
+  The reviewed 20-file `0.8.5` tarball is 1,467,431 bytes with SHA-256
+  `43361561d5cc2a8879ce3a8e536fc21735f8cc8c27f63c487bdeca96a15b3ef2`.
+  No commit, publication, deployment, Desktop executable change, or live
+  service change occurred. Full findings, exclusions, and evidence →
+  `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.5 security audit and
+  candidate freeze.”
+
+- [ ] **Step DA.6 — publish the reviewed Shell before Desktop consumes it.**
+  Reconfirm Site Step DA-S.11's production activation endpoints are live, then
+  release exactly DA.5's candidate through the protected normal flow without
+  adding a new change. Verify the signed tag, npm provenance, registry tarball
+  hash and contents, a cold terminal install, the ordinary browser key path,
+  and an old Desktop launch with no internal flag. Record the npm version, commits, run
+  IDs, hashes, and automated Desktop intake result. Done when npm serves the
+  reviewed bytes, old clients remain unchanged, and Desktop Phase 13 can pin
+  that exact public version rather than a local tarball or branch.
+
+### Explicitly unchanged and residual
+
+`mirafold-relay` needs no code or deployment for this feature: its offline
+Ed25519 gate, origin policy, pair caps, ciphertext forwarding, and E2E-blind
+logging remain exactly as deployed. The website's existing terminal key flow
+continues. Same-user malware, root/administrator access, a compromised Shell or
+Desktop distribution, and a compromised billing origin can still obtain a key;
+no client-side design can honestly defeat those authorities. The reasonable
+walls here are absence from ambient process metadata, descriptor closure,
+agent-child stripping, renderer isolation, bounded inputs, and no secret on the
+wire.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
