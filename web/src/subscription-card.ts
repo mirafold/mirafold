@@ -33,6 +33,12 @@ export function onReply(state: CardState, m: SubscriptionReply): CardState {
  *  omits the date rather than showing "Invalid Date"). */
 export function day(iso: string | undefined): string | null {
   if (!iso) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.exec(iso);
+  if (!match) return null;
+  const [year, month, date, hour, minute, second] = match.slice(1, 7).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+  if (date < 1 || date > daysInMonth || hour > 23 || minute > 59 || second > 59) return null;
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
   return new Date(t).toLocaleDateString("en-US", {
@@ -47,18 +53,19 @@ export function describeSubscription(reply: SubscriptionReply): {
   line: string;
   action: "cancel" | "uncancel" | null;
 } {
-  const d = day(reply.cancelAt) ?? day(reply.periodEnd);
-  if (reply.cancelAt) {
+  const cancelDay = day(reply.cancelAt);
+  const periodDay = day(reply.periodEnd);
+  if (cancelDay) {
     return {
-      line: d ? `cancellation scheduled — access ends ${d}` : "cancellation scheduled",
+      line: `cancellation scheduled — access ends ${cancelDay}`,
       action: "uncancel",
     };
   }
   switch (reply.status) {
     case "trialing":
-      return { line: d ? `free trial — first charge ${d}` : "free trial", action: "cancel" };
+      return { line: periodDay ? `free trial — first charge ${periodDay}` : "free trial", action: "cancel" };
     case "active":
-      return { line: d ? `active — renews ${d}` : "active", action: "cancel" };
+      return { line: periodDay ? `active — renews ${periodDay}` : "active", action: "cancel" };
     case "past_due":
       // Cancel stays offered: stopping future attempts is exactly what a
       // past-due customer may want. Fixing the card is Paddle's surface.
@@ -68,8 +75,10 @@ export function describeSubscription(reply: SubscriptionReply): {
       };
     case "canceled":
       return { line: "subscription ended", action: null };
+    case "paused":
+      return { line: "subscription is paused", action: null };
     default:
-      return { line: `subscription is ${reply.status ?? "unknown"}`, action: null };
+      return { line: "subscription status unavailable", action: null };
   }
 }
 

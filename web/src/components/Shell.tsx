@@ -635,6 +635,7 @@ export function Shell() {
               onToggleTheme={toggleMode}
               onOpenSettings={() => setSettingsOpen(true)}
               onEndSession={meta.sessionId ? bus.endSession : undefined}
+              host={daemonInfo.host}
               relay={daemonInfo.relay}
               relayOff={daemonInfo.relayOff}
               entitlement={daemonInfo.entitlement}

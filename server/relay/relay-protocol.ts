@@ -5,6 +5,7 @@
 // `p`, and the wire protocol itself is untouched by this layer.
 
 import { randomBytes } from "node:crypto";
+import { validateHeaderValue } from "node:http";
 
 /** Relay → daemon, over the daemon's dial-out socket. */
 export type RelayToDaemon =
@@ -61,6 +62,18 @@ export const CLOSE_UNENTITLED = 4007; // dial-in without a valid entitlement tok
 // (the paid-tier gate). Shared contract with the relay's contract.ts —
 // the sibling itest's parity guard pins them equal.
 export const ENTITLEMENT_HEADER = "mirafold-entitlement";
+
+/** The entitlement token is carried only as an HTTP upgrade header. Keep the
+ * planning decision and the eventual dial on Node's exact transport rule so
+ * neither layer can promise a credential the other layer must omit. */
+export function isEntitlementHeaderValue(token: string): boolean {
+  try {
+    validateHeaderValue(ENTITLEMENT_HEADER, token);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // A pair id shorter than this is refused outright — a guessable dev value
 // must never silently work against a relay. (Real ids are 22 chars.)

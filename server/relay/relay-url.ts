@@ -7,7 +7,7 @@
 // the relay. So the baked default engages exactly when a dial could succeed;
 // otherwise remote access stays off with a single actionable boot line.
 //
-// An EXPLICIT url is dialed verbatim, entitled or not — that is
+// A valid EXPLICIT URL is dialed verbatim, entitled or not — that is
 // the self-host path (an ungated relay accepts tokenless dials) and the dev
 // stub path. The app-origin default travels WITH the relay default: a phone
 // pairing through the hosted relay loads the viewport from the hosted static
@@ -19,6 +19,7 @@
 // twin-fallback QR there is a dead link) and the entitlement gate (review
 // 2026-08-29).
 import { envOff } from "../env";
+import { isEntitlementHeaderValue } from "./relay-protocol";
 
 export const DEFAULT_RELAY_URL = "wss://relay.mirafold.sh";
 export const DEFAULT_APP_URL = "https://app.mirafold.com";
@@ -32,15 +33,34 @@ export type RelayPlan =
   | { kind: "dial"; url: string; origin: string; source: "explicit" | "default"; appUrl?: string }
   /** Remote access off. `opt-out` = user said so (quiet); `unentitled-default`
    *  = nothing configured, so the bake stood down (one actionable boot line);
-   *  `malformed-url` = the explicit URL is not ws:/wss: and was REFUSED —
+   *  `invalid-entitlement-token` = an override cannot ride the required HTTP
+   *  header, so a gated dial was refused before it could enter retry churn;
+   *  `malformed-url` = the explicit URL is not usable as Mirafold's relay
+   *  base (wrong scheme, invalid syntax, or a fragment delimiter) and was REFUSED —
    *  refusing beats honoring, and local sessions never depend on the relay. */
-  | { kind: "off"; reason: "opt-out" | "unentitled-default" }
+  | { kind: "off"; reason: "opt-out" | "unentitled-default" | "invalid-entitlement-token" }
   | { kind: "off"; reason: "malformed-url"; raw: string };
 
-/** A relay URL's bare origin, or undefined when it is not a ws:/wss: URL. */
+/** A persistent-log label for a relay plan. The configured URL itself can
+ * carry userinfo, a private path, or a query (and malformed input may attempt
+ * a fragment), so it belongs only in the explicitly secret-bearing stdout
+ * boot line — never the paste-safe log. */
+export function relayLogLabel(plan: Extract<RelayPlan, { kind: "dial" }>): string {
+  return plan.source === "default" ? "hosted relay" : "configured relay";
+}
+
+/** A relay URL's bare origin, or undefined when it is not a usable Mirafold ws:/wss: relay base. */
 export function relayOriginOf(url: string): string | undefined {
+  // URL.hash cannot distinguish no fragment from an empty `#` delimiter. A
+  // nonempty fragment is rejected by `ws` directly; an empty one becomes
+  // nonempty when the client appends /daemon?... to this raw base. A literal
+  // `#` is therefore unusable here; an intended path/query octet is `%23`.
+  if (url.includes("#")) return undefined;
   try {
     const u = new URL(url);
+    // Refuse every such base while planning so an operator gets the specific
+    // one-time configuration warning before any dial; the client's rejection
+    // owner remains a last-resort containment for direct callers.
     return u.protocol === "ws:" || u.protocol === "wss:" ? u.origin : undefined;
   } catch {
     return undefined;
@@ -82,17 +102,26 @@ export function resolveRelayPlan(env: {
   MIRAFOLD_APP_URL?: string;
   MIRAFOLD_ENTITLEMENT_TOKEN?: string;
   MIRAFOLD_LICENSE_KEY?: string;
+  MIRAFOLD_ENTITLEMENT_URL?: string;
 }): RelayPlan {
   const raw = env.MIRAFOLD_RELAY_URL?.trim();
   const appUrl = env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "") || undefined;
+  const suppliedOverride = env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim();
+  const invalidOverride = !!suppliedOverride && !isEntitlementHeaderValue(suppliedOverride);
   if (raw && envOff(raw)) return { kind: "off", reason: "opt-out" };
   const hostedOrigin = relayOriginOf(DEFAULT_RELAY_URL) as string;
   if (raw) {
     const origin = relayOriginOf(raw);
     if (!origin) return { kind: "off", reason: "malformed-url", raw };
-    if (origin !== hostedOrigin) return { kind: "dial", url: raw, origin, source: "explicit", appUrl };
+    if (origin !== hostedOrigin) {
+      if (invalidOverride && env.MIRAFOLD_ENTITLEMENT_URL?.trim()) {
+        return { kind: "off", reason: "invalid-entitlement-token" };
+      }
+      return { kind: "dial", url: raw, origin, source: "explicit", appUrl };
+    }
   }
-  const entitled = !!(env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim() || env.MIRAFOLD_LICENSE_KEY?.trim());
+  if (invalidOverride) return { kind: "off", reason: "invalid-entitlement-token" };
+  const entitled = !!(suppliedOverride || env.MIRAFOLD_LICENSE_KEY?.trim());
   if (!entitled) return { kind: "off", reason: "unentitled-default" };
   return {
     kind: "dial",
@@ -109,8 +138,8 @@ export function resolveRelayPlan(env: {
 /**
  * Whether the pair card should present on the entitlement EXCHANGE (the
  * `entitlement` read). The exchange is what the HOSTED relay gates on, so a
- * refused key there truly means "no QR". An explicit self-hosted relay is
- * dialed verbatim and may be ungated — then the exchange says nothing about
+ * refused key there truly means "no QR". A valid explicit self-hosted relay
+ * is dialed verbatim and may be ungated — then the exchange says nothing about
  * whether the relay carries, and presenting on it would hide a working QR
  * (review 2026-08-26). An explicit entitlement URL means the operator runs
  * their own gate against their own backend: present again.

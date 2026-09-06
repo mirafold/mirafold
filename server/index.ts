@@ -1,4 +1,5 @@
 import "./project-env-loader";
+import { readDesktopCredential, resolveCredentialConfig } from "./desktop-credential";
 import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -15,7 +16,13 @@ import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { createSubscriptionActions } from "./relay/subscription";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { carriesCredentialInClear, presentsOnEntitlement, resolveRelayPlan, type RelayPlan } from "./relay/relay-url";
+import {
+  carriesCredentialInClear,
+  presentsOnEntitlement,
+  relayLogLabel,
+  resolveRelayPlan,
+  type RelayPlan,
+} from "./relay/relay-url";
 import {
   COOKIE_NAME,
   cookieToken,
@@ -47,6 +54,16 @@ const lastGasp = (kind: string, exitCode = 1) => (err: unknown) => {
 process.on("uncaughtException", lastGasp("uncaughtException"));
 process.on("unhandledRejection", lastGasp("unhandledRejection"));
 
+const desktopCredential = await readDesktopCredential();
+const relayConfig = resolveCredentialConfig(process.env, desktopCredential);
+if (desktopCredential.kind === "desktop") {
+  if (desktopCredential.problem) {
+    log.warn(`Desktop Pro credential unavailable (${desktopCredential.problem}); local sessions remain available.`);
+  } else if (process.env.MIRAFOLD_LICENSE_KEY?.trim()) {
+    log.warn("Desktop Pro key from private input takes precedence over MIRAFOLD_LICENSE_KEY; the ambient key is ignored.");
+  }
+}
+
 const app = express();
 
 // Resolved here (not with the relay block below) because the CSP's connect-src
@@ -54,7 +71,7 @@ const app = express();
 // default when an entitlement is configured (relay-url.ts has the full why;
 // MIRAFOLD_RELAY_URL=off is the opt-out). A malformed URL resolves to `off`
 // with its own reason — a bad value must narrow the policy, never widen it.
-const relayPlan = resolveRelayPlan(process.env);
+const relayPlan = resolveRelayPlan(relayConfig);
 const relay = relayPlan.kind === "dial" ? resolveRelayDial(relayPlan) : undefined;
 // Why remote access is off, for the pair button (protocol.ts `agents.relayOff`):
 // the button is always drawn for a local viewport; without a relay it opens
@@ -249,14 +266,14 @@ void probeLocalServers();
 // runs on a license key (subscription.ts decides; token-override and
 // self-host get nothing). Handed to LOCAL viewports only: billing actions
 // stay on the machine that holds the key, so the relay path never sees it.
-const subscriptionActions = createSubscriptionActions(process.env);
+const subscriptionActions = createSubscriptionActions(relayConfig);
 
 // The entitlement token source — a hand-issued token, a license key
 // exchanged at the billing backend, or nothing (a gated relay will refuse
 // the dial with an actionable line; local sessions never depend on this).
 // Created here, before the first viewport, because the pair card presents on
 // its read (protocol.ts `entitlement`); the relay block below dials with it.
-const entitlement = relay ? createEntitlementTokenSource(process.env) : undefined;
+const entitlement = relay ? createEntitlementTokenSource(relayConfig) : undefined;
 
 // Per-socket liveness, read by the heartbeat below to reap half-open
 // leftovers whose `close` never arrived (see ws-liveness.ts).
@@ -279,13 +296,14 @@ wss.on("connection", (ws) => {
   };
   const conn = openConnection(registry, viewport, {
     label: "ws",
+    host: desktopCredential.kind === "desktop" ? "desktop" : undefined,
     relay: relay?.info,
     relayOff,
     subscription: subscriptionActions,
     // The read reaches the pair card only where the exchange IS the relay's
     // gate (relay-url.ts presentsOnEntitlement) — an ungated self-hosted
     // relay carries a refused key just fine, and the card must not hide it.
-    entitlement: presentsOnEntitlement(relayPlan, process.env) ? entitlement : undefined,
+    entitlement: presentsOnEntitlement(relayPlan, relayConfig) ? entitlement : undefined,
   });
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);
@@ -380,7 +398,8 @@ if (relay && entitlement) {
       `[relay] KEEP THAT CODE SECRET — it grants remote access to your sessions; ` +
       `never paste this boot output into an issue or chat`,
   );
-  createLogger("relay").file(`dialing ${relay.url} (pairing code elided) — ${modeLine}`);
+  const logDestination = relayPlan.kind === "dial" ? relayLogLabel(relayPlan) : "relay";
+  createLogger("relay").file(`dialing ${logDestination} (pairing code elided) — ${modeLine}`);
 } else {
   switch (relayPlan.kind === "off" ? relayPlan.reason : undefined) {
     case "unentitled-default":
@@ -393,12 +412,19 @@ if (relay && entitlement) {
       );
       break;
     case "malformed-url":
-      // Refused here, named, instead of reaching `new WebSocket()` in the relay
-      // client and dying as an unhandledRejection AFTER the "server on" line.
+      // Refused here before a dial so the operator gets one specific repair
+      // instead of only the client's generic setup-failure containment.
       createLogger("relay").warn(
-        `MIRAFOLD_RELAY_URL is not a valid ws:// or wss:// URL and was REFUSED — ` +
+        `MIRAFOLD_RELAY_URL is not a usable Mirafold relay base and was REFUSED — ` +
           `remote access is OFF for this launch. Local sessions are unaffected. ` +
-          `Expected something like wss://relay.mirafold.sh`,
+          `Expected ws:// or wss:// with no fragment, such as wss://relay.mirafold.sh`,
+      );
+      break;
+    case "invalid-entitlement-token":
+      createLogger("relay").warn(
+        `MIRAFOLD_ENTITLEMENT_TOKEN cannot be used as an HTTP request header and was REFUSED — ` +
+          `remote access is OFF for this launch. Fix or remove that setting and relaunch. ` +
+          `Local sessions are unaffected.`,
       );
       break;
     case "opt-out":

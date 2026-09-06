@@ -84,13 +84,16 @@ export type Connection = {
  */
 export type ConnectionOptions = {
   label?: string;
+  /** Supplied by daemon startup only, never by a client or agent message. */
+  host?: Extract<WireMsg, { type: "agents" }>["host"];
   /** Pairing info for the "connect a device" QR. The local WS path passes
    *  it; the relay path never does — the code must not cross the relay.
    *  Same shape the hello carries (protocol.ts `agents.relay`). */
   relay?: { url: string; code: string; ws?: string };
-  /** Why remote access is off, when it is (protocol.ts `agents.relayOff`).
-   *  The local WS path passes it so the pair button can say so; a remote
-   *  viewport is proof the relay is on and never receives it. */
+  /** Why remote access is off, when it is (protocol.ts `agents.relayOff` /
+   *  `relayConfigProblem`). The local WS path passes it so the pair button
+   *  can say so; a remote viewport is proof the relay is on and never
+   *  receives it. */
   relayOff?: RelayOffReason;
   /** True for a viewport arriving over the paid relay. The relay gate
    *  refuses to attach such a viewport to a subscription-backed session;
@@ -113,7 +116,7 @@ export function openConnection(
   viewport: (msg: WireMsg) => void,
   options: ConnectionOptions = {},
 ): Connection {
-  const { label = "ws", relay, relayOff, remote = false, subscription, entitlement } = options;
+  const { label = "ws", host, relay, relayOff, remote = false, subscription, entitlement } = options;
   const log = createLogger(label);
   // A connection is a viewport onto one registry session — or a fleet
   // watcher observing the registry itself.
@@ -301,6 +304,7 @@ export function openConnection(
     const read = remote ? undefined : entitlement?.state();
     viewport({
       type: "agents",
+      ...(host === "desktop" && !remote ? { host } : {}),
       agents: availableAgents(),
       default: defaultAgent(),
       cwd: process.cwd(),
@@ -308,7 +312,11 @@ export function openConnection(
       folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
-      ...(relayOff && !remote ? { relayOff } : {}),
+      ...(relayOff && !remote
+        ? relayOff === "invalid-entitlement-token"
+          ? { relayConfigProblem: relayOff }
+          : { relayOff }
+        : {}),
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
       ...(read ? { entitlement: read } : {}),
     });

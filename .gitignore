@@ -1,8 +1,12 @@
 node_modules/
 dist/
+# Dotenv files are opaque secrets. Keep every common root and service-name
+# variant out of Git; the intentional public root template stays trackable.
 .env
-# permissions.ts guards .env.local as a secret file — keep git out of it too
-.env.local
+.env.*
+*.env
+*.env.*
+!/.env.example
 *.log
 .claude/
 dist-server/
