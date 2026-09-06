@@ -4211,8 +4211,10 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
 - **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
   #33547726085 passed, but GitHub annotated the pinned
   `actions/upload-artifact` v4 commit because its declared Node 20 runtime is
-  deprecated and was forcibly run on Node 24. Review/update that action on a
-  normal branch; it is not part of the emergency runtime hotfix.
+  deprecated and was forcibly run on Node 24. The same advisory recurred on
+  successful v0.9.0 release workflow #34010536859. Review/update that action on
+  a normal branch; it is not a release-integrity failure and was not changed in
+  the protected DA.6 release.
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
   full-suite runs (never in isolation; the failing assertion was not
   captured). Same load-sensitive family as IH.F / CR.2; recorded, not
@@ -4244,10 +4246,12 @@ This is an oversized feature phase. Every numbered Step is one independently
 executable `$next` pass, including tests and its dated plan update. Work in
 order and stop after one Step.
 
-**Current `$next`: Step DA.6.** Site Step DA-S.11 and Shell Steps DA.1–DA.5
-are recorded complete. The reviewed candidate remains local on
-`feature/desktop-pro-activation`, based on `origin/next` at `8765de5`; no Shell
-release or Desktop feature has been published by this work.
+**Current `$next`: no remaining Shell Step in Phase DA.** Site Step DA-S.11 and
+Shell Steps DA.1–DA.6 are complete. `mirafold@0.9.0` is public from signed tag
+`v0.9.0` at `b02f8ff`; automated Desktop intake released Desktop `v0.3.16` at
+`2d107f4` with that exact Shell pin. The cross-repository program now resumes
+in `mirafold-desktop` at DPC.1 / Desktop Step 13.1. Public Desktop positioning
+remains blocked through DPC.12.
 
 ### Verified starting state — 2026-09-04
 
@@ -4447,15 +4451,24 @@ audited key path instead.
   `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.5 security audit and
   candidate freeze.”
 
-- [ ] **Step DA.6 — publish the reviewed Shell before Desktop consumes it.**
-  Reconfirm Site Step DA-S.11's production activation endpoints are live, then
-  release exactly DA.5's candidate through the protected normal flow without
-  adding a new change. Verify the signed tag, npm provenance, registry tarball
-  hash and contents, a cold terminal install, the ordinary browser key path,
-  and an old Desktop launch with no internal flag. Record the npm version, commits, run
-  IDs, hashes, and automated Desktop intake result. Done when npm serves the
-  reviewed bytes, old clients remain unchanged, and Desktop Phase 13 can pin
-  that exact public version rather than a local tarball or branch.
+- [x] **Step DA.6 — publish the reviewed Shell before Desktop consumes it.** ✅
+  2026-09-05 — the live private activation endpoints were reconfirmed without
+  customer data. Final release review repaired one release-typecheck boundary
+  and one malformed-override retry/false-Pair path before publication; the
+  final cold review found no major issue. Feature PR #109 merged as `2806865`,
+  release PR #110 merged as `b02f8ff`, and signed tag `v0.9.0` binds that exact
+  `main` tree to the public tarball SHA-256
+  `d2c059b09ab344a183a54f6e6a7c0814c2bdb827a6da3fca131322108ff880d7`.
+  Protected release workflow #34010536859 passed and published npm provenance.
+  The registry serves the same 20 files and 1,467,409 bytes; signature audit,
+  SLSA provenance, zero-vulnerability install, cold CLI `0.9.0`, ordinary
+  no-internal-flag startup coverage, and packaged browser smoke 9/9 pass.
+  Scheduled Desktop intake #34012449184 verified that source, built and attested
+  all 17 Linux/Windows release files, and published Desktop `v0.3.16` at
+  `2d107f4` with exact Shell `0.9.0`. Fixed-snapshot PR #111 merged `main` back
+  into `next` as `0a390ba`. Full review, publication, compatibility, and intake
+  evidence → `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.6 protected
+  release.”
 
 ### Explicitly unchanged and residual
 
