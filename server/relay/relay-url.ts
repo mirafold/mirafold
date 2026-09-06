@@ -33,8 +33,8 @@ export type RelayPlan =
   | { kind: "dial"; url: string; origin: string; source: "explicit" | "default"; appUrl?: string }
   /** Remote access off. `opt-out` = user said so (quiet); `unentitled-default`
    *  = nothing configured, so the bake stood down (one actionable boot line);
-   *  `invalid-entitlement-token` = an override cannot ride the required HTTP
-   *  header, so a gated dial was refused before it could enter retry churn;
+   *  `invalid-entitlement-token` = an override cannot ride the HTTP header,
+   *  so its dial was refused before an unknown gate could enter retry churn;
    *  `malformed-url` = the explicit URL is not usable as Mirafold's relay
    *  base (wrong scheme, invalid syntax, or a fragment delimiter) and was REFUSED —
    *  refusing beats honoring, and local sessions never depend on the relay. */
@@ -114,7 +114,12 @@ export function resolveRelayPlan(env: {
     const origin = relayOriginOf(raw);
     if (!origin) return { kind: "off", reason: "malformed-url", raw };
     if (origin !== hostedOrigin) {
-      if (invalidOverride && env.MIRAFOLD_ENTITLEMENT_URL?.trim()) {
+      // An explicit relay can be gated by a hand-issued token without running
+      // an entitlement-exchange endpoint. No local setting proves that an
+      // arbitrary relay is ungated, so never dial it after omitting a supplied
+      // but header-invalid override. Removing the override still preserves the
+      // ordinary tokenless self-host/dev-stub path below.
+      if (invalidOverride) {
         return { kind: "off", reason: "invalid-entitlement-token" };
       }
       return { kind: "dial", url: raw, origin, source: "explicit", appUrl };

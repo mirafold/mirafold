@@ -50,24 +50,21 @@ test("DA.4C: every header-invalid override keeps a gated relay off without licen
   assert.equal(resolveRelayPlan({ MIRAFOLD_ENTITLEMENT_TOKEN: "custom.é" }).kind, "dial");
 });
 
-test("DA.4C: an invalid override is tolerated only by an explicitly ungated self-host", () => {
-  const ungated = resolveRelayPlan({
-    MIRAFOLD_RELAY_URL: "ws://127.0.0.1:9100",
-    MIRAFOLD_ENTITLEMENT_TOKEN: "bad\ntoken",
-    MIRAFOLD_LICENSE_KEY: "mf_fallback_must_not_win",
-  });
-  assert.equal(ungated.kind, "dial", "a tokenless self-host may be ungated");
-
-  assert.deepEqual(
-    resolveRelayPlan({
-      MIRAFOLD_RELAY_URL: "ws://127.0.0.1:9100",
-      MIRAFOLD_ENTITLEMENT_URL: "http://127.0.0.1:9200/api/entitlement",
-      MIRAFOLD_ENTITLEMENT_TOKEN: "bad\ntoken",
-      MIRAFOLD_LICENSE_KEY: "mf_fallback_must_not_win",
-    }),
-    { kind: "off", reason: "invalid-entitlement-token" },
-    "an operator-configured entitlement backend makes the self-host gated",
-  );
+test("DA.6 review: an invalid override blocks every explicit relay", () => {
+  for (const withEntitlementUrl of [false, true]) {
+    assert.deepEqual(
+      resolveRelayPlan({
+        MIRAFOLD_RELAY_URL: "ws://127.0.0.1:9100",
+        MIRAFOLD_ENTITLEMENT_TOKEN: "bad\ntoken",
+        MIRAFOLD_LICENSE_KEY: "mf_fallback_must_not_win",
+        ...(withEntitlementUrl
+          ? { MIRAFOLD_ENTITLEMENT_URL: "http://127.0.0.1:9200/api/entitlement" }
+          : {}),
+      }),
+      { kind: "off", reason: "invalid-entitlement-token" },
+      `entitlement URL configured=${withEntitlementUrl}`,
+    );
+  }
 });
 
 test("whitespace-only entitlement is NOT entitled", () => {
