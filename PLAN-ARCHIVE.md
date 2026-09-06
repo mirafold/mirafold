@@ -12314,3 +12314,115 @@ commit `8765de5fe5900b18414c49ff4494b7c6d146d44c` plus the reviewed working-tree
 delta; the runtime identity is the 20-file tarball hash above. The next chunk
 is DA.6, which alone may version and publish these reviewed bytes through the
 protected release path.
+
+## Moved 2026-09-05 — Shell DA.6 protected release
+
+DA.6 published the reviewed Desktop activation boundary as `mirafold@0.9.0`,
+proved that the public registry artifact is the reviewed artifact, and carried
+that exact version through automated Desktop intake. The live Site activation
+endpoints were reconfirmed first without using customer data, a license key, a
+transaction, or a grant: `/activate` returned the intended no-store security
+headers, malformed exchange input returned safe JSON with HTTP 400, and
+malformed no-origin authorize-key and purchase requests returned safe JSON
+with HTTP 403.
+
+Final release review found two prepublication defects, so DA.5's frozen bytes
+were not published unchanged:
+
+1. `tsconfig.ci.json` included `server/desktop-boundary.itest.ts`, a Desktop
+   boundary integration test that imports the Relay under test from the sibling
+   `../mirafold-relay` checkout. A standalone Shell release checkout therefore
+   could not pass the declared release typecheck. Commit
+   `b38fd5c44fe102996858a3bacf7aa75dd93fb386` excludes that integration-only
+   file from the release typecheck and adds a release-workflow regression that
+   preserves the boundary.
+2. A malformed hand-issued token blocked the configured operations relay but
+   could still leave another explicit relay URL eligible. With no usable token,
+   that planned a connection which could close with code 4007, reconnect, and
+   transiently present a false Pair state. Commit
+   `c28c0e5305b7ad9db4f05bbf4f76144aece91c2a` makes an invalid override stop
+   every explicit relay plan. With no invalid override, the existing tokenless
+   self-hosted relay path remains available. The regression covers both sides.
+
+The focused relay and entitlement checks passed **53/53**. The permitted local
+Tier 1 set passed **1,217/1,217**; 14 cases were excluded because their test
+files or setup inspect or create dotenv fixtures. Typechecks, the production
+build, third-party notices, and packing passed. Feature PR #109 passed protected
+CI workflow #34008853111 and a fresh exact-head Codex review found no major
+issue. It merged into `next` as
+`2806865980770f3b32bca3a92749466536a06e5b`.
+
+The executable correction in final review is confined to
+`server/relay/relay-url.ts`. Its paired regression is in
+`server/relay/relay-url.test.ts`. The standalone release boundary changes only
+`tsconfig.ci.json` and `server/release-workflow.test.ts`. These corrections add
+no dependency and change no Relay service, Site, or Desktop executable.
+
+Release commit `e73c7c9e05a7fa5c3b1e8a50406a20297d6e415d` changed the package
+version from 0.8.5 to 0.9.0. Release PR #110 passed protected CI workflow
+#34009690200, CodeQL, DCO, Pages, and cold review with no finding, then merged
+as `b02f8ff17ae5316959343293b75bf573e7649c71`. SSH-signed tag `v0.9.0`
+points to that exact commit and verifies for `kserrec@gmail.com` with ED25519
+key `SHA256:ZiI2Wg/mysTHrZjR2fAMpctJm72/ORqRi/FrGt6bUe4`. Protected release
+workflow #34010536859 passed its
+verify-and-pack and npm-provenance publication jobs. The GitHub release is
+<https://github.com/mirafold/mirafold/releases/tag/v0.9.0>.
+
+The released tarball contains exactly 20 allowlisted runtime files, is
+**1,467,409 bytes**, and has SHA-256
+`d2c059b09ab344a183a54f6e6a7c0814c2bdb827a6da3fca131322108ff880d7`.
+Independent npm 10 and npm 12 packing from the exact release tree reproduced
+those bytes. The public npm registry serves the same size and hash, with
+integrity
+`sha512-4gI0yz5MNtTfEecZeSdQORue9EJBy0TOZtO7AJRDzWuZautLc70GKwMfxS92P1XmNBKqBKHDS1UtNzTWZy3ziQ==`.
+`npm audit signatures` verified all 114 registry signatures and 14
+attestations, including Mirafold's SLSA provenance v1 and npm publication
+attestation. The separate production dependency audit reported zero
+vulnerabilities. A cold global install reported CLI version `0.9.0`.
+
+Compatibility remained explicit. The protected suite retained the tests
+“ordinary built-daemon startup never waits for pipe EOF and retains its
+existing license-key mode” and “ordinary and lookalike-flag launches never
+consume or close stdin and retain ambient credentials.” The unchanged public
+package was also launched without the internal Desktop credential flag. Its
+packaged-browser acceptance passed **9/9**, covering bundle load, session and
+reload, registry UI, pinning, PTY, folder tree, and render MCP with no frontend
+error. The first browser attempt inside the workspace sandbox failed before
+the product boundary because Chromium could not create its platform socket
+(`Permission denied (13)` / `ERR_ACCESS_DENIED`). The identical command passed
+unchanged outside that restrictive sandbox; no product edit was made in
+response to the environmental failure.
+
+The scheduled Desktop intake detected the Shell release automatically and ran
+as workflow #34012449184. It verified source and provenance, tested the exact
+prepared source, built and smoke-tested Linux and Windows native packages,
+exercised the Windows NSIS install lifecycle, signed and verified the Ubuntu
+APT repository, generated SLSA provenance for all 17 release assets, and
+verified the isolated atomic writer. It published Desktop `v0.3.16` from
+commit `2d107f41818071fb0596920586bd97e6d3491cc6`, whose package version is
+0.3.16 and whose Mirafold dependency is the exact pin `0.9.0`:
+<https://github.com/mirafold/mirafold-desktop/releases/tag/v0.3.16>.
+Automated Path A creates an annotated workflow-identity tag rather than a
+maintainer-signed tag; trust for this path comes from exact remote digest
+checks and the 17 attested artifacts. The absence of a cryptographic tag
+signature is therefore the documented Path A behavior, not a verification
+mismatch.
+
+Fixed-snapshot PR #111 brought the release version back from `main` to `next`.
+Protected CI workflow #34012601164 passed Tier 1 and the full Tier 2/3 browser,
+cross-engine, and visual suites; DCO, Pages, reused CodeQL, and Codex review all
+passed with no finding. It merged as
+`0a390ba3927d6c3b472f8511c82cff28c8bb5041`.
+
+This completes the Shell release and proves that Desktop `v0.3.16` bundles the
+compatible public Shell. It does not implement Desktop activation, secure
+secret storage, private credential handoff, or lifecycle ownership. Desktop
+Steps DPC.1–DPC.12 remain, beginning with DPC.1 / Desktop Step 13.1, and public
+Desktop positioning remains blocked until DPC.12. No real paid activation or
+customer transaction was used. The Relay service and Site received no code or
+deployment change during DA.6.
+
+One non-blocking release-tooling item remains: successful workflow
+#34010536859 repeated GitHub's warning that the pinned `actions/upload-artifact`
+v4 commit declares Node 20 and is forcibly run on Node 24. The release passed;
+the action should be updated on a normal branch.
