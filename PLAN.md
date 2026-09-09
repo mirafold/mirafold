@@ -4110,6 +4110,18 @@ passed. The earlier layout changes are isolated in commit `0d10300`.
   review of `c947269` completed without findings; re-check the required checks
   before the eventual merge.
 
+**Additional requested hotfix — file links in paintings (2026-09-09):**
+Kyle's HTML-link screenshot was traced to a saved `card` reply in a session
+rooted at `/home/serrecchia/Projects`; the target was inside that root.
+The August 29 file-link fix still worked for prose, but the shared painting
+Markdown renderer bypassed it. OutputZone now supplies its existing Files
+handler through context to painting Markdown, including inline/detail text
+and pinned paintings. HTML uses the existing Files source viewer.
+Verified locally: typecheck, 1,264 unit tests, and a new real-daemon Chrome
+regression that failed on the card before the fix and now opens the HTML
+file from prose, cards, lists, detail text, and pinned cards without a new
+tab. No merge or release; Kyle explicitly prohibited merging.
+
 ---
 
 ## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)

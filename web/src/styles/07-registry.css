@@ -40,7 +40,7 @@
   color: var(--fg-dim);
 }
 
-.rc a {
+.rc :is(a, .markdown-file-link) {
   color: var(--info);
 }
 
