@@ -4084,9 +4084,15 @@ here, not chased on this branch.
 bug fixes, hardening, and behavior-preserving refactors since 0.9.0. This
 supersedes the historical merge/release holds below. Final PR #113 CI passed
 all 1,281 unit, 196 integration, 144 Chrome end-to-end, and 11 managed-browser
-and visual tests; all review findings were resolved. Release preparation
-changes only the package version and this record. The original iPhone Chrome
-layout report still requires verification on the actual device after release.
+and visual tests; all review findings were resolved. Initial release preparation
+changed the package version and this record. CI repair PR #115 then removed
+the runner's unused Google Chrome apt source before browser dependency setup;
+the new `.sources` file survived the image's legacy `.list` cleanup, making an
+upstream checksum mismatch block the entire test job. The repair passed full CI
+and merged into `next` before its fix branch was merged into this release.
+Product code, package verification, and test gates were preserved. The original
+iPhone Chrome layout report still requires verification on the actual device
+after release.
 
 Scope: all six phases of the supplied `mirafold-tightening-pass-spec.md`,
 on `fix/session-entry-layout` for PR #113. Keep the existing APIs, provider
