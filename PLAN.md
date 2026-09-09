@@ -4723,8 +4723,12 @@ copy on PR #118. This continues the provider work on the existing branch.
   eight focused browser cases (including both Gemini credential layouts and
   real-daemon failure/fallback), three managed-browser interactions, and
   eight visual checks. Picker baseline updated after inspection. System
-  Chrome escalation was declined; the E2E run used the harness's existing
-  CHROME_BIN override with managed Chromium inside the sandbox. No live
+  Chrome needs an elevated launch. Kyle explicitly approved it after noting
+  that the earlier permission prompt was not seen; the execution tool still
+  returned "rejected by user" on the retry before Chrome started. This is
+  not recorded as Kyle declining permission or as a test failure. The passing
+  E2E run used the harness's existing CHROME_BIN override with managed
+  Chromium inside the sandbox. No live
   provider calls were made. Installed Gemini CLI **0.58.0** source and its
   settings-expansion function were checked offline.
 
@@ -4736,7 +4740,7 @@ copy on PR #118. This continues the provider work on the existing branch.
   file, examples included, so that report is not independently verified and
   the template remains untouched. Kyle must update its provider comments to
   match `docs/provider-subscriptions.md`; this remains open before merge.
-  The Gemini implementation is being pushed to the same PR; current-head
+  The Gemini implementation is pushed to PR #118 (`df2e58c`); current-head
   GitHub checks/review must be checked before merge. No merge authorized.
 
 ---
