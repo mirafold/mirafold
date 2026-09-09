@@ -14,7 +14,8 @@ import { CopyButton } from "./CopyButton";
  *  unless it's a plain language token. Pure, for Tier-1. */
 export function codeFence(code: string, lang?: string): string {
   const text = code.replace(/\r\n?/g, "\n");
-  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length));
+  let longestRun = 0;
+  for (const run of text.matchAll(/`+/g)) longestRun = Math.max(longestRun, run[0].length);
   const fence = "`".repeat(Math.max(3, longestRun + 1));
   const info = lang && /^[A-Za-z0-9_+#.-]+$/.test(lang) ? lang : "";
   return `${fence}${info}\n${text}\n${fence}`;

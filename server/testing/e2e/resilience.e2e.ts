@@ -31,7 +31,7 @@ import { startDaemon, type Daemon } from "../itest-harness";
 import { launchChrome } from "./e2e-harness";
 
 // The two "the app lies quietly" behaviors, exercised for real — a daemon
-// killed mid-turn must not leave the ■ esc working state up, and a restarted
+// killed mid-turn must show the lost connection without forgetting work, and a restarted
 // daemon must reopen the saved session at the same URL, preserving the prompt
 // while saying that the interrupted turn itself did not finish.
 
@@ -50,7 +50,7 @@ after(async () => {
   await d?.stop();
 });
 
-test("mid-turn daemon death clears working state; restart reopens the saved session", async () => {
+test("mid-turn daemon death retains work until restart replays the interrupted session", async () => {
   await page.goto(`http://127.0.0.1:${d.port}/`);
   await page.locator(".agent-picker-agent", { hasText: "Claude Agent" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
@@ -62,11 +62,11 @@ test("mid-turn daemon death clears working state; restart reopens the saved sess
   await page.keyboard.press("Enter");
   await page.waitForSelector(".stop-btn", { timeout: 15_000 });
 
-  // Kill the daemon mid-turn: the stop affordance must clear — a dead daemon
-  // must not look like an agent still thinking.
+  // Transport loss is visible, but only session frames can settle the turn.
   const port = d.port;
   await d.stop();
-  await page.waitForSelector(".stop-btn", { state: "detached", timeout: 10_000 });
+  await page.waitForSelector(".sb-dot-off", { timeout: 10_000 });
+  assert.equal(await page.locator(".stop-btn").count(), 1);
 
   // Restart on the same port and durable store. The client reconnects to the
   // old id; the URL and prompt remain, and Mirafold closes the interrupted
@@ -79,6 +79,7 @@ test("mid-turn daemon death clears working state; restart reopens the saved sess
   assert.equal(d.port, port, "restart re-bound a different port; test cannot proceed");
   const interrupted = page.locator(".notice-line", { hasText: "turn was interrupted" });
   await interrupted.waitFor({ timeout: 30_000 });
+  await page.waitForSelector(".stop-btn", { state: "detached", timeout: 10_000 });
   assert.equal(page.url(), oldUrl);
   assert.equal(await page.locator(".turn-user", { hasText: "hello resilience" }).count(), 1);
   assert.equal(await page.locator(".session-notice").count(), 0, "fell back to a blank session");

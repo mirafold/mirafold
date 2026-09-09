@@ -594,6 +594,170 @@ async function answerHandshake(s: FakeWS, client: SocketClient) {
   return frameCiphers(pair, clientNonce, daemonNonce, "d");
 }
 
+function pauseNextCrypto(t: TestContext, method: "encrypt" | "decrypt") {
+  const subtle = globalThis.crypto.subtle;
+  const original = subtle[method].bind(subtle);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let held: Promise<ArrayBuffer> | undefined;
+  t.mock.method(subtle, method, (algorithm: AlgorithmIdentifier, key: CryptoKey, data: BufferSource) => {
+    const result = original(algorithm, key, data);
+    if (held) return result;
+    held = result.then(async (bytes) => { await gate; return bytes; });
+    return held;
+  });
+  return {
+    started: () => held !== undefined,
+    release: async () => { release(); await held; await drain(); },
+  };
+}
+
+for (const successorReady of [false, true]) {
+  test(`relay path: replacement during sealing preserves unsent messages (successor ready: ${successorReady})`, async (t) => {
+    const { dom, client, sock } = setupRelay(t);
+    t.after(() => client.close());
+    client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+    await drainUntil(() => FakeWS.instances.length > 0, "first dial");
+    const one = sock();
+    one.open();
+    await answerHandshake(one, client);
+    await drainUntil(() => one.sent.length === 2, "first attach sent");
+    const seal = pauseNextCrypto(t, "encrypt");
+    client.send({ type: "prompt", text: "first" });
+    client.send({ type: "action", sourceId: "card", action: { kind: "tool", name: "workspace_ls" } });
+    await drainUntil(seal.started, "seal in flight");
+    one.close();
+    dom.online();
+    const two = sock();
+    assert.notEqual(two, one);
+    let daemonCipher;
+    if (successorReady) {
+      two.open();
+      daemonCipher = await answerHandshake(two, client);
+      client.send({ type: "interrupt" });
+    }
+    await seal.release();
+    assert.equal(one.sent.length, 2, "no sealed message is handed to the obsolete socket");
+    if (!successorReady) {
+      two.open();
+      daemonCipher = await answerHandshake(two, client);
+    }
+    await drainUntil(() => two.sent.length === (successorReady ? 5 : 4), "queued messages delivered");
+    const delivered = [];
+    for (const frame of two.sent.slice(1)) delivered.push(JSON.parse(await daemonCipher!.open(frame)));
+    assert.deepEqual(delivered.map((m) => m.type),
+      successorReady ? ["attach", "prompt", "action", "interrupt"] : ["attach", "prompt", "action"],
+      "a later interrupt cannot overtake work held across reconnect");
+    assert.equal(delivered[1].text, "first");
+    assert.equal(delivered[2].action.name, "workspace_ls");
+  });
+}
+
+test("relay path: replacement during decryption discards the old frame and its sequence", async (t) => {
+  const { dom, client, sock } = setupRelay(t);
+  t.after(() => client.close());
+  client.setHello(() => null);
+  const seen: unknown[] = [];
+  client.onMessage((m) => seen.push(m));
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial");
+  const one = sock();
+  one.open();
+  const oldCipher = await answerHandshake(one, client);
+  const frame = await oldCipher.seal(JSON.stringify({ type: "turn_end", seq: 99 }));
+  const decrypt = pauseNextCrypto(t, "decrypt");
+  one.receiveRaw(frame);
+  await drainUntil(decrypt.started, "decrypt in flight");
+  one.close();
+  dom.online();
+  const two = sock();
+  two.open();
+  const currentCipher = await answerHandshake(two, client);
+  two.receiveRaw(await currentCipher.seal(JSON.stringify({ type: "text_delta", text: "current", seq: 4 })));
+  await drainUntil(() => seen.length === 1, "current frame dispatched");
+  await decrypt.release();
+  assert.deepEqual(seen, [{ type: "text_delta", text: "current", seq: 4 }]);
+  assert.equal(client.lastSeq, 4, "stale decryption cannot overwrite the successor's cursor");
+});
+
+test("relay path: delayed crypto preserves ordinary send and receive ordering", async (t) => {
+  const { client, sock } = setupRelay(t);
+  t.after(() => client.close());
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial");
+  const s = sock();
+  s.open();
+  const daemonCipher = await answerHandshake(s, client);
+  const seal = pauseNextCrypto(t, "encrypt");
+  client.send({ type: "prompt", text: "first" });
+  client.send({ type: "prompt", text: "second" });
+  await drainUntil(seal.started, "seal in flight");
+  assert.equal(s.sent.length, 1, "later messages wait behind the held seal");
+  await seal.release();
+  await drainUntil(() => s.sent.length === 3, "both prompts sent");
+  assert.equal(JSON.parse(await daemonCipher.open(s.sent[1])).text, "first");
+  assert.equal(JSON.parse(await daemonCipher.open(s.sent[2])).text, "second");
+  const first = await daemonCipher.seal(JSON.stringify({ type: "text_delta", text: "first", seq: 1 }));
+  const second = await daemonCipher.seal(JSON.stringify({ type: "turn_end", seq: 2 }));
+  const decrypt = pauseNextCrypto(t, "decrypt");
+  const seen: string[] = [];
+  client.onMessage((m) => seen.push(m.type));
+  s.receiveRaw(first);
+  s.receiveRaw(second);
+  await drainUntil(decrypt.started, "decrypt in flight");
+  assert.deepEqual(seen, []);
+  assert.equal(client.lastSeq, null);
+  await decrypt.release();
+  await drainUntil(() => seen.length === 2, "both frames dispatched");
+  assert.deepEqual(seen, ["text_delta", "turn_end"]);
+  assert.equal(client.lastSeq, 2);
+});
+
+test("relay path: open callbacks send once, after hello and previously queued work", async (t) => {
+  const { client, sock } = setupRelay(t);
+  t.after(() => client.close());
+  client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+  client.send({ type: "prompt", text: "queued earlier" });
+  client.onOpen(() => client.send({ type: "prompt", text: "from open callback" }));
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial");
+  const s = sock();
+  s.open();
+  const daemonCipher = await answerHandshake(s, client);
+  client.send({ type: "ping" });
+  await drainUntil(() => s.sent.length >= 5, "hello, both prompts, and the trailing ping sent");
+  const delivered = [];
+  for (const frame of s.sent.slice(1)) delivered.push(JSON.parse(await daemonCipher.open(frame)));
+  assert.deepEqual(delivered.map((m) => m.type), ["attach", "prompt", "prompt", "ping"]);
+  assert.deepEqual(delivered.slice(1, 3).map((m) => m.text), ["queued earlier", "from open callback"]);
+});
+
+test("relay path: a send that throws after handoff is not retried on reconnect", async (t) => {
+  const { client, sock } = setupRelay(t);
+  t.after(() => client.close());
+  client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial");
+  const one = sock();
+  one.open();
+  await answerHandshake(one, client);
+  await drainUntil(() => one.sent.length === 2, "attach sent");
+  t.mock.method(one, "send", (frame: string) => {
+    one.sent.push(frame);
+    throw new Error("uncertain send");
+  });
+  client.send({ type: "prompt", text: "possibly sent" });
+  await drainUntil(() => one.readyState === FakeWS.CLOSING, "send failure closes the socket");
+  one.finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  const two = sock();
+  two.open();
+  const daemonCipher = await answerHandshake(two, client);
+  client.send({ type: "prompt", text: "new prompt" });
+  await drainUntil(() => two.sent.length >= 3, "new prompt delivered");
+  const delivered = [];
+  for (const frame of two.sent.slice(1)) delivered.push(JSON.parse(await daemonCipher.open(frame)));
+  assert.deepEqual(delivered.map((m) => m.type), ["attach", "prompt"]);
+  assert.equal(delivered[1].text, "new prompt");
+});
+
 test("relay path: backoff climbs across post-open refusals — no 2 Hz hammering", async (t) => {
   const { client, sock } = setupRelay(t);
   client.setHello(() => null);

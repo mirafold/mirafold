@@ -2,7 +2,7 @@ import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { createLogger, verbose } from "../../log";
 import { UnknownKindReporter } from "../wire-helpers";
-import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
+import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync, renameSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../../protocol";
@@ -167,8 +167,8 @@ export class GeminiCliSession implements AgentSession {
   }
 
   /**
-   * Every file this adapter writes in the project is opened with O_NOFOLLOW
-   * (and the backup exclusively): the consented write is to THIS folder's
+   * Every file this adapter writes in the project is created exclusively
+   * with O_NOFOLLOW: the consented write is to THIS folder's
    * own files, and a repository must not get to choose where a write lands.
    * A checkout can ship `.gemini/settings.json` — or the backup's name
    * beside it — as a symlink (dangling ones pass `existsSync`) pointing at
@@ -178,12 +178,12 @@ export class GeminiCliSession implements AgentSession {
    * A hardlink — which git cannot deliver — is the accepted residual, as
    * for the daemon's `.env` guard.
    */
-  private writeOwnFile(file: string, data: string, exclusive = false) {
-    const { O_WRONLY, O_CREAT, O_TRUNC, O_EXCL, O_NOFOLLOW } = constants;
-    const flags = O_WRONLY | O_CREAT | (O_NOFOLLOW ?? 0) | (exclusive ? O_EXCL : O_TRUNC);
+  private writeOwnFile(file: string, data: string, mode = 0o644) {
+    const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = constants;
+    const flags = O_WRONLY | O_CREAT | O_EXCL | (O_NOFOLLOW ?? 0);
     let fd: number;
     try {
-      fd = openSync(file, flags, 0o644);
+      fd = openSync(file, flags, mode);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ELOOP" || code === "EMLINK") {
@@ -195,9 +195,14 @@ export class GeminiCliSession implements AgentSession {
       throw err;
     }
     try {
-      writeFileSync(fd, data);
-    } finally {
-      closeSync(fd);
+      try {
+        writeFileSync(fd, data);
+      } finally {
+        closeSync(fd);
+      }
+    } catch (err) {
+      try { unlinkSync(file); } catch { /* best-effort cleanup of our partial file */ }
+      throw err;
     }
   }
 
@@ -245,11 +250,11 @@ export class GeminiCliSession implements AgentSession {
       // timestamped sibling instead.
       let backup = `${file}.mirafold-backup`;
       try {
-        this.writeOwnFile(backup, raw, true);
+        this.writeOwnFile(backup, raw);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
         backup = `${file}.mirafold-backup.${Date.now()}`;
-        this.writeOwnFile(backup, raw, true);
+        this.writeOwnFile(backup, raw);
       }
       createLogger("gemini-cli").warn(
         `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
@@ -259,8 +264,17 @@ export class GeminiCliSession implements AgentSession {
   }
 
   private writeSettings(cfg: Record<string, any>) {
-    mkdirSync(path.dirname(this.settingsFile()), { recursive: true });
-    this.writeOwnFile(this.settingsFile(), JSON.stringify(cfg, null, 2));
+    const file = this.settingsFile();
+    mkdirSync(path.dirname(file), { recursive: true });
+    const existing = lstatSync(file, { throwIfNoEntry: false });
+    const temp = `${file}.${randomUUID()}.tmp`;
+    this.writeOwnFile(temp, JSON.stringify(cfg, null, 2), existing ? existing.mode & 0o777 : 0o644);
+    try {
+      this.assertSettingsPathIsOurs();
+      renameSync(temp, file);
+    } finally {
+      try { unlinkSync(temp); } catch { /* renamed, or best-effort cleanup on failure */ }
+    }
   }
 
   // Runs only once ensureTrusted() has actually resolved true: the one place

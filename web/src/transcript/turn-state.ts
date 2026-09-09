@@ -41,8 +41,7 @@ export type Announcement = { text: string; assertive?: boolean };
 
 export type TurnInput =
   | { kind: "message"; msg: ZoneMsg }
-  /** The socket dropped: this viewport can't be mid-turn any more; replay
-   *  (or the turn-activity frames) re-derives busy after reconnect. */
+  /** Transport loss does not finish session work; a full replay resets it. */
   | { kind: "disconnected" }
   /** The user interrupted: everything in flight dies, but the engine sends
    *  one turn_end for all abandoned work, so the counter drops to that one. */
@@ -86,16 +85,7 @@ function reduceTurnFresh(
 ): { state: TurnState; announcements: Announcement[] } {
   const announcements: Announcement[] = [];
   if (input.kind === "disconnected") {
-    return {
-      state: {
-        ...prev,
-        openTurns: 0,
-        errorAwaitingTurnEnd: false,
-        busy: false,
-        activity: null,
-      },
-      announcements,
-    };
+    return { state: prev, announcements };
   }
   if (input.kind === "interrupt") {
     return {
@@ -136,9 +126,7 @@ function reduceTurnFresh(
     next.turnText = "";
     if (live) announcements.push({ text: "Sent. Working…" });
   } else if (isActivity(m)) {
-    // Busy re-derives from ANY turn activity, not just the user_prompt — a
-    // tail resume mid-turn replays none of the turn's opening frames, and
-    // busy was cleared on the disconnect.
+    // Activity also establishes busy when replay starts after a turn's prompt.
     next.busy = true;
     // A SUBAGENT's traffic (parentId set) still proves the turn is busy, but
     // it is not the parent's voice — child prose and child tool churn must

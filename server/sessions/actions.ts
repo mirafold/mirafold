@@ -36,7 +36,8 @@ export const inside = (root: string, candidate: string): string | null => {
   } catch {
     return null;
   }
-  return real === realRoot || real.startsWith(realRoot + path.sep) ? real : null;
+  const prefix = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+  return real === realRoot || real.startsWith(prefix) ? real : null;
 };
 
 const ACTION_TOOLS: Record<string, ActionTool> = {
@@ -99,7 +100,7 @@ export function runActionTool(
   args: Record<string, unknown> | undefined,
   cwd: string,
 ): ActionResult {
-  const spec = ACTION_TOOLS[name];
+  const spec = Object.hasOwn(ACTION_TOOLS, name) ? ACTION_TOOLS[name] : undefined;
   if (!spec) {
     log.warn(`REJECTED off-allowlist tool "${name}"`);
     return { output: `Action tool "${name}" is not allowlisted.`, isError: true };

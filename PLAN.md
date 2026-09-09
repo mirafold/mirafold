@@ -4077,6 +4077,51 @@ here, not chased on this branch.
 
 ---
 
+## Phase TP — Tightening pass (2026-09-09; Kyle-directed)
+
+Scope: all six phases of the supplied `mirafold-tightening-pass-spec.md`,
+on `fix/session-entry-layout` for PR #113. Keep the existing APIs, provider
+behavior, trust/security checks, and replay/handshake design. No dependencies,
+redesign, unrelated cleanup, merge, or release. Starting head: `0610203`;
+tracked tree clean, unrelated untracked `decks/` preserved.
+
+- [x] **TP.1 — Action dispatch:** own-property allowlist lookup; regressions
+  for valid, unknown, and prototype names, including connection dispatch.
+- [x] **TP.2 — Gemini settings:** prepare a complete sibling temporary file
+  before replacement; preserve merge, backup, permissions, and path guards;
+  prove failed preparation leaves the original intact.
+- [x] **TP.3 — Reconnect state:** retain unfinished turns across transport
+  loss and empty tail resume; completion/error still settle, full replay resets.
+- [x] **TP.4 — Encrypted reconnect races:** check socket ownership after
+  encryption/decryption, retain definitely unsent messages, discard stale
+  receives without moving the cursor; controlled asynchronous regressions.
+- [x] **TP.5 — Utilities:** bounded backtick-run calculation and filesystem
+  root containment with canonicalization and symlink checks preserved.
+- [x] **TP.6 — Final review:** scope and fresh follow-up review complete;
+  focused and available local validation pass, with the explicit environment
+  limits below. Full unit/browser results are supplied by PR CI; inspect
+  the current head's checks before any eventual merge. No scope deferrals.
+
+Implementation stays in the five existing production modules; `Shell.tsx`
+only corrects its disconnect comment. Eight existing test files carry the
+regressions; no structural extraction, dependencies, or new source files.
+Each reported cause was reproduced before its fix. Fresh review also proved
+and closed two outgoing-order cases: a newer interrupt overtaking a sealed
+predecessor prompt, and an open callback scheduling a prompt twice. Accepted
+messages now remain in the existing queue until handoff; hello and queued
+work are scheduled before open notifications. Uncertain sends are not retried.
+
+Local validation: typecheck, production build, 1,275 unit tests, 196 real-daemon integration
+tests, focused regressions, whitespace checks, and unchanged generated license
+notices pass. Unit validation runs in `/tmp/mirafold-tightening-validation/`
+without workspace dotenv files; the existing `project-env.test.ts` suite
+requires `.env.example`, so its complete validation remains with CI.
+Chrome could not reach the local test daemon under the sandbox
+(`ERR_ACCESS_DENIED`); the requested outside-sandbox run was declined. Full
+browser and managed-browser/visual validation therefore remain with PR CI.
+
+---
+
 ## Phase MC — Minor dependency cleanups (2026-09-09; Kyle-directed)
 
 Scope: the three cleanups in Kyle's supplied `mirafold-minor-refactors-spec.md`,

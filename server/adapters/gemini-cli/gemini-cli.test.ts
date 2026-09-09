@@ -2,7 +2,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import type { WireMsg } from "../../protocol";
 import { GeminiCliSession, geminiRenderMcpConfig } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
@@ -225,6 +226,69 @@ test("a pre-existing settings.json — broken or valid — is untouched at const
   assert.equal(bAfterTurn.security.auth.selectedType, "gemini-api-key");
   assert.throws(() => readFileSync(`${file2}.mirafold-backup`), "valid JSON never gets a backup");
   b.close();
+});
+
+test("a partial settings write preserves the original bytes and removes its temporary file", (t) => {
+  const ws = mkdtempSync(path.join(tmp, "ws-"));
+  const dir = path.join(ws, ".gemini");
+  const file = path.join(dir, "settings.json");
+  const original = '{ "theirs": "must survive" }\n';
+  mkdirSync(dir);
+  writeFileSync(file, original, { mode: 0o600 });
+  const s = new GeminiCliSession({ workspaceDir: ws });
+  t.after(() => s.close());
+  const write = fs.writeFileSync;
+  const failing = t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+    const [target] = args;
+    if (typeof target === "number") {
+      write(target, "partial");
+      throw new Error("injected partial write failure");
+    }
+    return write(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => (s as unknown as { writeMcpSettings(): void }).writeMcpSettings(), /partial write failure/);
+  } finally {
+    failing.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.equal(readFileSync(file, "utf8"), original);
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(dir), ["settings.json"]);
+});
+
+test("a settings replacement preserves restrictive permissions", (t) => {
+  const ws = mkdtempSync(path.join(tmp, "ws-"));
+  const file = path.join(ws, ".gemini", "settings.json");
+  mkdirSync(path.dirname(file));
+  writeFileSync(file, '{"theirs":true}', { mode: 0o600 });
+  const s = new GeminiCliSession({ workspaceDir: ws });
+  t.after(() => s.close());
+  (s as unknown as { writeMcpSettings(): void }).writeMcpSettings();
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).theirs, true);
+  assert.deepEqual(readdirSync(path.dirname(file)), ["settings.json"]);
+});
+
+test("a failed settings rename preserves the original and removes the prepared replacement", (t) => {
+  const ws = mkdtempSync(path.join(tmp, "ws-"));
+  const file = path.join(ws, ".gemini", "settings.json");
+  const original = '{"theirs":true}';
+  mkdirSync(path.dirname(file));
+  writeFileSync(file, original);
+  const s = new GeminiCliSession({ workspaceDir: ws });
+  t.after(() => s.close());
+  const failing = t.mock.method(fs, "renameSync", () => { throw new Error("injected rename failure"); });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => (s as unknown as { writeMcpSettings(): void }).writeMcpSettings(), /rename failure/);
+  } finally {
+    failing.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.equal(readFileSync(file, "utf8"), original);
+  assert.deepEqual(readdirSync(path.dirname(file)), ["settings.json"]);
 });
 
 test("a settings write failure ends only that turn and the next prompt retries", async () => {
