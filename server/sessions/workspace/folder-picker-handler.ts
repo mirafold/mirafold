@@ -6,7 +6,7 @@ import type { ClientMsg, WireMsg } from "../../protocol";
 import type { ConnectionContext } from "../handler-context";
 import { errText } from "../../adapters/types";
 import { pickHostDirectory, type PickHostDirectory } from "../../folder-picker";
-import { CLIENT_ID_RE } from "./filesystem/fs-handlers";
+import { badClientId } from "../client-id";
 
 type PickFolder = Extract<ClientMsg, { type: "pick_folder" }>;
 type FolderPicked = Extract<WireMsg, { type: "folder_picked" }>;
@@ -32,7 +32,7 @@ export function createFolderPickerHandler(
   };
 
   const pick = (msg: PickFolder): void => {
-    if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+    if (badClientId(msg.id)) return;
     if (opts.remote) {
       replyError(
         msg.id,

@@ -13,7 +13,8 @@ import {
 import { isWorkspaceTrusted, trustWorkspace } from "../../security/workspace-trust";
 import type { PromptOption, SessionMsg } from "../../protocol";
 import { makeCanUseTool } from "../../security/permissions";
-import { makeRenderServer, RENDER_GUIDANCE } from "../../render-tools";
+import { makeRenderServer } from "../../render-tools";
+import { RENDER_GUIDANCE } from "../../render-guidance";
 import { ResumeIdState } from "../resume-id";
 import { UnknownKindReporter } from "../wire-helpers";
 import { ChecklistPainter, PermissionLedger } from "../wire-helpers";

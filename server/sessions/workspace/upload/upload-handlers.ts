@@ -17,7 +17,7 @@ import path from "node:path";
 import type { ClientMsg, WireMsg } from "../../../protocol";
 import { relayGateRefusal } from "../../../provider-policy";
 import { envInt } from "../../../env";
-import { badClientId } from "../filesystem/fs-handlers";
+import { badClientId } from "../../client-id";
 import { createLogger } from "../../../log";
 
 const log = createLogger("uploads");

@@ -11,10 +11,10 @@ import os from "node:os";
 import path from "node:path";
 import type { ClientMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
-import { CLIENT_ID_RE } from "./workspace/filesystem/fs-handlers";
+import { badClientId } from "./client-id";
 import { spawnBang } from "../pty/pty";
 import { relayGateRefusal } from "../provider-policy";
-import { errText } from "../adapters";
+import { errText } from "../adapters/types";
 import { envInt } from "../env";
 
 // How much of a `!` command's output rides into the agent's context with the
@@ -289,7 +289,7 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport, re
     // String(msg.id) would coerce a missing/numeric id ("undefined", "123")
     // into something that passes the regex and launches a bang with a bad
     // correlation id.
-    if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+    if (badClientId(msg.id)) return;
     const silent = msg.silent === true; // exactly `true` — a truthy string is not a silent bang
     // A `!` transcript is pushed to the model as its own turn, so a remote
     // viewport gets the drive-time relay gate `prompt` gets (a `!!` drives

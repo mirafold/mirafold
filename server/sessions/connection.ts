@@ -210,6 +210,7 @@ export function openConnection(
       shellCwd: e.bangCwd,
       agent: e.agent,
       model: e.session.modelName,
+      replayPending: true,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
       // The caller asked for a session that no longer exists and got a
@@ -217,6 +218,7 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
+    viewport({ type: "replay_complete" });
     // A relay viewport is governed by the relay gate even after a mid-session
     // credential-kind flip: mark it so the registry can evict it if the kind
     // becomes relay-ineligible.

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import type { SessionMsg } from "../../protocol";
-import { RENDER_GUIDANCE } from "../../render-tools";
+import { RENDER_GUIDANCE } from "../../render-guidance";
 import type { AgentSession } from "../types";
 import type { CodexModel } from "./codex-model-list";
 import { AsyncQueue, CLOSE } from "../async-queue";

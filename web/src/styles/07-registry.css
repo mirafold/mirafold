@@ -40,7 +40,7 @@
   color: var(--fg-dim);
 }
 
-.rc a {
+.rc :is(a, .markdown-file-link) {
   color: var(--info);
 }
 
@@ -344,12 +344,19 @@
   gap: 8px;
 }
 
-.rc-question-opt {
+.rc-question-choice {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
   padding: 9px 12px;
+}
+
+.rc-question-opt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   text-align: left;
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
@@ -363,7 +370,8 @@
   background: var(--surface-hover);
 }
 
-.rc-question-opt:disabled {
+.rc-question-opt:disabled,
+.rc-question-opt:disabled ~ .rc-question-label {
   cursor: default;
   opacity: 0.55;
 }
@@ -372,6 +380,20 @@
   opacity: 1;
   border-color: var(--ok-border-strong);
   background: var(--ok-bg);
+}
+
+.rc-question-opt.rc-question-chosen ~ .rc-question-label {
+  opacity: 1;
+}
+
+.rc-question-label,
+.rc-question-detail {
+  position: relative;
+  pointer-events: none;
+}
+
+.rc-question-detail :is(a, button) {
+  pointer-events: auto;
 }
 
 .rc-question-label {

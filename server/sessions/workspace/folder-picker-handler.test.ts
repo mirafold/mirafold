@@ -44,7 +44,10 @@ test("relay viewports cannot open host UI, and hostile request shapes are bounde
     viewport: (msg) => seen.push(msg),
     remote: false,
     isClosed: () => false,
-    pickDirectory: async () => "/must-not-run",
+    pickDirectory: async () => {
+      called++;
+      return "/must-not-run";
+    },
   });
   local.pick({ type: "pick_folder", id: "bad id" });
   local.pick({ type: "pick_folder", id: "fp-long", cwd: "x".repeat(4_097) });

@@ -4,7 +4,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
-import { Md, fenceLanguage, mdOverrides, nodeText, workspaceMarkdown } from "./Md";
+import { Md, WorkspaceMarkdownContext, fenceLanguage, mdOverrides, nodeText, workspaceMarkdown } from "./Md";
+import { Card } from "./Card";
+import { List } from "./List";
 
 const render = (text: string) => renderToStaticMarkup(createElement(Md, { text }));
 
@@ -53,6 +55,32 @@ test("a Windows workspace file survives the URL gate and becomes a Files action"
   assert.match(html, /class="markdown-file-link"/);
   assert.match(html, /title="Open src\/app\.ts in Files"/);
   assert.ok(!html.includes("href="), `workspace file remained a browser href: ${html}`);
+});
+
+test("painting Markdown inherits workspace file handling, including inline and detail text", () => {
+  const root = "/home/serrecchia/Projects";
+  const link = "[Review](/home/serrecchia/Projects/surf-glossabet-review.html)";
+  const html = renderToStaticMarkup(createElement(
+    WorkspaceMarkdownContext.Provider,
+    { value: workspaceMarkdown(root, () => {}) },
+    createElement(Card, { title: "Review", body: link }),
+    createElement(List, { items: [{ text: link, detail: link }] }),
+  ));
+  assert.equal((html.match(/class="markdown-file-link"/g) ?? []).length, 3);
+  assert.equal((html.match(/title="Open surf-glossabet-review.html in Files"/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /href=/);
+});
+
+test("painting workspace context preserves Windows paths without admitting dangerous URL schemes", () => {
+  const html = renderToStaticMarkup(createElement(
+    WorkspaceMarkdownContext.Provider,
+    { value: workspaceMarkdown("C:\\Users\\Kyle\\project", () => {}) },
+    createElement(Md, { text: "[file](C:/Users/Kyle/project/review.html) [web](https://example.test) [expo](exp://example.test) [bad](javascript:alert(1))" }),
+  ));
+  assert.match(html, /title="Open review.html in Files"/);
+  assert.match(html, /href="https:\/\/example.test"/);
+  assert.match(html, /href="exp:\/\/example.test"/);
+  assert.doesNotMatch(html, /javascript:|href=""/);
 });
 
 // Expo Go's deep-link schemes carry a mobile app built in a session to the

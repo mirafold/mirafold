@@ -11,7 +11,7 @@ import { waitFor as waitForCond } from "../../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP, renderMcpCommand } from "../render-mcp-cmd";
 import { codexRenderMcpConfig } from "./codex-binding";
-import { MIRAFOLD_CONTEXT } from "../../render-tools";
+import { MIRAFOLD_CONTEXT } from "../../render-guidance";
 import { OUTPUT_CAP_BYTES } from "../types";
 import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
 

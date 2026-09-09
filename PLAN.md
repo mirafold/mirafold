@@ -4077,6 +4077,126 @@ here, not chased on this branch.
 
 ---
 
+## Phase TP — Tightening pass (2026-09-09; Kyle-directed)
+
+**Release authorization (2026-09-09):** Kyle approved merging PR #113 into
+`next` (`8831350`) and then publishing these changes. The release is **0.9.1**:
+bug fixes, hardening, and behavior-preserving refactors since 0.9.0. This
+supersedes the historical merge/release holds below. Final PR #113 CI passed
+all 1,281 unit, 196 integration, 144 Chrome end-to-end, and 11 managed-browser
+and visual tests; all review findings were resolved. Initial release preparation
+changed the package version and this record. CI repair PR #115 then removed
+the runner's unused Google Chrome apt source before browser dependency setup;
+the new `.sources` file survived the image's legacy `.list` cleanup, making an
+upstream checksum mismatch block the entire test job. The repair passed full CI
+and merged into `next` before its fix branch was merged into this release.
+Product code, package verification, and test gates were preserved. The original
+iPhone Chrome layout report still requires verification on the actual device
+after release.
+
+Scope: all six phases of the supplied `mirafold-tightening-pass-spec.md`,
+on `fix/session-entry-layout` for PR #113. Keep the existing APIs, provider
+behavior, trust/security checks, and replay/handshake design. No dependencies,
+redesign, unrelated cleanup, merge, or release. Starting head: `0610203`;
+tracked tree clean, unrelated untracked `decks/` preserved.
+
+- [x] **TP.1 — Action dispatch:** own-property allowlist lookup; regressions
+  for valid, unknown, and prototype names, including connection dispatch.
+- [x] **TP.2 — Gemini settings:** prepare a complete sibling temporary file
+  before replacement; preserve merge, backup, permissions, and path guards;
+  prove failed preparation leaves the original intact.
+- [x] **TP.3 — Reconnect state:** retain unfinished turns across transport
+  loss and empty tail resume; completion/error still settle, full replay resets.
+- [x] **TP.4 — Encrypted reconnect races:** check socket ownership after
+  encryption/decryption, retain definitely unsent messages, discard stale
+  receives without moving the cursor; controlled asynchronous regressions.
+- [x] **TP.5 — Utilities:** bounded backtick-run calculation and filesystem
+  root containment with canonicalization and symlink checks preserved.
+- [x] **TP.6 — Final review:** scope and fresh follow-up review complete;
+  focused and available local validation pass, with the explicit environment
+  limits below. Full unit/browser results are supplied by PR CI; inspect
+  the current head's checks before any eventual merge. No scope deferrals.
+
+Implementation stays in the five existing production modules; `Shell.tsx`
+only corrects its disconnect comment. Eight existing test files carry the
+regressions; no structural extraction, dependencies, or new source files.
+Each reported cause was reproduced before its fix. Fresh review also proved
+and closed two outgoing-order cases: a newer interrupt overtaking a sealed
+predecessor prompt, and an open callback scheduling a prompt twice. Accepted
+messages now remain in the existing queue until handoff; hello and queued
+work are scheduled before open notifications. Uncertain sends are not retried.
+A serialization failure removes its offending queued message before rethrowing,
+so a structured-clone cycle from an artifact cannot poison later reconnects;
+both initially queued and already-connected cases are covered and reviewed.
+
+Local validation: typecheck, production build, 1,277 unit tests, 196 real-daemon integration
+tests, focused regressions, whitespace checks, and unchanged generated license
+notices pass. Unit validation runs in `/tmp/mirafold-tightening-validation/`
+without workspace dotenv files; the existing `project-env.test.ts` suite
+requires `.env.example`, so its complete validation remains with CI.
+Chrome could not reach the local test daemon under the sandbox
+(`ERR_ACCESS_DENIED`); the requested outside-sandbox run was declined. Full
+browser and managed-browser/visual validation therefore remain with PR CI.
+
+---
+
+## Phase MC — Minor dependency cleanups (2026-09-09; Kyle-directed)
+
+Scope: the three cleanups in Kyle's supplied `mirafold-minor-refactors-spec.md`,
+on the existing `fix/session-entry-layout` branch. No merge or release;
+Kyle is collecting more fixes. Baseline: typecheck and all 1,231 unit tests
+passed. The earlier layout changes are isolated in commit `0d10300`.
+
+- [x] **MC.1 — Helper imports** (`fd127d6`): bang and filesystem handlers
+  obtain `errText` directly from adapter types. Its implementation and the
+  adapters entry-point re-export were not edited. Typecheck, 59 focused unit
+  tests, and 17 real-socket tests passed.
+- [x] **MC.2 — Client IDs** (`39d342f`): move the existing definitions and
+  comments verbatim into import-free `server/sessions/client-id.ts`; update
+  filesystem, bang, upload, and folder-picker consumers without changing
+  validation order or replies. New direct table tests cover the grammar and
+  boundaries; focused handler tests cover invalid IDs without work or replies.
+  Typecheck, 80 focused unit tests, and 19 real-socket tests passed.
+- [x] **MC.3 — Shared guidance** (`c947269`): move only the two constants and
+  their comments into `server/render-guidance.ts`; update all four adapters
+  and their tests. Tool setup and adapter injection sites were not edited.
+  Typecheck and all 229 adapter/tool tests passed. Both evaluated strings
+  match the captured bytes exactly (258 and 4,718 bytes); evidence is in
+  `/tmp/mirafold-minor-refactors-DGokI6/`. The import check includes all four
+  adapters and finds no new cycles (the existing env/log cycle remains).
+- [x] **MC.V — Final verification:** typecheck, all 1,262 unit tests, and
+  the full `yarn test:server` run (server build + 196 real-socket tests) pass.
+  Exactly two new production modules were added; no dependencies, forwarding exports, or
+  permanent prompt snapshots. Final diff review complete; no skipped steps
+  or remaining local test failures. PR #113 targets `next` and stays open
+  for the additional fixes Kyle wants before merging/releasing. Automated
+  review of `c947269` completed without findings; re-check the required checks
+  before the eventual merge.
+
+**Additional requested hotfix — file links in paintings (2026-09-09):**
+Kyle's HTML-link screenshot was traced to a saved `card` reply in a session
+rooted at `/home/serrecchia/Projects`; the target was inside that root.
+The August 29 file-link fix still worked for prose, but the shared painting
+Markdown renderer bypassed it. OutputZone now supplies its existing Files
+handler through context to painting Markdown, including inline/detail text
+and pinned paintings. HTML uses the existing Files source viewer.
+Verified locally: typecheck, 1,264 unit tests, and a new real-daemon Chrome
+regression that failed on the card before the fix and now opens the HTML
+file from prose, cards, lists, detail text, and pinned cards without a new
+tab. No merge or release; Kyle explicitly prohibited merging.
+
+Review follow-up: automated review of `18c95cc` identified a question-option
+interaction. A browser reproduction confirmed that opening a file from an
+option's detail also emitted that option's prompt. Question answer buttons
+and Markdown details now occupy separate controls; the answer button keeps
+the option's click area, while file/web links remain independent and usable
+after answering. Verified: typecheck, all 1,264 unit tests, the real question
+prompt round trip, and the expanded file-link browser regression (mouse,
+Enter/Space, web links, pinned questions, and accessibility before/after an
+answer). Follow-up commit still requires CI and fresh automated review.
+
+---
+
 ## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)
 
 Branch `fix/cockpit-follow-ups`, cut from `next` at 2411d35. Five items Kyle
@@ -4086,6 +4206,40 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   scroll runs in a layout effect (inside the commit, before paint); a
   switched-to session appears already at the tail. `follow-tail.e2e.ts`
   samples the scroller from a MutationObserver across the reload path.
+- [ ] **CF.1 follow-up — Session entry and phone layout (2026-09-09).**
+  On `fix/session-entry-layout`, the fast trip through history was reproduced
+  with replay split across browser frames. The existing layout-effect fix
+  still worked per batch, but exposed each partial batch. Local repair adds
+  `session_created.replayPending` + `replay_complete` and publishes history
+  once; interrupted resumes retain their unpublished prefix, full resets
+  discard it, and older daemons keep their existing delivery behavior.
+  Verified: 66 targeted unit tests, three browser cases (desktop cockpit,
+  phone delayed replay, and encrypted phone pairing with explicit focus),
+  typecheck, browser/server builds. Not released; package remains 0.9.0.
+  Kyle's separate floating phone status bar occurs on iPhone
+  Chrome, keyboard closed, immediately after initial pairing; refresh fixes
+  it. Three desktop-WebKit pairing probes (actual encrypted handshake,
+  session-fragment navigation, and viewport resizing) kept the bar aligned.
+  They do not emulate Chrome's iPhone toolbar. Kyle supplied a screenshot:
+  the empty pre-connection screen shows the prompt's focus styling and a
+  large gap above Chrome's bottom toolbar. Its geometry is consistent with
+  page displacement, but the screenshot cannot establish the browser's
+  scroll offset. A regression test proved PromptBox focused the phone input
+  before pairing completed without a tap. Removed that automatic phone
+  focus (also after incoming turns); desktop autofocus and explicit phone
+  taps still pass. Three further WebKit pairing/resize probes kept BODY
+  focused and the bar aligned. No phone CSS changed. Confirming that this
+  removes the actual iPhone gap remains pending; do not call it verified
+  from desktop emulation. Kyle's subsequent `yarn dev` pairing check loaded
+  `app.mirafold.com`, so it exercised the published frontend rather than this
+  phone change. Kyle elected to include the low-risk focus change in a later
+  release with the other fixes and check the actual iPhone then; no preview
+  deployment or release is requested now. PR #113's normal Cloudflare check
+  automatically created the branch preview at
+  `https://fix-session-entry-layout.mirafold-app.pages.dev`; no iPhone check
+  has been claimed from that deployment. Diagnostic screenshots live outside the tree in
+  `/tmp/mirafold-layout-evidence/`; Kyle's supplied screenshot is
+  `/tmp/mirafold-uploads-23823M/bd869fe2/909b67d8-2071-4a59-939f-b8a3cf5aa202.jpeg`.
 - [x] **CF.2 — Pins survive leaving and returning** — `pin-store.ts`, one
   localStorage key per session, restored from the URL's id at mount and
   saved once Shell's session key arrives; the dock exists only for
@@ -4211,8 +4365,10 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
 - **Release-tooling maintenance (non-blocking):** v0.8.1 release workflow
   #33547726085 passed, but GitHub annotated the pinned
   `actions/upload-artifact` v4 commit because its declared Node 20 runtime is
-  deprecated and was forcibly run on Node 24. Review/update that action on a
-  normal branch; it is not part of the emergency runtime hotfix.
+  deprecated and was forcibly run on Node 24. The same advisory recurred on
+  successful v0.9.0 release workflow #34010536859. Review/update that action on
+  a normal branch; it is not a release-integrity failure and was not changed in
+  the protected DA.6 release.
 - **Intermittent:** the artifact-pin e2e failed once in eight clean
   full-suite runs (never in isolation; the failing assertion was not
   captured). Same load-sensitive family as IH.F / CR.2; recorded, not
@@ -4244,10 +4400,12 @@ This is an oversized feature phase. Every numbered Step is one independently
 executable `$next` pass, including tests and its dated plan update. Work in
 order and stop after one Step.
 
-**Current `$next`: Step DA.6.** Site Step DA-S.11 and Shell Steps DA.1–DA.5
-are recorded complete. The reviewed candidate remains local on
-`feature/desktop-pro-activation`, based on `origin/next` at `8765de5`; no Shell
-release or Desktop feature has been published by this work.
+**Current `$next`: no remaining Shell Step in Phase DA.** Site Step DA-S.11 and
+Shell Steps DA.1–DA.6 are complete. `mirafold@0.9.0` is public from signed tag
+`v0.9.0` at `b02f8ff`; automated Desktop intake released Desktop `v0.3.16` at
+`2d107f4` with that exact Shell pin. The cross-repository program now resumes
+in `mirafold-desktop` at DPC.1 / Desktop Step 13.1. Public Desktop positioning
+remains blocked through DPC.12.
 
 ### Verified starting state — 2026-09-04
 
@@ -4447,15 +4605,24 @@ audited key path instead.
   `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.5 security audit and
   candidate freeze.”
 
-- [ ] **Step DA.6 — publish the reviewed Shell before Desktop consumes it.**
-  Reconfirm Site Step DA-S.11's production activation endpoints are live, then
-  release exactly DA.5's candidate through the protected normal flow without
-  adding a new change. Verify the signed tag, npm provenance, registry tarball
-  hash and contents, a cold terminal install, the ordinary browser key path,
-  and an old Desktop launch with no internal flag. Record the npm version, commits, run
-  IDs, hashes, and automated Desktop intake result. Done when npm serves the
-  reviewed bytes, old clients remain unchanged, and Desktop Phase 13 can pin
-  that exact public version rather than a local tarball or branch.
+- [x] **Step DA.6 — publish the reviewed Shell before Desktop consumes it.** ✅
+  2026-09-05 — the live private activation endpoints were reconfirmed without
+  customer data. Final release review repaired one release-typecheck boundary
+  and one malformed-override retry/false-Pair path before publication; the
+  final cold review found no major issue. Feature PR #109 merged as `2806865`,
+  release PR #110 merged as `b02f8ff`, and signed tag `v0.9.0` binds that exact
+  `main` tree to the public tarball SHA-256
+  `d2c059b09ab344a183a54f6e6a7c0814c2bdb827a6da3fca131322108ff880d7`.
+  Protected release workflow #34010536859 passed and published npm provenance.
+  The registry serves the same 20 files and 1,467,409 bytes; signature audit,
+  SLSA provenance, zero-vulnerability install, cold CLI `0.9.0`, ordinary
+  no-internal-flag startup coverage, and packaged browser smoke 9/9 pass.
+  Scheduled Desktop intake #34012449184 verified that source, built and attested
+  all 17 Linux/Windows release files, and published Desktop `v0.3.16` at
+  `2d107f4` with exact Shell `0.9.0`. Fixed-snapshot PR #111 merged `main` back
+  into `next` as `0a390ba`. Full review, publication, compatibility, and intake
+  evidence → `PLAN-ARCHIVE.md`, “Moved 2026-09-05 — Shell DA.6 protected
+  release.”
 
 ### Explicitly unchanged and residual
 

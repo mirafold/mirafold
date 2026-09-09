@@ -111,12 +111,11 @@ test("an ask answered here stays quiet on its wire resolution; one answered else
   assert.deepEqual(elsewhere.state.asks, []);
 });
 
-test("disconnect zeroes the turn; interrupt leaves exactly one turn_end owed; zone_reset restarts", () => {
+test("disconnect retains the turn; interrupt leaves exactly one turn_end owed; zone_reset restarts", () => {
   const two = play([{ type: "user_prompt", text: "a" }, { type: "user_prompt", text: "b" }]).state;
   assert.equal(reduceTurn(two, { kind: "interrupt" }).state.openTurns, 1);
   const dropped = reduceTurn(two, { kind: "disconnected" }).state;
-  assert.equal(dropped.busy, false);
-  assert.equal(dropped.openTurns, 0);
+  assert.equal(dropped, two);
   assert.deepEqual(reduceTurn(two, { kind: "message", msg: { type: "zone_reset" } }).state, IDLE_TURN);
 });
 
@@ -143,6 +142,6 @@ test("a no-op frame returns the previous state object; a real change returns a n
   assert.equal(reduceTurn(busy, { kind: "interrupt" }).state, busy, "an interrupt with one open turn changes nothing");
   assert.notEqual(reduceTurn(busy, { kind: "message", msg: { type: "text_delta", text: "hi" } }).state, busy);
   assert.notEqual(reduceTurn(busy, { kind: "message", msg: { type: "tool_use", name: "Bash", id: "t1" } }).state, busy);
-  assert.notEqual(reduceTurn(busy, { kind: "disconnected" }).state, busy);
+  assert.equal(reduceTurn(busy, { kind: "disconnected" }).state, busy);
   assert.equal(reduceTurn(IDLE_TURN, { kind: "disconnected" }).state, IDLE_TURN);
 });

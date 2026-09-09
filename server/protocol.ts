@@ -268,9 +268,15 @@ export type ViewportMsgBody =
       // shows nothing rather than a stand-in.
       model?: string;
       resumed?: boolean;
+      // This daemon brackets history with replay_complete. Older daemons
+      // omit this flag, so clients must keep accepting replay without a marker.
+      replayPending?: true;
       demo?: boolean;
       fallback?: boolean;
     }
+  // Per-viewport boundary after attach history, including an empty replay.
+  // Never sequenced or retained: it describes delivery, not session content.
+  | { type: "replay_complete" }
   // Current bang-shell state for already-attached viewports. This is a
   // replaceable snapshot, not transcript history: it is never sequenced,
   // replayed, or persisted as a message. A fresh attach gets the same value

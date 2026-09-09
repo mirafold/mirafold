@@ -6,7 +6,8 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../../protocol";
 import { ClaudeCodeSession } from "./claude-code";
-import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE, makeRenderServer } from "../../render-tools";
+import { makeRenderServer } from "../../render-tools";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../../render-guidance";
 
 // The Claude Code SDK-message→WireMsg mapping and the turn grammar, on
 // synthetic SDKMessages — no CLI, no network. The session is real; only the

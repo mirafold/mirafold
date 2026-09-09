@@ -12,6 +12,11 @@ test("codeFence: the fence always outruns any backtick run inside the code", () 
   assert.equal(codeFence("a `b` c"), "```\na `b` c\n```");
 });
 
+test("codeFence: large input with many backtick runs uses a bounded calculation", () => {
+  const code = "`x ".repeat(250_000) + "`````";
+  assert.equal(codeFence(code, "ts"), `\`\`\`\`\`\`ts\n${code}\n\`\`\`\`\`\``);
+});
+
 test("codeFence: only a plain language token reaches the info string", () => {
   // Spaces/backticks in lang could smuggle content onto the fence line.
   assert.equal(codeFence("x", "ts extra"), "```\nx\n```");

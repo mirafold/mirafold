@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ComponentProps } from "@registry-spec";
 import { Md } from "./Md";
 import { useAction } from "./actions";
@@ -9,6 +9,7 @@ import { useAction } from "./actions";
 // still backstops a re-mounted copy (pin, re-attach).
 export function Question({ question, options }: ComponentProps<"question">) {
   const emit = useAction();
+  const id = useId();
   const [chosen, setChosen] = useState<number | null>(null);
   return (
     <div className="rc rc-question">
@@ -17,22 +18,27 @@ export function Question({ question, options }: ComponentProps<"question">) {
       </div>
       <div className="rc-question-opts">
         {options.map((o, i) => (
-          <button
-            key={i}
-            className={`rc-question-opt${chosen === i ? " rc-question-chosen" : ""}`}
-            disabled={chosen !== null}
-            onClick={() => {
-              setChosen(i);
-              emit({ kind: "prompt", text: o.text ?? o.label });
-            }}
-          >
-            <span className="rc-question-label">{o.label}</span>
+          <div key={i} className="rc-question-choice">
+            {/* The answer button covers the option; Markdown links sit above
+                it as siblings, so opening one can never submit an answer. */}
+            <button
+              type="button"
+              className={`rc-question-opt${chosen === i ? " rc-question-chosen" : ""}`}
+              aria-labelledby={`${id}-${i}-label`}
+              aria-describedby={o.detail ? `${id}-${i}-detail` : undefined}
+              disabled={chosen !== null}
+              onClick={() => {
+                setChosen(i);
+                emit({ kind: "prompt", text: o.text ?? o.label });
+              }}
+            />
+            <span id={`${id}-${i}-label`} className="rc-question-label">{o.label}</span>
             {o.detail && (
-              <span className="rc-question-detail">
+              <span id={`${id}-${i}-detail`} className="rc-question-detail">
                 <Md text={o.detail} inline />
               </span>
             )}
-          </button>
+          </div>
         ))}
       </div>
     </div>

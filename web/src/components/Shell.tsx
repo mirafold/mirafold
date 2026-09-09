@@ -365,10 +365,7 @@ export function Shell() {
           else announce(refusal ?? "Disconnected — reconnecting.", true);
         }
         wasConnected.current = c;
-        // A dropped socket can't be mid-turn from this viewport's point
-        // of view — clear the working state and the ■ esc stop affordance so
-        // a dead daemon doesn't look like an agent still thinking. Replay (or
-        // the turn-activity frames) re-derives busy after reconnect.
+        // Connection availability is separate from known unfinished work.
         if (!c) applyTurn({ kind: "disconnected" });
       }),
     [bus, announce, applyTurn],

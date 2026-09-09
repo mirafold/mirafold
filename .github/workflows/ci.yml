@@ -126,7 +126,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('mirafold/node_modules/playwright-core/package.json') }}
       - name: Install managed UI browsers
-        run: yarn playwright-core install --with-deps chromium firefox webkit
+        run: |
+          # Chrome already ships on the runner. Its new apt source survives
+          # the image's legacy .list cleanup and can block Ubuntu dependency setup.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.sources
+          yarn playwright-core install --with-deps chromium firefox webkit
       # Tier 3 drives real headless Chrome via playwright-core; the harness
       # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-24.04 ships
       # google-chrome-stable — resolve its path and hand it to the suite rather

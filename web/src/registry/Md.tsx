@@ -3,7 +3,9 @@ import remarkGfm from "remark-gfm";
 import {
   Children,
   cloneElement,
+  createContext,
   isValidElement,
+  useContext,
   type ComponentProps,
   type ReactElement,
   type ReactNode,
@@ -186,6 +188,10 @@ export function workspaceMarkdown(
   };
 }
 
+// OutputZone supplies the same file-opening policy to prose and every
+// painting, including paintings moved into the pin dock.
+export const WorkspaceMarkdownContext = createContext(workspaceMarkdown(undefined, undefined));
+
 const unwrapParagraph = {
   p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 };
@@ -204,11 +210,12 @@ export function MdDetail({ text }: { text: string }) {
  * text flows inside list items, table cells, and other tight slots.
  */
 export function Md({ text, inline = false }: { text: string; inline?: boolean }) {
+  const markdown = useContext(WorkspaceMarkdownContext);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      urlTransform={mdUrlTransform}
-      components={inline ? { ...mdOverrides, ...unwrapParagraph } : mdOverrides}
+      urlTransform={markdown.urlTransform}
+      components={inline ? { ...markdown.components, ...unwrapParagraph } : markdown.components}
     >
       {text}
     </ReactMarkdown>
