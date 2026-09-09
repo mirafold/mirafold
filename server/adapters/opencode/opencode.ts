@@ -1,7 +1,7 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import type { SessionMsg } from "../../protocol";
-import { RENDER_GUIDANCE } from "../../render-tools";
+import { RENDER_GUIDANCE } from "../../render-guidance";
 import { envInt } from "../../env";
 import { classifyOpenCodeProvider, type CredentialKind } from "../../provider-policy";
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "../types";

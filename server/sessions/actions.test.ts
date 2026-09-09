@@ -1,11 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runActionTool, actionToolNames } from "./actions";
+import { runActionTool, actionToolNames, inside } from "./actions";
 
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), "genui-act-"));
+
+test("workspace containment accepts canonical children including a filesystem root, but rejects escapes", (t) => {
+  const base = tmp();
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const workspace = path.join(base, "workspace");
+  const child = path.join(workspace, "child");
+  const outside = path.join(base, "workspace-other");
+  mkdirSync(child, { recursive: true });
+  mkdirSync(outside);
+  symlinkSync(outside, path.join(workspace, "escape"));
+  symlinkSync(workspace, path.join(base, "workspace-link"));
+  const root = path.parse(realpathSync(base)).root;
+  assert.equal(inside(workspace, "child"), realpathSync(child));
+  assert.equal(inside(path.join(base, "workspace-link"), "child"), realpathSync(child));
+  assert.equal(inside(root, child), realpathSync(child));
+  assert.equal(inside(root, "."), root);
+  assert.equal(inside(workspace, outside), null);
+  assert.equal(inside(workspace, "escape"), null);
+});
 
 test("workspace_ls lists a real subdirectory", (t) => {
   const base = tmp();
@@ -35,10 +54,13 @@ test("workspace_ls blocks a symlink escaping the workspace", (t) => {
   assert.match(r.output, /escapes/);
 });
 
-test("off-allowlist tool names are rejected", () => {
-  const r = runActionTool("secret_exfil", {}, os.tmpdir());
-  assert.equal(r.isError, true);
-  assert.match(r.output, /not allowlisted/);
+test("off-allowlist tool names, including prototype properties, are rejected", () => {
+  for (const name of ["secret_exfil", "constructor", "__proto__"]) {
+    assert.deepEqual(runActionTool(name, {}, os.tmpdir()), {
+      output: `Action tool "${name}" is not allowlisted.`,
+      isError: true,
+    });
+  }
 });
 
 test("invalid args are rejected", () => {

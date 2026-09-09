@@ -79,12 +79,15 @@ export const browserTranscriptIngressRuntime: TranscriptIngressRuntime = {
  * first animation frame or the 50 ms hidden-tab fallback; any non-delta drains
  * that queue and follows it in the same ordered batch. The projection itself
  * therefore knows nothing about subscriptions, timers, frames, or disposal.
+ * Attach history has an explicit end: hold it across frames/tasks and publish
+ * it once, so following the tail does not visibly race through partial history.
  */
 export function createTranscriptIngress(
   deliver: (messages: readonly ZoneMsg[]) => void,
   runtime: TranscriptIngressRuntime = browserTranscriptIngressRuntime,
 ): { accept(message: ZoneMsg): void; dispose(): void } {
   const queue: QueuedDelta[] = [];
+  let replay: ZoneMsg[] | null = null;
   let cancelFrame: (() => void) | null = null;
   let cancelFallback: (() => void) | null = null;
   let disposed = false;
@@ -103,6 +106,35 @@ export function createTranscriptIngress(
 
   const accept = (message: ZoneMsg) => {
     if (disposed) return;
+    if (message.type === "zone_reset") {
+      cancelScheduledFlush();
+      queue.splice(0);
+      replay = null;
+      deliver([message]);
+      return;
+    }
+    if (message.type === "session_created") {
+      cancelScheduledFlush();
+      // A socket can drop halfway through history. A tail resume keeps the
+      // unpublished prefix; a full reattach already discarded it via reset.
+      const pending = [...(replay ?? []), ...queue.splice(0), message];
+      if (message.replayPending) replay = pending;
+      else {
+        replay = null;
+        deliver(pending); // older daemon: no completion marker to wait for
+      }
+      return;
+    }
+    if (message.type === "replay_complete") {
+      const pending = replay;
+      replay = null;
+      if (pending) deliver(pending);
+      return;
+    }
+    if (replay) {
+      replay.push(message);
+      return;
+    }
     if (
       message.type === "text_delta" ||
       message.type === "thinking_delta" ||
@@ -127,6 +159,7 @@ export function createTranscriptIngress(
       disposed = true;
       cancelScheduledFlush();
       queue.splice(0);
+      replay = null;
     },
   };
 }

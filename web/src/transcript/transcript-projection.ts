@@ -805,6 +805,7 @@ export function createTranscriptProjection(): TranscriptProjection {
       case "permission_request":
       case "permission_resolved":
       case "session_created":
+      case "replay_complete":
       case "shell_cwd":
       case "agents":
       case "folder_picked":

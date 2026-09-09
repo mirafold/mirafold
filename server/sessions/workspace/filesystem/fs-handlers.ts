@@ -16,6 +16,7 @@
 import path from "node:path";
 import { createLogger } from "../../../log";
 import type { ConnectionContext } from "../../handler-context";
+import { badClientId } from "../../client-id";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../../../throttle";
 import type { ClientMsg, FsDirEntry, FsEntry } from "../../../protocol";
 import {
@@ -42,7 +43,7 @@ import {
 import { repoTrust, trustFile } from "../git/git-trust";
 import { inside } from "../../actions";
 import { isSecretFile } from "../../../security/permissions";
-import { errText } from "../../../adapters/index";
+import { errText } from "../../../adapters/types";
 import { envInt } from "../../../env";
 
 // Minimum gap between folder tree requests per connection AND per type — fs_list
@@ -68,15 +69,6 @@ const fsLog = createLogger("fs");
 // viewport's listings hostage for up to the 5s git timeout. Well above the
 // measured healthy case (~40ms on a 1.1GB repo), well under the timeout.
 const FS_LISTDIR_STATUS_WAIT_MS = envInt("FS_LISTDIR_STATUS_WAIT_MS", 300);
-
-// The one shape rule for client-minted ids (fs correlation ids, bang ids):
-// short and word-safe or the message is dropped whole.
-export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
-
-/** A malformed correlation id drops the message whole (nothing to answer) —
- *  the one grammar every client-correlated handler applies. */
-export const badClientId = (id: unknown): boolean =>
-  typeof id !== "string" || !CLIENT_ID_RE.test(id);
 
 // HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs

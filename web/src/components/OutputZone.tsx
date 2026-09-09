@@ -15,7 +15,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
 import type { ZoneMsg } from "../transport/session-bus";
 import { RenderBlock, RenderBoundary } from "../registry/RenderBlock";
-import { workspaceMarkdown } from "../registry/Md";
+import { workspaceMarkdown, WorkspaceMarkdownContext } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { InputNavigationStop } from "./InputNavigation";
 import { ToolBlock } from "./ToolBlock";
@@ -508,6 +508,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   );
 
   return (
+    <WorkspaceMarkdownContext.Provider value={assistantMarkdown}>
     <div className="zone-row">
       {/* The transcript column: the scroller plus the one thing that floats
           over it. The pill lives OUTSIDE the scroller's flow on purpose — a
@@ -630,6 +631,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
           />
         ))}
     </div>
+    </WorkspaceMarkdownContext.Provider>
   );
 });
 

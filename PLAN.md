@@ -4077,6 +4077,111 @@ here, not chased on this branch.
 
 ---
 
+## Phase TP — Tightening pass (2026-09-09; Kyle-directed)
+
+Scope: all six phases of the supplied `mirafold-tightening-pass-spec.md`,
+on `fix/session-entry-layout` for PR #113. Keep the existing APIs, provider
+behavior, trust/security checks, and replay/handshake design. No dependencies,
+redesign, unrelated cleanup, merge, or release. Starting head: `0610203`;
+tracked tree clean, unrelated untracked `decks/` preserved.
+
+- [x] **TP.1 — Action dispatch:** own-property allowlist lookup; regressions
+  for valid, unknown, and prototype names, including connection dispatch.
+- [x] **TP.2 — Gemini settings:** prepare a complete sibling temporary file
+  before replacement; preserve merge, backup, permissions, and path guards;
+  prove failed preparation leaves the original intact.
+- [x] **TP.3 — Reconnect state:** retain unfinished turns across transport
+  loss and empty tail resume; completion/error still settle, full replay resets.
+- [x] **TP.4 — Encrypted reconnect races:** check socket ownership after
+  encryption/decryption, retain definitely unsent messages, discard stale
+  receives without moving the cursor; controlled asynchronous regressions.
+- [x] **TP.5 — Utilities:** bounded backtick-run calculation and filesystem
+  root containment with canonicalization and symlink checks preserved.
+- [x] **TP.6 — Final review:** scope and fresh follow-up review complete;
+  focused and available local validation pass, with the explicit environment
+  limits below. Full unit/browser results are supplied by PR CI; inspect
+  the current head's checks before any eventual merge. No scope deferrals.
+
+Implementation stays in the five existing production modules; `Shell.tsx`
+only corrects its disconnect comment. Eight existing test files carry the
+regressions; no structural extraction, dependencies, or new source files.
+Each reported cause was reproduced before its fix. Fresh review also proved
+and closed two outgoing-order cases: a newer interrupt overtaking a sealed
+predecessor prompt, and an open callback scheduling a prompt twice. Accepted
+messages now remain in the existing queue until handoff; hello and queued
+work are scheduled before open notifications. Uncertain sends are not retried.
+A serialization failure removes its offending queued message before rethrowing,
+so a structured-clone cycle from an artifact cannot poison later reconnects;
+both initially queued and already-connected cases are covered and reviewed.
+
+Local validation: typecheck, production build, 1,277 unit tests, 196 real-daemon integration
+tests, focused regressions, whitespace checks, and unchanged generated license
+notices pass. Unit validation runs in `/tmp/mirafold-tightening-validation/`
+without workspace dotenv files; the existing `project-env.test.ts` suite
+requires `.env.example`, so its complete validation remains with CI.
+Chrome could not reach the local test daemon under the sandbox
+(`ERR_ACCESS_DENIED`); the requested outside-sandbox run was declined. Full
+browser and managed-browser/visual validation therefore remain with PR CI.
+
+---
+
+## Phase MC — Minor dependency cleanups (2026-09-09; Kyle-directed)
+
+Scope: the three cleanups in Kyle's supplied `mirafold-minor-refactors-spec.md`,
+on the existing `fix/session-entry-layout` branch. No merge or release;
+Kyle is collecting more fixes. Baseline: typecheck and all 1,231 unit tests
+passed. The earlier layout changes are isolated in commit `0d10300`.
+
+- [x] **MC.1 — Helper imports** (`fd127d6`): bang and filesystem handlers
+  obtain `errText` directly from adapter types. Its implementation and the
+  adapters entry-point re-export were not edited. Typecheck, 59 focused unit
+  tests, and 17 real-socket tests passed.
+- [x] **MC.2 — Client IDs** (`39d342f`): move the existing definitions and
+  comments verbatim into import-free `server/sessions/client-id.ts`; update
+  filesystem, bang, upload, and folder-picker consumers without changing
+  validation order or replies. New direct table tests cover the grammar and
+  boundaries; focused handler tests cover invalid IDs without work or replies.
+  Typecheck, 80 focused unit tests, and 19 real-socket tests passed.
+- [x] **MC.3 — Shared guidance** (`c947269`): move only the two constants and
+  their comments into `server/render-guidance.ts`; update all four adapters
+  and their tests. Tool setup and adapter injection sites were not edited.
+  Typecheck and all 229 adapter/tool tests passed. Both evaluated strings
+  match the captured bytes exactly (258 and 4,718 bytes); evidence is in
+  `/tmp/mirafold-minor-refactors-DGokI6/`. The import check includes all four
+  adapters and finds no new cycles (the existing env/log cycle remains).
+- [x] **MC.V — Final verification:** typecheck, all 1,262 unit tests, and
+  the full `yarn test:server` run (server build + 196 real-socket tests) pass.
+  Exactly two new production modules were added; no dependencies, forwarding exports, or
+  permanent prompt snapshots. Final diff review complete; no skipped steps
+  or remaining local test failures. PR #113 targets `next` and stays open
+  for the additional fixes Kyle wants before merging/releasing. Automated
+  review of `c947269` completed without findings; re-check the required checks
+  before the eventual merge.
+
+**Additional requested hotfix — file links in paintings (2026-09-09):**
+Kyle's HTML-link screenshot was traced to a saved `card` reply in a session
+rooted at `/home/serrecchia/Projects`; the target was inside that root.
+The August 29 file-link fix still worked for prose, but the shared painting
+Markdown renderer bypassed it. OutputZone now supplies its existing Files
+handler through context to painting Markdown, including inline/detail text
+and pinned paintings. HTML uses the existing Files source viewer.
+Verified locally: typecheck, 1,264 unit tests, and a new real-daemon Chrome
+regression that failed on the card before the fix and now opens the HTML
+file from prose, cards, lists, detail text, and pinned cards without a new
+tab. No merge or release; Kyle explicitly prohibited merging.
+
+Review follow-up: automated review of `18c95cc` identified a question-option
+interaction. A browser reproduction confirmed that opening a file from an
+option's detail also emitted that option's prompt. Question answer buttons
+and Markdown details now occupy separate controls; the answer button keeps
+the option's click area, while file/web links remain independent and usable
+after answering. Verified: typecheck, all 1,264 unit tests, the real question
+prompt round trip, and the expanded file-link browser regression (mouse,
+Enter/Space, web links, pinned questions, and accessibility before/after an
+answer). Follow-up commit still requires CI and fresh automated review.
+
+---
+
 ## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)
 
 Branch `fix/cockpit-follow-ups`, cut from `next` at 2411d35. Five items Kyle
@@ -4086,6 +4191,40 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   scroll runs in a layout effect (inside the commit, before paint); a
   switched-to session appears already at the tail. `follow-tail.e2e.ts`
   samples the scroller from a MutationObserver across the reload path.
+- [ ] **CF.1 follow-up — Session entry and phone layout (2026-09-09).**
+  On `fix/session-entry-layout`, the fast trip through history was reproduced
+  with replay split across browser frames. The existing layout-effect fix
+  still worked per batch, but exposed each partial batch. Local repair adds
+  `session_created.replayPending` + `replay_complete` and publishes history
+  once; interrupted resumes retain their unpublished prefix, full resets
+  discard it, and older daemons keep their existing delivery behavior.
+  Verified: 66 targeted unit tests, three browser cases (desktop cockpit,
+  phone delayed replay, and encrypted phone pairing with explicit focus),
+  typecheck, browser/server builds. Not released; package remains 0.9.0.
+  Kyle's separate floating phone status bar occurs on iPhone
+  Chrome, keyboard closed, immediately after initial pairing; refresh fixes
+  it. Three desktop-WebKit pairing probes (actual encrypted handshake,
+  session-fragment navigation, and viewport resizing) kept the bar aligned.
+  They do not emulate Chrome's iPhone toolbar. Kyle supplied a screenshot:
+  the empty pre-connection screen shows the prompt's focus styling and a
+  large gap above Chrome's bottom toolbar. Its geometry is consistent with
+  page displacement, but the screenshot cannot establish the browser's
+  scroll offset. A regression test proved PromptBox focused the phone input
+  before pairing completed without a tap. Removed that automatic phone
+  focus (also after incoming turns); desktop autofocus and explicit phone
+  taps still pass. Three further WebKit pairing/resize probes kept BODY
+  focused and the bar aligned. No phone CSS changed. Confirming that this
+  removes the actual iPhone gap remains pending; do not call it verified
+  from desktop emulation. Kyle's subsequent `yarn dev` pairing check loaded
+  `app.mirafold.com`, so it exercised the published frontend rather than this
+  phone change. Kyle elected to include the low-risk focus change in a later
+  release with the other fixes and check the actual iPhone then; no preview
+  deployment or release is requested now. PR #113's normal Cloudflare check
+  automatically created the branch preview at
+  `https://fix-session-entry-layout.mirafold-app.pages.dev`; no iPhone check
+  has been claimed from that deployment. Diagnostic screenshots live outside the tree in
+  `/tmp/mirafold-layout-evidence/`; Kyle's supplied screenshot is
+  `/tmp/mirafold-uploads-23823M/bd869fe2/909b67d8-2071-4a59-939f-b8a3cf5aa202.jpeg`.
 - [x] **CF.2 — Pins survive leaving and returning** — `pin-store.ts`, one
   localStorage key per session, restored from the URL's id at mount and
   saved once Shell's session key arrives; the dock exists only for

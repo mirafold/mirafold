@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type { ZoneMsg } from "./session-bus";
 import { createSessionBus } from "./session-bus";
 import { FakeWS, fakeStorage, shimDom } from "../testing/fake-ws";
+import { IDLE_TURN, reduceTurn, type TurnState } from "../transcript/turn-state";
+import { BACKOFF_MIN_MS } from "./ws";
 
 // The session bus is the shell's one connection to the daemon: it owns the
 // attach hello, the zone_reset-on-full-replay rule, the URL-as-session-identity
@@ -57,6 +59,78 @@ test("session_ended leaves for mission control instead of reaching the zone", (t
   sock().receive({ type: "session_ended", sessionId: "abc12345" });
   assert.deepEqual(assigned, ["/"]);
   assert.equal(zone.some((m) => m.type === "session_ended"), false);
+});
+
+for (const ending of ["turn_end", "error"] as const) {
+  test(`a quiet turn survives disconnect and empty tail resume, then settles on ${ending}`, (t) => {
+    const { bus, zone, sock } = setup(t);
+    let state: TurnState = IDLE_TURN;
+    let connected = true;
+    bus.subscribe((msg) => { state = reduceTurn(state, { kind: "message", msg }).state; });
+    bus.onConnection((up) => {
+      connected = up;
+      if (!up) state = reduceTurn(state, { kind: "disconnected" }).state;
+    });
+    sock().receive({ type: "user_prompt", text: "run a quiet tool", seq: 1 });
+    sock().receive({ type: "tool_use", name: "Bash", id: "tool", seq: 2 });
+    sock().receive({ type: "permission_request", tool: "Bash", detail: "run", id: "ask", seq: 3 });
+    const active = state;
+    sock().finishClose();
+    assert.equal(connected, false);
+    assert.equal(state, active, "transport loss preserves work, activity, and permission state");
+    t.mock.timers.tick(BACKOFF_MIN_MS);
+    sock().open();
+    assert.equal(connected, true);
+    assert.equal((sock().parsedSent()[0] as { afterSeq?: number }).afterSeq, 3);
+    zone.length = 0;
+    sock().receive({ type: "session_created", sessionId: "abc12345", cwd: "/w", resumed: true, replayPending: true });
+    sock().receive({ type: "replay_complete" });
+    assert.equal(state.busy, true);
+    assert.equal(state.openTurns, 1);
+    assert.deepEqual(zone.map((m) => m.type), ["session_created", "replay_complete"]);
+    sock().receive({ type: "permission_resolved", id: "ask", allow: true, seq: 4 });
+    assert.deepEqual(state.asks, []);
+    if (ending === "error") sock().receive({ type: "error", message: "tool failed", seq: 5 });
+    else sock().receive({ type: "turn_end", seq: 5 });
+    assert.equal(state.busy, false);
+    assert.equal(state.openTurns, 0);
+    assert.equal(state.activity, null);
+    if (ending === "error") {
+      sock().receive({ type: "turn_end", seq: 6 });
+      assert.equal(state.openTurns, 0);
+      assert.equal(state.errorAwaitingTurnEnd, false);
+    }
+  });
+}
+
+test("full replay reconstructs retained work; an idle session stays idle on tail resume", (t) => {
+  const { bus, sock } = setup(t);
+  let state: TurnState = IDLE_TURN;
+  bus.subscribe((msg) => { state = reduceTurn(state, { kind: "message", msg }).state; });
+  bus.onConnection((up) => {
+    if (!up) state = reduceTurn(state, { kind: "disconnected" }).state;
+  });
+  sock().receive({ type: "user_prompt", text: "old", seq: 1 });
+  sock().finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  sock().open();
+  sock().receive({ type: "session_created", sessionId: "abc12345", cwd: "/w", replayPending: true });
+  assert.deepEqual(state, IDLE_TURN);
+  sock().receive({ type: "user_prompt", text: "old", seq: 1, replay: true });
+  sock().receive({ type: "tool_use", name: "Read", id: "tool", seq: 2, replay: true });
+  sock().receive({ type: "replay_complete" });
+  assert.equal(state.busy, true);
+  assert.equal(state.openTurns, 1, "full replay does not double-count retained prompts");
+  assert.deepEqual(state.activity, { state: "tool", label: "Read" });
+  sock().receive({ type: "turn_end", seq: 3 });
+  const idle = state;
+  sock().finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  sock().open();
+  sock().receive({ type: "session_created", sessionId: "abc12345", cwd: "/w", resumed: true });
+  sock().receive({ type: "replay_complete" });
+  assert.equal(state, idle);
+  assert.equal(state.busy, false);
 });
 
 test("every request mints a correlation id its frame carries, so each surface matches its own reply", (t) => {

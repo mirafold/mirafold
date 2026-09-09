@@ -143,6 +143,8 @@ export class SocketClient {
   private listeners = new Set<Listener>();
   private openListeners = new Set<() => void>();
   private closeListeners = new Set<(refusal?: string) => void>();
+  // Keep accepted messages here until handoff, including while sealing, so
+  // a successor sends older work before commands accepted during reconnect.
   private pending: ClientMsg[] = [];
   private closedByUs = false;
   private backoff = BACKOFF_MIN_MS;
@@ -246,27 +248,42 @@ export class SocketClient {
     let recvChain: Promise<void> = Promise.resolve();
 
     this.transmit = (msg: ClientMsg) => {
-      const text = JSON.stringify(msg);
+      const forgetPending = () => {
+        const index = this.pending.indexOf(msg);
+        if (index !== -1) this.pending.splice(index, 1);
+      };
+      let text: string;
+      try {
+        text = JSON.stringify(msg);
+      } catch (err) {
+        forgetPending();
+        throw err;
+      }
       if (!pair) {
-        if (sock.readyState === WebSocket.OPEN) sock.send(text);
+        if (sock.readyState === WebSocket.OPEN) {
+          try { sock.send(text); } finally { forgetPending(); }
+        }
         return;
       }
       sendChain = sendChain
         .then(async () => {
           if (this.ws === sock && cipher && sock.readyState === WebSocket.OPEN) {
-            sock.send(await cipher.seal(text));
-          } else {
-            // Accepted by send() while ready, but the socket died before this
-            // chained seal ran — requeue instead of vanishing: `pending` is
-            // the queue that survives disconnects.
-            this.pending.push(msg);
+            const frame = await cipher.seal(text);
+            if (this.ws === sock && this.ready && sock.readyState === WebSocket.OPEN) {
+              // A throwing send has uncertain delivery; never retry it.
+              try { sock.send(frame); } finally { forgetPending(); }
+            }
           }
+          // A stale seal leaves its message in the queue for the successor.
         })
         .catch(() => {
           // A failed seal would otherwise reject the chain and silently skip
           // every later send on this socket. Fail closed like the receive
           // side: drop the socket into the ordinary retry ladder.
-          if (this.ws === sock) sock.close();
+          if (this.ws === sock) {
+            forgetPending();
+            sock.close();
+          }
         });
     };
 
@@ -313,7 +330,9 @@ export class SocketClient {
             if (handshakeTimer) clearTimeout(handshakeTimer);
             this.finishOpen();
           } else {
-            this.dispatch(await cipher.open(e.data as string));
+            const text = await cipher.open(e.data as string);
+            if (this.ws !== sock || !this.ready || sock.readyState !== WebSocket.OPEN) return;
+            this.dispatch(text);
           }
         } catch {
           // Fail closed: an unauthentic frame kills the channel; the normal
@@ -355,10 +374,10 @@ export class SocketClient {
     // health.
     this.backoff = BACKOFF_MIN_MS;
     this.ready = true;
-    for (const cb of this.openListeners) cb();
     const hello = this.hello?.();
     if (hello) this.transmit(this.stamp(hello));
-    for (const msg of this.pending.splice(0)) this.transmit(msg);
+    for (const msg of [...this.pending]) this.transmit(msg);
+    for (const cb of this.openListeners) cb();
     this.startHeartbeat();
   }
 
@@ -456,7 +475,8 @@ export class SocketClient {
 
   send(msg: ClientMsg) {
     msg = this.stamp(msg);
-    if (!this.transmitIfOpen(msg)) this.pending.push(msg);
+    this.pending.push(msg);
+    this.transmitIfOpen(msg);
   }
 
   /** Send a user-gesture side effect only while the channel is usable. Unlike

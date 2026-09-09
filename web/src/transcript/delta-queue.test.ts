@@ -178,3 +178,63 @@ test("dispose cancels scheduled work, drops queued deltas, and ignores later mes
   assert.equal(runtime.frame, undefined);
   assert.equal(runtime.fallback, undefined);
 });
+
+test("attach history publishes once at its boundary despite frames and timers between messages", () => {
+  const runtime = new ManualIngressRuntime();
+  const batches: Array<readonly ZoneMsg[]> = [];
+  const ingress = createTranscriptIngress((batch) => batches.push(batch), runtime);
+  const history: ZoneMsg[] = [
+    { type: "session_created", sessionId: "one", cwd: "/w", replayPending: true },
+    { type: "user_prompt", text: "old question", replay: true },
+    { type: "text_delta", text: "old answer", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "user_prompt", text: "latest question", replay: true },
+    { type: "text_delta", text: "latest answer", replay: true },
+  ];
+  for (const message of history) {
+    ingress.accept(message);
+    runtime.runFrame();
+    runtime.runFallback();
+    assert.deepEqual(batches, [], "partial history must not become visible");
+  }
+  ingress.accept({ type: "replay_complete" });
+  assert.deepEqual(batches, [history]);
+  ingress.accept({ type: "text_delta", text: " live continuation" });
+  assert.equal(batches.length, 1);
+  runtime.runFrame();
+  assert.deepEqual(batches[1], [{ type: "text_delta", text: " live continuation" }]);
+});
+
+test("an interrupted replay keeps its prefix on resume and discards it on a full reset", () => {
+  for (const resumed of [true, false]) {
+    const batches: Array<readonly ZoneMsg[]> = [];
+    const ingress = createTranscriptIngress((batch) => batches.push(batch), new ManualIngressRuntime());
+    ingress.accept({ type: "session_created", sessionId: "one", cwd: "/w", replayPending: true });
+    ingress.accept({ type: "text_delta", text: "prefix", replay: true });
+    if (!resumed) ingress.accept({ type: "zone_reset" });
+    ingress.accept({ type: "session_created", sessionId: "one", cwd: "/w", replayPending: true, resumed });
+    ingress.accept({ type: "text_delta", text: "tail", replay: true });
+    ingress.accept({ type: "replay_complete" });
+    const text = batches.flat().filter((m) => m.type === "text_delta").map((m) => m.text);
+    assert.deepEqual(text, resumed ? ["prefix", "tail"] : ["tail"]);
+  }
+});
+
+test("empty replay completes, old daemons render without a marker, and disposed replay never publishes", () => {
+  const runtime = new ManualIngressRuntime();
+  const batches: Array<readonly ZoneMsg[]> = [];
+  const ingress = createTranscriptIngress((batch) => batches.push(batch), runtime);
+  const created = { type: "session_created", sessionId: "one", cwd: "/w" } as const;
+  ingress.accept({ ...created, replayPending: true });
+  ingress.accept({ type: "replay_complete" });
+  assert.equal(batches.length, 1);
+  ingress.accept(created);
+  ingress.accept({ type: "text_delta", text: "legacy history", replay: true });
+  runtime.runFrame();
+  assert.equal(batches.length, 3);
+  ingress.accept({ ...created, replayPending: true });
+  ingress.accept({ type: "text_delta", text: "discard", replay: true });
+  ingress.dispose();
+  ingress.accept({ type: "replay_complete" });
+  assert.equal(batches.length, 3);
+});
