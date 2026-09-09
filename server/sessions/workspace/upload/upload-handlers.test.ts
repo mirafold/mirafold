@@ -255,6 +255,31 @@ test("abort discards a partial silently; a hostile id is dropped whole", () => {
   }
 });
 
+test("malformed upload IDs are dropped before session lookup, staging, or a reply", () => {
+  const replies: WireMsg[] = [];
+  let lookups = 0;
+  const handlers = createUploadHandlers({
+    viewport: (message) => replies.push(message),
+    getEntry: () => { lookups++; return null; },
+    isClosed: () => false,
+    remote: false,
+  });
+  try {
+    for (const id of [undefined, null, 123, "", "bad id", "x".repeat(65)]) {
+      handlers.begin({ type: "file_upload_begin", id, name: "file.txt", size: 0 } as never);
+      handlers.chunk({ type: "file_upload_chunk", id, data: b64("content") } as never);
+      handlers.abort({ type: "file_upload_abort", id } as never);
+    }
+    assert.equal(lookups, 0, "invalid IDs cannot reach staging");
+    assert.deepEqual(replies, [], "invalid IDs are silently dropped");
+    handlers.begin({ type: "file_upload_begin", id: "valid-id", name: "file.txt", size: 0 });
+    assert.equal(lookups, 1);
+    assert.deepEqual(replies, [{ type: "file_upload_error", id: "valid-id", message: "no session attached" }]);
+  } finally {
+    handlers.dispose();
+  }
+});
+
 test("safeUploadName strips paths and control chars, never returns empty", () => {
   assert.equal(safeUploadName("/etc/passwd"), "passwd");
   assert.equal(safeUploadName("..\\..\\boot.ini"), "boot.ini");
