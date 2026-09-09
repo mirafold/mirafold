@@ -4086,6 +4086,33 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   scroll runs in a layout effect (inside the commit, before paint); a
   switched-to session appears already at the tail. `follow-tail.e2e.ts`
   samples the scroller from a MutationObserver across the reload path.
+- [ ] **CF.1 follow-up — Session entry and phone layout (2026-09-09).**
+  On `fix/session-entry-layout`, the fast trip through history was reproduced
+  with replay split across browser frames. The existing layout-effect fix
+  still worked per batch, but exposed each partial batch. Local repair adds
+  `session_created.replayPending` + `replay_complete` and publishes history
+  once; interrupted resumes retain their unpublished prefix, full resets
+  discard it, and older daemons keep their existing delivery behavior.
+  Verified: 66 targeted unit tests, three browser cases (desktop cockpit,
+  phone delayed replay, and encrypted phone pairing with explicit focus),
+  typecheck, browser/server builds. Not released; package remains 0.9.0.
+  Kyle's separate floating phone status bar occurs on iPhone
+  Chrome, keyboard closed, immediately after initial pairing; refresh fixes
+  it. Three desktop-WebKit pairing probes (actual encrypted handshake,
+  session-fragment navigation, and viewport resizing) kept the bar aligned.
+  They do not emulate Chrome's iPhone toolbar. Kyle supplied a screenshot:
+  the empty pre-connection screen shows the prompt's focus styling and a
+  large gap above Chrome's bottom toolbar. Its geometry is consistent with
+  page displacement, but the screenshot cannot establish the browser's
+  scroll offset. A regression test proved PromptBox focused the phone input
+  before pairing completed without a tap. Removed that automatic phone
+  focus (also after incoming turns); desktop autofocus and explicit phone
+  taps still pass. Three further WebKit pairing/resize probes kept BODY
+  focused and the bar aligned. No phone CSS changed. Confirming that this
+  removes the actual iPhone gap remains pending; do not call it verified
+  from desktop emulation. Diagnostic screenshots live outside the tree in
+  `/tmp/mirafold-layout-evidence/`; Kyle's supplied screenshot is
+  `/tmp/mirafold-uploads-23823M/bd869fe2/909b67d8-2071-4a59-939f-b8a3cf5aa202.jpeg`.
 - [x] **CF.2 — Pins survive leaving and returning** — `pin-store.ts`, one
   localStorage key per session, restored from the URL's id at mount and
   saved once Shell's session key arrives; the dock exists only for

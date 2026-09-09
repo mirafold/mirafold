@@ -113,10 +113,12 @@ const WIRE: WireByType = {
     shellCwd: "/home/u/proj/src",
     agent: "claude-code",
     resumed: false,
+    replayPending: true,
     demo: false,
     fallback: false,
   },
   shell_cwd: { type: "shell_cwd", cwd: "/home/u/proj/src" },
+  replay_complete: { type: "replay_complete" },
   agents: {
     type: "agents",
     agents: [

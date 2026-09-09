@@ -4,6 +4,39 @@ import { describeBackendForLog, escapeTranscriptFence, openConnection, type Conn
 import { SessionRegistry } from "./registry";
 import type { WireMsg } from "../protocol";
 import { escapeTranscriptAttr } from "./bang-handlers";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("attach brackets full, resumed, and empty history before live output", (t) => {
+  const reg = new SessionRegistry({
+    backend: { agent: "claude-code", kind: "none", live: false },
+    deltaCoalesceMs: 0,
+  });
+  const entry = reg.create({ cwd: mkdtempSync(join(tmpdir(), "mirafold-replay-boundary-")) });
+  const seen: WireMsg[] = [];
+  const conn = openConnection(reg, (message) => seen.push(message));
+  t.after(() => { conn.close(); reg.end(entry.id); });
+  reg.broadcast(entry, { type: "user_prompt", text: "question" });
+  reg.broadcast(entry, { type: "text_delta", text: "answer" });
+  for (const afterSeq of [undefined, 1, 2]) {
+    seen.length = 0;
+    conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id, afterSeq }));
+    const created = seen[0];
+    assert.equal(created?.type, "session_created");
+    if (created?.type !== "session_created") throw new Error("missing identity");
+    assert.equal(created.replayPending, true);
+    assert.equal(Boolean(created.resumed), afterSeq !== undefined);
+    assert.deepEqual(seen.filter((m) => m.replay).map((m) => m.seq),
+      afterSeq === undefined ? [1, 2] : afterSeq === 1 ? [2] : []);
+    assert.equal(seen.at(-1)?.type, "replay_complete");
+    assert.equal(seen.at(-1)?.seq, undefined);
+  }
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(seen.at(-2)?.type, "replay_complete");
+  assert.equal(seen.at(-1)?.type, "turn_end");
+  assert.equal(entry.ring.buffer.some((m) => (m as WireMsg).type === "replay_complete"), false);
+});
 
 // 2026-07-17 audit, finding 4: a `!` command's output rides to the agent
 // inside <bash-input>/<bash-output> fences — the output must not be able to

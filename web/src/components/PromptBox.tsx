@@ -182,8 +182,8 @@ export function PromptBox({
     });
   };
 
-  // The caret starts in the prompt box, so entering a session (new or
-  // existing) means you can just type — no click first.
+  // On desktop the caret starts in the prompt box, so entering a session
+  // (new or existing) means you can just type — no click first.
   // Re-taken when a turn ends, because ending it unmounts whatever the user
   // last clicked (the stop button, a permission answer) and drops focus to
   // the body. Two things are left alone: focus that something else holds —
@@ -192,16 +192,16 @@ export function PromptBox({
   // selection, which focusing a textarea would collapse just as the reader
   // was copying out of the transcript.
   useEffect(() => {
-    // A phone navigation tap can legitimately leave BODY focused, especially
-    // when its destination button becomes disabled at an endpoint. A turn
-    // ending must not use that as a reason to close the card and summon the
-    // software keyboard.
-    if (phone && inputNavigation?.open) return;
+    // Phones wait for an explicit gesture. Startup focus can ask iOS to pan
+    // the page even when it does not open the software keyboard; it also
+    // must not reclaim focus when incoming output or navigation leaves BODY
+    // focused. Tap, completion, and draft actions own their focus separately.
+    if (phone) return;
     const active = document.activeElement;
     if (active && active !== document.body) return;
     if (window.getSelection()?.isCollapsed === false) return;
     ref.current?.focus();
-  }, [busy]);
+  }, [busy, phone]);
 
   // Auto-grow: track content height up to the CSS max-height, after which
   // the textarea scrolls internally (the scrollbar is the "there's more" cue).
