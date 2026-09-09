@@ -8,7 +8,6 @@ import {
   connectHint,
   localBackendLabel,
   localCapable,
-  subscriptionCaveat,
   localLiveHint,
 } from "../agents-meta";
 import { ModalCard } from "./ModalCard";
@@ -166,9 +165,6 @@ function BackendMenu({
           </span>
           {b.kind !== "local" && b.detail && <span className="agent-picker-backend-detail">{b.detail}</span>}
           {modelLine(b) && <span className="agent-picker-backend-model">{modelLine(b)}</span>}
-          {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
-            <span className="agent-picker-backend-caveat">{subscriptionCaveat(row.agent)}</span>
-          )}
           {/* The row's own hint wins (a declared provider missing its env
               key names the exact variable); the per-agent hint covers the
               prohibited-subscription rows it was written for. */}

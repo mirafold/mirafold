@@ -29,7 +29,7 @@ test("a user-config provider is BYO local, allowed", () => {
   assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "local", allowed: true });
 });
 
-test("openai oauth is the one allowed subscription (the disclosed gray area)", () => {
+test("openai oauth is the one allowed subscription", () => {
   const v = classifyOpenCodeProvider(
     entry({ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
   );
@@ -69,12 +69,11 @@ test("the Zen gateway is open (Kyle 2026-08-13): gateway kind, local-only, discl
   assert.equal(allowedOverRelay("gateway"), false, "gateway never relay-eligible");
 });
 
-test("the openai gray verdict carries its uncertainty disclosure", () => {
+test("the openai subscription verdict carries no warning or refusal", () => {
   const v = classifyOpenCodeProvider(
     entry({ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
   );
-  assert.match(v.disclosure ?? "", /not clearly\s+permitted/);
-  assert.match(v.disclosure ?? "", /your account, your\s+call/);
+  assert.deepEqual(v, { kind: "subscription", allowed: true });
 });
 
 test("relayGateRefusal: pending refuses outright; kinds refuse per the allow-list", () => {
@@ -96,7 +95,7 @@ test("an unrecognized custom shape is refused, never guessed", () => {
 
 test("agent-level opencode subscription stays fail-closed; relay gate unchanged", () => {
   // Without a provider resolution the agent-level answer is NO (the map's
-  // fail-closed row) — the gray area only opens through the classified path.
+  // fail-closed row) — subscription use opens only through the classified path.
   assert.equal(allowedLocally("opencode", "subscription"), false);
   assert.equal(allowedLocally("opencode", "api-key"), true);
   assert.equal(allowedOverRelay("subscription"), false);

@@ -94,18 +94,16 @@ not reuse them.
   agent-neutral). Claude-specific behavior (the `claude_code` preset,
   inherited `settings.json`) is Claude Code's fidelity, scoped to that
   adapter only.
-- **Provider credential policy** (R.4i 2026-07-10; re-verified 2026-07-15,
-  K.3): Mirafold must not enable prohibited subscription use. Anthropic +
-  Gemini prohibit third-party subscription use in writing → a Claude/Gemini
-  login shows as `blocked` (API-key fix). OpenAI is uncertain (no written
-  permission, visibly permissive posture) → a Codex/ChatGPT login runs
-  LOCALLY as a **disclosed gray area** under the **disclosed-uncertainty
-  rule**: the user sees the uncertainty stated plainly (never "OpenAI
-  permits") and makes the call; the `blocked` machinery stays ready for a
-  one-line flip if OpenAI enforces. NO subscription of any kind is driven
-  over the paid relay — absolute bound. The canonical statement + dated
-  per-row citations live in **one file**, `server/provider-policy.ts`;
-  consume it, never re-encode the rule elsewhere.
+- **Provider credential policy** (OpenAI/Google re-checked 2026-09-09,
+  Phase PSC): ChatGPT login is an ordinary supported local path with no
+  subscription caveat. Anthropic subscriptions remain blocked. Gemini uses
+  API keys here: personal Gemini CLI access ended 2026-06-18; surviving
+  enterprise logins have no adapter support. Google's restriction on direct
+  backend access through reused CLI OAuth must not be described as a ban on
+  every interface driving its official CLI. NO subscription of any kind is
+  driven over the paid relay — the existing bound remains. The canonical
+  policy lives in `server/provider-policy.ts`; consume it, never re-encode
+  it elsewhere. Research and sources: `docs/provider-subscriptions.md`.
 - **Shared modules** cross server/web only via aliases declared in BOTH
   `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`,
   `@relay-crypto`).

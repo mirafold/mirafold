@@ -1007,7 +1007,7 @@ test("prompt options: our re-skins immediately, the engine catalog behind them",
   session.close();
 });
 
-test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose once", async () => {
+test("OC.4c: subscription/gateway providers run and publish their kind; only Zen discloses", async () => {
   const cases = [
     {
       model: "openai/gpt-5.5",
@@ -1015,7 +1015,7 @@ test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose o
         { id: "openai", source: "custom" as const, apiKeyOption: "opencode-oauth-dummy-key" },
       ],
       kind: "subscription",
-      disclosure: /not clearly\s+permitted .* your account, your\s+call/s,
+      disclosure: undefined,
     },
     {
       model: "opencode/big-pickle",
@@ -1034,14 +1034,16 @@ test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose o
     await awaitTurnEnd();
     assert.deepEqual(published, [{ kind: c.kind, provider: c.catalog[0].id }]);
     const notices = msgs.filter((m) => m.type === "notice");
-    assert.equal(notices.length, 1, "the disclosure rides exactly once");
-    assert.match(notices[0].text, c.disclosure);
-    assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+    assert.equal(notices.length, c.disclosure ? 1 : 0);
+    if (c.disclosure) {
+      assert.match(notices[0].text, c.disclosure);
+      assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+    }
     // A second turn must not re-disclose.
     await prompt("again");
     feed(idle());
     await awaitTurnEnd(2);
-    assert.equal(msgs.filter((m) => m.type === "notice").length, 1);
+    assert.equal(msgs.filter((m) => m.type === "notice").length, c.disclosure ? 1 : 0);
     session.close();
   }
 });

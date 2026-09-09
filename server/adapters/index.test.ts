@@ -212,7 +212,7 @@ test("N.1 codex: API key AND a subscription login → TWO options, both usable",
         opts.map((o) => o.kind),
         ["api-key", "subscription"],
       );
-      // The subscription is the disclosed gray area (provider-policy): usable
+      // The subscription is supported (provider-policy): usable
       // locally, never blocked — its caveat is picker copy, not a policy gate.
       assert.ok(opts.every((o) => o.usable));
       assert.ok(opts.every((o) => o.blocked !== true));

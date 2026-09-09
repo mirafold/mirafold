@@ -110,15 +110,15 @@ const probe = {
     defaultProvider: codexConfigProvider(),
     apiKey: Boolean(process.env.OPENAI_API_KEY),
     // `codex login` (ChatGPT subscription) writes ~/.codex/auth.json —
-    // allowed LOCALLY as a disclosed gray area, never over the relay
+    // supported locally, never over the paid relay
     // (provider-policy.ts). CODEX_HOME overrides the auth dir.
     subscriptionLogin: loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json"),
   }),
   gemini: () => ({
     // A Google AI Studio API key only: "Login with Google" stopped serving
-    // individual Gemini CLI accounts in 2026, and Google's terms prohibit
-    // subscription use in third-party tools, so there is no subscription
-    // kind to detect. GOOGLE_API_KEY is the CLI's other name for it.
+    // individual Gemini CLI accounts on 2026-06-18. This adapter does not
+    // detect enterprise logins and selects API-key auth explicitly.
+    // GOOGLE_API_KEY is the CLI's other name for it.
     apiKey: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
   }),
   opencode: () => ({
@@ -134,7 +134,7 @@ const probe = {
 /**
  * What KIND of credential the named agent has configured — the input to the
  * per-provider policy. The kind is detected so the policy can decide whether
- * it's usable at all: an Anthropic/Gemini subscription is DETECTED here (so
+ * it's usable at all: an Anthropic subscription is DETECTED here (so
  * the agent picker can say why it won't run) but treated as prohibited by
  * `provider-policy.ts`. A local/BYO endpoint is its own kind — the user
  * pointed elsewhere, so first-party terms don't apply and anything goes —

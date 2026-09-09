@@ -333,13 +333,11 @@ test("agent picker → a full mock turn renders in the DOM", async () => {
   assert.match(opencodeRowText, /OPENCODE_MODEL/);
   const claudeRow = page.locator(".agent-picker-agent", { hasText: "Claude Agent" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
-  // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
-  // offers `codex login` WITH the uncertainty caveat, plus the API-key path.
+  // Codex offers ordinary ChatGPT login alongside the API-key path.
   const codexRowText = await page
     .locator(".agent-picker-agent", { hasText: "Codex" })
     .innerText();
   assert.match(codexRowText, /codex login/);
-  assert.match(codexRowText, /not clearly permitted/);
   assert.match(codexRowText, /OPENAI_API_KEY/);
   // The local/open-model path is named on the picker screen itself (R.4k).
   assert.match(await page.locator(".agent-picker-local-note").innerText(), /local\/open model/i);
@@ -797,10 +795,9 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     await page2.waitForSelector(".agent-picker-backends");
     assert.equal(await page2.locator(".agent-picker-backend").count(), 2);
     const subRow = page2.locator(".agent-picker-backend", { hasText: "ChatGPT subscription" });
-    // The disclosed-uncertainty caveat rides the OPTION (K.3: uncertainty,
-    // never permission), and the row is a live choice, not blocked.
-    assert.match(await subRow.innerText(), /not clearly permitted/);
-    assert.match(await subRow.innerText(), /your account, your call/);
+    // The subscription is an ordinary usable choice, with no caveat row.
+    assert.equal(await subRow.isEnabled(), true);
+    assert.equal(await subRow.locator(".agent-picker-backend-caveat").count(), 0);
     assert.equal(await page2.locator(".agent-picker-backend-blocked").count(), 0);
     // Every row names the model it runs — the line that makes rows comparable
     // (2026-07-20). The api-key row's is the env override.
