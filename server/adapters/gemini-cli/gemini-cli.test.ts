@@ -8,7 +8,7 @@ import { GeminiCliSession, geminiRenderMcpConfig } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../../security/workspace-trust";
 import { MIRAFOLD_MCP, renderMcpCommand } from "../render-mcp-cmd";
-import { MIRAFOLD_CONTEXT } from "../../render-tools";
+import { MIRAFOLD_CONTEXT } from "../../render-guidance";
 
 const RENDER_MCP_COMMAND = renderMcpCommand().command;
 

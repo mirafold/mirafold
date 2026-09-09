@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../../protocol";
-import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../../render-tools";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../../render-guidance";
 import { OpenCodeSession, openCodeRenderMcpConfig } from "./opencode";
 import { OpenCodeServerProcess, type OpenCodeEvent, type OpenCodeTransport } from "./opencode-client";
 import { MIRAFOLD_MCP } from "../render-mcp-cmd";

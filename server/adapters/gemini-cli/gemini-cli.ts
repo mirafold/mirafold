@@ -6,7 +6,7 @@ import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync,
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../../protocol";
-import { RENDER_GUIDANCE } from "../../render-tools";
+import { RENDER_GUIDANCE } from "../../render-guidance";
 import { type AgentSession, capOutput, emitPromptOptions, envWithout, errText, toolDetail } from "../types";
 import {
   MIRAFOLD_MCP,
