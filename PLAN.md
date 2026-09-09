@@ -4077,6 +4077,41 @@ here, not chased on this branch.
 
 ---
 
+## Phase MC — Minor dependency cleanups (2026-09-09; Kyle-directed)
+
+Scope: the three cleanups in Kyle's supplied `mirafold-minor-refactors-spec.md`,
+on the existing `fix/session-entry-layout` branch. No merge or release;
+Kyle is collecting more fixes. Baseline: typecheck and all 1,231 unit tests
+passed. The earlier layout changes are isolated in commit `0d10300`.
+
+- [x] **MC.1 — Helper imports** (`fd127d6`): bang and filesystem handlers
+  obtain `errText` directly from adapter types. Its implementation and the
+  adapters entry-point re-export were not edited. Typecheck, 59 focused unit
+  tests, and 17 real-socket tests passed.
+- [x] **MC.2 — Client IDs** (`39d342f`): move the existing definitions and
+  comments verbatim into import-free `server/sessions/client-id.ts`; update
+  filesystem, bang, upload, and folder-picker consumers without changing
+  validation order or replies. New direct table tests cover the grammar and
+  boundaries; focused handler tests cover invalid IDs without work or replies.
+  Typecheck, 80 focused unit tests, and 19 real-socket tests passed.
+- [x] **MC.3 — Shared guidance** (`c947269`): move only the two constants and
+  their comments into `server/render-guidance.ts`; update all four adapters
+  and their tests. Tool setup and adapter injection sites were not edited.
+  Typecheck and all 229 adapter/tool tests passed. Both evaluated strings
+  match the captured bytes exactly (258 and 4,718 bytes); evidence is in
+  `/tmp/mirafold-minor-refactors-DGokI6/`. The import check includes all four
+  adapters and finds no new cycles (the existing env/log cycle remains).
+- [x] **MC.V — Final verification:** typecheck, all 1,262 unit tests, and
+  the full `yarn test:server` run (server build + 196 real-socket tests) pass.
+  Exactly two new production modules were added; no dependencies, forwarding exports, or
+  permanent prompt snapshots. Final diff review complete; no skipped steps
+  or remaining local test failures. PR #113 targets `next` and stays open
+  for the additional fixes Kyle wants before merging/releasing. Automated
+  review of `c947269` completed without findings; re-check the required checks
+  before the eventual merge.
+
+---
+
 ## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)
 
 Branch `fix/cockpit-follow-ups`, cut from `next` at 2411d35. Five items Kyle
@@ -4110,7 +4145,14 @@ named from daily use, each pinned in Tier 3 and falsified both ways:
   taps still pass. Three further WebKit pairing/resize probes kept BODY
   focused and the bar aligned. No phone CSS changed. Confirming that this
   removes the actual iPhone gap remains pending; do not call it verified
-  from desktop emulation. Diagnostic screenshots live outside the tree in
+  from desktop emulation. Kyle's subsequent `yarn dev` pairing check loaded
+  `app.mirafold.com`, so it exercised the published frontend rather than this
+  phone change. Kyle elected to include the low-risk focus change in a later
+  release with the other fixes and check the actual iPhone then; no preview
+  deployment or release is requested now. PR #113's normal Cloudflare check
+  automatically created the branch preview at
+  `https://fix-session-entry-layout.mirafold-app.pages.dev`; no iPhone check
+  has been claimed from that deployment. Diagnostic screenshots live outside the tree in
   `/tmp/mirafold-layout-evidence/`; Kyle's supplied screenshot is
   `/tmp/mirafold-uploads-23823M/bd869fe2/909b67d8-2071-4a59-939f-b8a3cf5aa202.jpeg`.
 - [x] **CF.2 — Pins survive leaving and returning** — `pin-store.ts`, one
