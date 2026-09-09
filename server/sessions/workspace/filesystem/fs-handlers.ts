@@ -42,7 +42,7 @@ import {
 import { repoTrust, trustFile } from "../git/git-trust";
 import { inside } from "../../actions";
 import { isSecretFile } from "../../../security/permissions";
-import { errText } from "../../../adapters/index";
+import { errText } from "../../../adapters/types";
 import { envInt } from "../../../env";
 
 // Minimum gap between folder tree requests per connection AND per type — fs_list

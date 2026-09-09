@@ -14,7 +14,7 @@ import type { SessionEntry, SessionRegistry } from "./registry";
 import { CLIENT_ID_RE } from "./workspace/filesystem/fs-handlers";
 import { spawnBang } from "../pty/pty";
 import { relayGateRefusal } from "../provider-policy";
-import { errText } from "../adapters";
+import { errText } from "../adapters/types";
 import { envInt } from "../env";
 
 // How much of a `!` command's output rides into the agent's context with the
