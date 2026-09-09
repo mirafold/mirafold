@@ -730,6 +730,67 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   }
 });
 
+test("GSI: Gemini sign-in is selectable alone or beside an API key and unavailable accounts get a fallback", async () => {
+  for (const withApiKey of [false, true]) {
+    const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-gemini-signin-e2e-"));
+    const workspace = path.join(root, "workspace");
+    mkdirSync(workspace);
+    mkdirSync(path.join(root, ".gemini"));
+    writeFileSync(path.join(root, ".gemini", "oauth_creds.json"), "opaque fixture login");
+    const trust = path.join(root, "trusted.json");
+    writeFileSync(trust, JSON.stringify([workspace]));
+    const binary = path.join(root, "gemini-fixture");
+    writeFileSync(binary, `#!/usr/bin/env node
+if (process.env.MIRAFOLD_GEMINI_AUTH_TYPE !== "oauth-personal" || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.NO_BROWSER !== "true") {
+  console.error("wrong credential selected"); process.exit(1);
+}
+console.error("IneligibleTierError: this Google account has no Gemini CLI access");
+process.exit(41);
+`, { mode: 0o755 });
+    const token = "gemini-signin-fixture";
+    const daemon = await startDaemon({
+      MIRAFOLD_TOKEN: token,
+      GEMINI_CLI_HOME: root,
+      GEMINI_API_KEY: withApiKey ? "fixture-api-key" : "",
+      MIRAFOLD_GEMINI_BIN: binary,
+      MIRAFOLD_WORKSPACE_TRUST_FILE: trust,
+    });
+    const p = await browser.newPage();
+    try {
+      await p.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
+      const row = p.locator(".agent-picker-agent", { hasText: "Gemini CLI" });
+      await row.waitFor();
+      await p.locator("#agent-picker-cwd").fill(workspace);
+      if (!withApiKey) {
+        assert.match(await row.innerText(), /Try your Gemini CLI sign-in/);
+        assert.match(await row.innerText(), /Access depends on your Google account and plan/);
+      }
+      await row.click();
+      if (withApiKey) {
+        const signin = p.locator(".agent-picker-backend", { hasText: "Try your Gemini CLI sign-in" });
+        await signin.waitFor();
+        assert.equal(await signin.isEnabled(), true);
+        assert.match(await signin.innerText(), /connect with a Gemini API key instead/);
+        assert.equal(await p.locator(".agent-picker-backend-name", { hasText: "Gemini API key" }).count(), 1);
+        await assertAxeClean(p, "Gemini sign-in picker");
+        await p.screenshot({ path: "/tmp/mirafold-gemini-signin-picker.png" });
+        await signin.click();
+      }
+      const prompt = p.locator(".prompt-box textarea");
+      await prompt.fill("hello");
+      await prompt.press("Enter");
+      await p.getByRole("alert").getByText(/IneligibleTierError: this Google account/).waitFor();
+      await p.getByText(/Mirafold does not switch to API billing automatically/).waitFor();
+      await p.locator(".stop-btn").waitFor({ state: "detached" });
+      assert.equal(await prompt.isEnabled(), true);
+    } finally {
+      await p.close();
+      await daemon.stop();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("UX.8: a live picker names its backing without exposing a configured host", async () => {
   // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
   // live, and the picker must identify an endpoint without disclosing its
@@ -739,7 +800,7 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
     ANTHROPIC_BASE_URL: "http://localhost:11434",
-    // Gemini is the one-click case: an API key is its ONLY backing, so the
+    // Gemini is the one-click case: this fixture has only an API key, so the
     // second step never opens and the row itself must name the credential
     // (2026-07-20). Display only — no create is clicked, so no engine spawns.
     GEMINI_API_KEY: "e2e-not-a-real-key",

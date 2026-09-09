@@ -21,9 +21,9 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **Auth:** personal API keys stay server-side. ChatGPT login is an ordinary
   supported local option with no subscription warning (Kyle, 2026-09-09,
   Phase PSC; official Codex app-server documentation). Anthropic subscriptions
-  remain blocked. Gemini is API-key-only here: Google retired personal Gemini
-  CLI access on 2026-06-18; enterprise login requires a separate adapter
-  change. Google's OAuth-reuse restriction is not a blanket ban on interfaces
+  remain blocked. Gemini CLI sign-in may be tried locally, with account and
+  plan availability disclosed and an explicit API-key alternative (Phase GSI).
+  Google retired personal Gemini CLI access on 2026-06-18. Google's OAuth-reuse restriction is not a blanket ban on interfaces
   driving its official CLI. NO subscription of any kind is driven over the
   paid relay — the existing bound remains. API keys and local/BYO endpoints
   remain supported. `server/provider-policy.ts` is the canonical policy;
@@ -4699,6 +4699,45 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
   interactions, and eight visual checks pass (picker baseline updated).
   [PR #118](https://github.com/mirafold/mirafold/pull/118) targets `next`;
   GitHub CI/review pending; unmerged. → PLAN-ARCHIVE.md.
+
+---
+
+## Phase GSI — Native Gemini CLI sign-in (IN REVIEW; Kyle-directed 2026-09-09)
+
+Kyle approved adding the actual sign-in option and its account-availability
+copy on PR #118. This continues the provider work on the existing branch.
+
+- [x] **GSI.1–GSI.2:** native sign-in detection, credential selection/restore,
+  per-child auth for prompts and ACP catalogs, non-interactive auth failure,
+  approved picker copy, and current research are implemented. The CLI owns
+  its tokens; API fallback requires an explicit choice. → PLAN-ARCHIVE.md.
+- [ ] **GSI.3 — Verify and review.** Test both credentials in the same
+  workspace, sign-in-only detection, restore, unavailable accounts, and the
+  real browser picker. Run typecheck, proportionate unit/integration/browser
+  checks and visual verification with dotenv access disabled. Update PR #118
+  and read automated review; leave it open for Kyle's merge decision.
+
+  **2026-09-09 status:** local verification passes: typecheck, web/server
+  builds, 1,206 dotenv-safe unit cases plus the added first-action catalog
+  regression (49 focused cases rechecked), six server integration cases,
+  eight focused browser cases (including both Gemini credential layouts and
+  real-daemon failure/fallback), three managed-browser interactions, and
+  eight visual checks. Picker baseline updated after inspection. System
+  Chrome escalation was declined; the E2E run used the harness's existing
+  CHROME_BIN override with managed Chromium inside the sandbox. No live
+  provider calls were made. Installed Gemini CLI **0.58.0** source and its
+  settings-expansion function were checked offline.
+
+  PR #118's first automated review covered `b39f334`, before native Gemini
+  sign-in was added. Its dormant Codex blocked-hint suggestion is addressed
+  with neutral API-key guidance that does not display for supported login.
+  Two other review comments report stale provider wording in the dotenv
+  setup template. Kyle's global instructions forbid inspecting any dotenv
+  file, examples included, so that report is not independently verified and
+  the template remains untouched. Kyle must update its provider comments to
+  match `docs/provider-subscriptions.md`; this remains open before merge.
+  The Gemini implementation is being pushed to the same PR; current-head
+  GitHub checks/review must be checked before merge. No merge authorized.
 
 ---
 

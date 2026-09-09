@@ -115,11 +115,15 @@ const probe = {
     subscriptionLogin: loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json"),
   }),
   gemini: () => ({
-    // A Google AI Studio API key only: "Login with Google" stopped serving
-    // individual Gemini CLI accounts on 2026-06-18. This adapter does not
-    // detect enterprise logins and selects API-key auth explicitly.
-    // GOOGLE_API_KEY is the CLI's other name for it.
     apiKey: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+    // GEMINI_CLI_HOME replaces the HOME prefix, not the .gemini directory
+    // (verified in Gemini CLI 0.58 Storage). Only test existence: the native
+    // CLI owns authentication and decides whether this account has access.
+    subscriptionLogin: loginFileExists(
+      path.join(process.env.GEMINI_CLI_HOME || os.homedir(), ".gemini"),
+      ".gemini",
+      "oauth_creds.json",
+    ),
   }),
   opencode: () => ({
     installed: Boolean(installedAgentBin("OPENCODE_BIN", "opencode")),
@@ -154,8 +158,10 @@ function credentialKind(agent: AgentName): CredentialKind {
       if (c.apiKey) return "api-key";
       return c.subscriptionLogin ? "subscription" : "none";
     }
-    case "gemini-cli":
-      return probe.gemini().apiKey ? "api-key" : "none";
+    case "gemini-cli": {
+      const { apiKey, subscriptionLogin } = probe.gemini();
+      return apiKey ? "api-key" : subscriptionLogin ? "subscription" : "none";
+    }
     case "opencode": {
       // Hello-time detection is deliberately SHALLOW: the truthful,
       // provider-resolved classification needs the engine's own catalog,
@@ -192,7 +198,7 @@ export function defaultAgent(): AgentName {
 /** Resolve one named agent's backend (kind + live + model), per-session. */
 export function resolveBackendFor(agent: AgentName): Backend {
   const kind = credentialKind(agent);
-  // `live` ⇒ the REAL agent runs. A prohibited subscription (claude/gemini —
+  // `live` ⇒ the REAL agent runs. A prohibited subscription (Claude —
   // written bans; codex only if provider-policy ever flips it) is NOT live —
   // it falls back to the mock, so we never actually drive it — and the agent picker
   // shows it as `blocked` with the API-key fix.
@@ -314,9 +320,12 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       options.push(...otherRows);
       break;
     }
-    case "gemini-cli":
-      if (probe.gemini().apiKey) addCredentialRow("api-key");
+    case "gemini-cli": {
+      const { apiKey, subscriptionLogin } = probe.gemini();
+      if (apiKey) addCredentialRow("api-key");
+      if (subscriptionLogin) addCredentialRow("subscription");
       break;
+    }
     case "opencode": {
       // One shallow row: a stored credential (or the built-in Zen gateway) —
       // existence only; the provider-resolved truth is enforced at session
@@ -865,6 +874,7 @@ export function createSession(
       return new GeminiCliSession({
         workspaceDir: opts.cwd,
         model: backend.model,
+        kind: backend.kind === "subscription" ? "subscription" : "api-key",
         resumeId: opts.resumeId,
       });
     case "opencode":

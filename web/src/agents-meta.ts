@@ -17,7 +17,7 @@ export const LABEL: Record<AgentName, string> = {
 
 // The hint for a NO-credentials agent — the one action that makes it
 // live, naming WHERE to get the credential. Codex offers ChatGPT login and
-// an API key; Claude/Gemini offer the API-key paths supported here.
+// an API key; Gemini offers its native sign-in and an API key.
 // Agents with local/BYO support name that route too.
 export const CONNECT_HINT: Record<AgentName, string> = {
   "claude-code":
@@ -25,18 +25,19 @@ export const CONNECT_HINT: Record<AgentName, string> = {
   codex:
     "run `codex login` to use your ChatGPT subscription or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
-    "set GEMINI_API_KEY (get one at aistudio.google.com/apikey) — Gemini has no local path",
+    "sign in with Google in Gemini CLI to try your account access, or set GEMINI_API_KEY (get one at aistudio.google.com/apikey)",
   opencode:
     "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect your ChatGPT login or a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. Other subscription logins (Copilot, …) aren't usable",
 };
 
-// The hint for a BLOCKED agent. Gemini's fallback also covers older daemons;
-// current detection offers only its API-key path (provider-policy.ts).
+// The hint for a BLOCKED agent. Gemini's fallback covers older daemons.
 export const BLOCKED_HINT: Partial<Record<AgentName, string>> = {
+  codex:
+    "ChatGPT sign-in is unavailable with this daemon — set OPENAI_API_KEY (get one at platform.openai.com/api-keys)",
   "claude-code":
     "a Claude subscription can't be used in third-party apps (Anthropic's terms) — set ANTHROPIC_API_KEY to use Claude here",
   "gemini-cli":
-    "Gemini CLI in Mirafold uses an API key — set GEMINI_API_KEY (get one at aistudio.google.com/apikey)",
+    "Gemini CLI sign-in is unavailable with this daemon — set GEMINI_API_KEY (get one at aistudio.google.com/apikey)",
 };
 
 // Look up through these, never index the records directly. The records
@@ -95,8 +96,15 @@ export function backendLabel(agent: string, kind: BackendKind): string {
   if (kind === "local") return "local endpoint";
   if (agent === "codex") return "ChatGPT subscription";
   if (agent === "claude-code") return "Claude subscription";
-  if (agent === "gemini-cli") return "Gemini subscription";
+  if (agent === "gemini-cli") return "Try your Gemini CLI sign-in";
   return "subscription";
+}
+
+/** Availability guidance for the native Google login, wherever it is picked. */
+export function backendAvailabilityHint(agent: string, kind: BackendKind | undefined): string | undefined {
+  return agent === "gemini-cli" && kind === "subscription"
+    ? "Access depends on your Google account and plan. If subscription access is unavailable, connect with a Gemini API key instead."
+    : undefined;
 }
 
 /** A `local` row's label. Its `detail` is already a full, opaque label of its

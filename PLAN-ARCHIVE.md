@@ -12461,3 +12461,25 @@ Branch: `fix/provider-subscription-copy` from current `next`.
   Chrome needed execution outside the sandbox to reach the local daemon.
 
 ---
+
+## Phase GSI — Native Gemini CLI sign-in (2026-09-09)
+
+- [x] **GSI.1 — Native authentication selection.** Detect the CLI's existing
+  login by file existence only, offer it locally, and carry the selected
+  credential through creation, restore, prompts, and model discovery. Keep
+  Google OAuth inside the official binary; no automatic API billing fallback.
+- [x] **GSI.2 — Honest setup and failure copy.** Use “Try your Gemini CLI
+  sign-in” and the approved account/plan availability note. Preserve the
+  Google error and offer an explicit API-key next step. Update provider
+  research with Google's headless-mode clarification. Anthropic, OpenCode's
+  Google OAuth restriction, and paid-relay policy retain their behavior.
+**Implementation status (2026-09-09):** the native cached-login file is
+probed by existence only. Each session's selected kind survives restoration
+and configures both its prompt child and ACP model catalog; project settings
+use Gemini's documented environment expansion after folder consent, avoiding
+credential races between Mirafold sessions in the same folder. Sign-in
+children cannot launch a browser login and receive empty API-key variables.
+Google's own availability error is preserved with an explicit API-key next
+step. Anthropic, OpenCode Google OAuth, and paid-relay boundaries retain their
+behavior. Source and offline expansion were checked against Gemini CLI 0.58.0.
+The remaining review/template status is tracked in PLAN.md GSI.3.

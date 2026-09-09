@@ -51,8 +51,10 @@ devices. Why they're first, not just included:
 **API keys remain the paid-relay path for closed models (updated 2026-09-09,
 PLAN PSC).** Local Codex use also supports the user's ChatGPT login as an
 ordinary connection option, without a subscription warning. Anthropic
-subscriptions remain blocked; the current Gemini adapter uses API keys because
-personal Gemini CLI access ended and enterprise login is not implemented here.
+subscriptions remain blocked. Users may try their native Gemini CLI sign-in
+locally, with account/plan availability disclosed and an explicit API-key
+alternative (PLAN GSI). Personal Gemini CLI service was retired; a cached
+login is not a promise of entitlement.
 Google's restriction on direct backend access through reused CLI OAuth does
 not establish a blanket ban on interfaces driving its official binary.
 No subscription of any kind is driven over the paid relay. The executable

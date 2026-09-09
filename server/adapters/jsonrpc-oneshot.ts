@@ -18,6 +18,8 @@ export function jsonRpcOneShot<T>(opts: {
   command: string;
   args: string[];
   cwd?: string;
+  /** A caller-prepared child environment; must exclude daemon credentials. */
+  env?: Record<string, string>;
   timeoutMs: number;
   /** Error-message prefix naming the surface (e.g. "codex app-server"). */
   label: string;
@@ -29,7 +31,7 @@ export function jsonRpcOneShot<T>(opts: {
   return new Promise((resolve, reject) => {
     const child = spawn(opts.command, opts.args, {
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      env: envWithout(), // never the daemon's own secrets
+      env: opts.env ?? envWithout(), // never the daemon's own secrets
       stdio: ["pipe", "pipe", "ignore"],
     });
     let settled = false;

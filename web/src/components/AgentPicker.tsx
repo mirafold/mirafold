@@ -3,6 +3,7 @@ import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protoco
 import {
   agentLabel,
   backendLabel,
+  backendAvailabilityHint,
   backingLine,
   blockedHint,
   connectHint,
@@ -170,6 +171,9 @@ function BackendMenu({
               prohibited-subscription rows it was written for. */}
           {!b.usable && (
             <span className="agent-picker-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
+          )}
+          {b.usable && backendAvailabilityHint(row.agent, b.kind) && (
+            <span className="agent-picker-backend-caveat">{backendAvailabilityHint(row.agent, b.kind)}</span>
           )}
         </button>
       ))}
@@ -349,7 +353,7 @@ export function AgentPicker({
               // subscription is present; say so and name the API-key fix (still
               // clickable — it runs the demo, like any non-live agent). none →
               // no credentials · demo.
-              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
+              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : backendAvailabilityHint(agent, kind);
               const statusText = live
                 ? "ready"
                 : blocked

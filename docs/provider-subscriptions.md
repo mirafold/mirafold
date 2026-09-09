@@ -20,21 +20,63 @@ do not cite it as an endorsement of every third-party token-handling scheme.
 
 ## Gemini: distinguish the integration from the account entitlement
 
-**Keep the current Gemini adapter on API keys.** There is positive evidence
-for third-party interfaces driving Google's own CLI, but personal Gemini CLI
-access has been retired. Removing Mirafold's subscription policy check cannot
-restore that service or supply an authentication path the adapter lacks.
+**Users may try their existing Gemini CLI sign-in locally.** Mirafold exposes
+it as an available choice, with this account-availability guidance approved
+by Kyle on September 9:
+
+> **Try your Gemini CLI sign-in**
+>
+> Access depends on your Google account and plan. If subscription access is
+> unavailable, connect with a Gemini API key instead.
+
+This invites an attempt through the official CLI; it does not claim that a
+retired consumer entitlement will work or that Google has endorsed Mirafold.
 
 ### What Mirafold actually does
 
 [`GeminiCliSession`](../server/adapters/gemini-cli/gemini-cli.ts) launches the
-installed official binary with `-p` and `-o stream-json`. It supplies rendering
-guidance and an MCP server, and selects `gemini-api-key` in the project's
-settings after workspace approval. It does not extract Google OAuth tokens
-or make model requests directly. Credential detection in
-[`server/adapters/index.ts`](../server/adapters/index.ts) accepts
-`GEMINI_API_KEY` or `GOOGLE_API_KEY`; it does not detect a Google login.
-Mirafold currently uses headless output, not Agent Client Protocol (ACP).
+installed official binary with `-p` and `-o stream-json`, rendering guidance,
+and an MCP server. Its model catalog comes from the same binary's `--acp`
+interface. Neither path extracts Google OAuth tokens or makes direct model
+requests. Credential detection only checks whether
+`~/.gemini/oauth_creds.json` exists (`GEMINI_CLI_HOME` replaces the home
+prefix); it never parses that credential. A file's presence is not proof of
+valid authentication or account entitlement.
+
+API keys (`GEMINI_API_KEY` or `GOOGLE_API_KEY`) remain the default when both
+credentials exist. An explicit sign-in choice is preserved on restoration.
+After Gemini-specific folder approval, the adapter merges its render server
+and an environment reference into the project's authentication selection.
+Each child sets that reference to `oauth-personal` or `gemini-api-key`, so
+sessions sharing a folder keep separate choices. Outside Mirafold, that
+setting retains the adapter's earlier API-key default; the trust prompt
+states this effect. Native administrator policies still apply.
+[Google's configuration layers and environment expansion](https://geminicli.com/docs/reference/configuration/).
+
+Sign-in children receive empty API-key variables and `NO_BROWSER=true`.
+The CLI handles its own cached credentials and refresh; an expired login
+fails with its native authorization error instead of opening an interactive
+login flow Mirafold cannot complete. Authentication/availability failures
+retain Google's error and offer an explicit new API-key session. Mirafold
+does not automatically switch to metered API usage.
+
+### Evidence for the headless interface Mirafold uses
+
+On March 16, Google project collaborator `jackwotherspoon` confirmed that
+headless mode and custom system prompts are valid Gemini CLI uses. This
+answered an issue reporting a suspension during scheduled official-CLI use;
+he said he had asked the team and escalated the report. This directly
+addresses Mirafold's interface more closely than the ACP example below.
+[Maintainer clarification](https://github.com/google-gemini/gemini-cli/issues/20813#issuecomment-4067589940).
+
+This is positive evidence for allowing local attempts. It does not establish
+that Google “doesn't care,” that every account has access, or that suspension
+cannot happen. The reporter described later suspensions too; the public
+thread does not establish their actual trigger. Google's February statement
+also acknowledged Antigravity enforcement against third-party access to its
+resources/quotas and collateral Gemini CLI/Code Assist disruption from shared
+backends. Consequently, “Google has never gone after anyone” would be false.
+[Enforcement statement](https://github.com/google-gemini/gemini-cli/discussions/20632).
 
 ### The restriction is narrower than “all third-party apps are prohibited”
 
@@ -59,7 +101,7 @@ through official ACP with the CLI's own Google login and no direct API
 bypass. Project collaborator `bdmorgan` replied that it “sounds like a legitimate
 use,” while qualifying that understanding. **Our reading:** this is evidence
 of acceptance of that described integration, not a blanket guarantee for
-Mirafold's different headless interface or every account type. The same
+every wrapper or account type. The same
 announcement described increased enforcement against OAuth misuse, so
 “Google tolerates third-party OAuth reuse” would misrepresent its posture.
 [Original discussion and reply](https://github.com/google-gemini/gemini-cli/discussions/22970#discussioncomment-16198982).
@@ -77,14 +119,16 @@ the older general FAQ's instructions about Pro/Ultra quotas.
 Google's June 18 announcement separately confirms that API-key and licensed
 enterprise access continue and names Antigravity CLI as the consumer
 successor. Neither statement makes a personal subscription usable by
-Mirafold's existing Gemini CLI adapter.
+Mirafold merely by enabling its sign-in choice.
 [Gemini CLI team announcement](https://github.com/google-gemini/gemini-cli/discussions/28017).
 
-Code Assist Standard/Enterprise or Antigravity could warrant separate work.
-That requires reviewing the selected product's terms and authentication,
-implementing its actual supported interface, and verifying the integration.
-This review does not establish Antigravity compatibility or add enterprise
-authentication. No live subscription calls were made for this research.
+The option delegates entitlement checks to the official CLI. Enterprise
+accounts may still need their native project/licensing configuration;
+Mirafold does not provision a license. Antigravity remains a different
+product and would require a separate adapter and review. No live
+subscription or paid API calls were made for this change. Offline checks
+verified the installed Gemini CLI 0.58 settings expansion; source inspection
+checked native headless authentication and non-interactive login failure; fake-provider tests verify Mirafold's selection and failure paths.
 
 ## Existing boundaries
 
@@ -92,5 +136,5 @@ Anthropic subscription access remains blocked at Kyle's direction. Its
 existing assessment is in the policy module; it was not re-reviewed here.
 Mirafold's paid relay continues to exclude subscriptions and free gateways.
 That is the existing product boundary, independent of the supported local
-ChatGPT path; this copy change does not alter it. OpenCode Zen retains its
+ChatGPT path; this change does not alter it. OpenCode Zen retains its
 separate terms and model-training disclosure.

@@ -47,19 +47,20 @@ import type { AgentName } from "./protocol";
 //       local UI driving the official binary is covered is the only thing that
 //       would move this row (inquiry drafted 2026-08-17, unsent).
 //     - API key: allowed locally; relay = API key only.
-//   Google Gemini (gemini-cli): API-key-only in Mirafold. Consumer access
-//     (free / Google AI Pro / Ultra) ended 2026-06-18; the deprecation page
-//     updated 2026-09-02 confirms it:
+//   Google Gemini (gemini-cli): native CLI sign-in may be tried locally
+//     (Kyle, 2026-09-09), with account/plan availability disclosed. Mirafold
+//     drives official headless CLI + ACP model discovery, never reuses its
+//     tokens to call Google's backend. Google collaborator jackwotherspoon
+//     explicitly confirmed headless mode and custom prompts as valid uses:
+//     https://github.com/google-gemini/gemini-cli/issues/20813#issuecomment-4067589940
+//     That does not guarantee access: consumer tiers ended 2026-06-18 while
+//     Code Assist Standard/Enterprise continued. A cached login may fail;
+//     preserve the CLI error and offer an explicit API-key alternative.
 //     https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals
-//     Standard/Enterprise Code Assist access survives, but our adapter has
-//     no enterprise-login detection and explicitly selects API-key auth.
-//     Do not equate driving the official CLI with extracting OAuth tokens:
-//     Google documents ACP editor integrations, and its warning specifically
-//     addresses direct backend access using third-party software:
-//     https://geminicli.com/docs/ide-integration/
+//     Direct backend access using reused CLI OAuth stays prohibited; this
+//     is why OpenCode's Google OAuth row below remains blocked:
 //     https://geminicli.com/docs/resources/tos-privacy/
-//     These integrations do not restore retired consumer access. A future
-//     enterprise or Antigravity adapter needs its own auth/terms review.
+//     See docs/provider-subscriptions.md for scope and enforcement evidence.
 //   OpenAI (codex): ChatGPT login is supported for local use, without a
 //     subscription warning (Kyle, 2026-09-09). The official app-server docs
 //     explicitly describe embedding Codex in a product and its managed
@@ -102,11 +103,12 @@ import type { AgentName } from "./protocol";
 export type CredentialKind = "api-key" | "subscription" | "local" | "gateway" | "none";
 
 // Whether a SUBSCRIPTION may drive a third-party app for free LOCAL use.
-// Anthropic stays blocked. Gemini has no supported subscription path here.
+// Anthropic stays blocked. Gemini drives the official CLI's native login,
+// with account availability disclosed (not a promise of subscription access).
 // OpenAI is supported without a caveat; see the dated provider notes above.
 const SUBSCRIPTION_LOCAL_OK: Record<AgentName, boolean> = {
   "claude-code": false,
-  "gemini-cli": false,
+  "gemini-cli": true,
   codex: true,
   // OpenCode is a multi-provider harness: whether a subscription OAuth may
   // drive it locally is a fact about the UNDERLYING provider, not the agent

@@ -96,9 +96,10 @@ not reuse them.
   adapter only.
 - **Provider credential policy** (OpenAI/Google re-checked 2026-09-09,
   Phase PSC): ChatGPT login is an ordinary supported local path with no
-  subscription caveat. Anthropic subscriptions remain blocked. Gemini uses
-  API keys here: personal Gemini CLI access ended 2026-06-18; surviving
-  enterprise logins have no adapter support. Google's restriction on direct
+  subscription caveat. Anthropic subscriptions remain blocked. Gemini CLI
+  sign-in may be tried locally, with account/plan availability disclosed and
+  an explicit API-key alternative (Phase GSI). Google retired personal Gemini
+  CLI access on 2026-06-18; detecting a login is not proof of entitlement. Google's restriction on direct
   backend access through reused CLI OAuth must not be described as a ban on
   every interface driving its official CLI. NO subscription of any kind is
   driven over the paid relay — the existing bound remains. The canonical

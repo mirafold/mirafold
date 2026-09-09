@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   mergeBackends,
   resolveBackendFor,
   resolveChosenBackend,
+  restoreBackend,
 } from "./index";
 import type { LocalServer } from "../local-models";
 import { loadProjectEnv } from "../project-env";
@@ -34,19 +35,23 @@ const ENV_KEYS = [
   "CODEX_MODEL",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
+  "GEMINI_CLI_HOME",
 ] as const;
 
 const claude = () => availableAgents().find((a) => a.agent === "claude-code")!;
 
 function withEnv(patch: Record<string, string | undefined>, fn: () => void) {
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  const geminiHome = mkdtempSync(path.join(os.tmpdir(), "gemini-absent-login-"));
   try {
     for (const k of ENV_KEYS) delete process.env[k];
+    process.env.GEMINI_CLI_HOME = geminiHome;
     for (const [k, v] of Object.entries(patch)) {
       if (v !== undefined) process.env[k] = v;
     }
     fn();
   } finally {
+    rmSync(geminiHome, { recursive: true, force: true });
     for (const k of ENV_KEYS) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
@@ -257,7 +262,7 @@ test("N.1: no credentials at all → an empty menu (the demo path is the agent r
   });
 });
 
-test("N.1 gemini-cli: an API key is the one and only option (either env name)", () => {
+test("N.1 gemini-cli: without a sign-in, an API key is the only option (either env name)", () => {
   for (const key of ["GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
     withEnv({ [key]: "x" }, () => {
       const opts = backendOptions("gemini-cli");
@@ -266,6 +271,32 @@ test("N.1 gemini-cli: an API key is the one and only option (either env name)", 
       assert.equal(opts[0].usable, true);
     });
   }
+});
+
+test("Gemini native sign-in is offered locally; selection and restore retain it when a key also exists", () => {
+  withTempDir((home) => {
+    mkdirSync(path.join(home, ".gemini"));
+    // Deliberately not JSON: discovery must never parse Google's tokens.
+    writeFileSync(path.join(home, ".gemini", "oauth_creds.json"), "opaque native credential");
+    withEnv({ GEMINI_CLI_HOME: home }, () => {
+      const row = availableAgents().find((a) => a.agent === "gemini-cli")!;
+      assert.equal(row.live, true);
+      assert.equal(row.kind, "subscription");
+      assert.notEqual(row.blocked, true);
+      assert.deepEqual(backendOptions("gemini-cli").map((b) => [b.kind, b.usable]), [["subscription", true]]);
+    });
+    withEnv({ GEMINI_CLI_HOME: home, GEMINI_API_KEY: "test-key" }, () => {
+      assert.equal(resolveBackendFor("gemini-cli").kind, "api-key");
+      assert.deepEqual(backendOptions("gemini-cli").map((b) => [b.kind, b.usable]), [["api-key", true], ["subscription", true]]);
+      const selected = resolveChosenBackend("gemini-cli", { kind: "subscription" });
+      assert.ok(!("error" in selected));
+      assert.equal(selected.kind, "subscription");
+      assert.equal(restoreBackend({ id: "gemini-saved", backend: selected }).kind, "subscription");
+    });
+    withEnv({}, () => {
+      assert.ok("error" in resolveChosenBackend("gemini-cli", { kind: "subscription" }));
+    });
+  });
 });
 
 // 2026-07-20: the model moved off `detail` onto its own `model` field — every

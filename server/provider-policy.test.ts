@@ -17,6 +17,12 @@ const entry = (over: Partial<OpenCodeProviderEntry>): OpenCodeProviderEntry => (
   ...over,
 });
 
+test("native Gemini CLI sign-in is allowed locally while Anthropic and the subscription relay stay blocked", () => {
+  assert.equal(allowedLocally("gemini-cli", "subscription"), true);
+  assert.equal(allowedLocally("claude-code", "subscription"), false);
+  assert.equal(allowedOverRelay("subscription"), false);
+});
+
 test("a stored api key and an env key are api-key, allowed", () => {
   for (const source of ["api", "env"] as const) {
     const v = classifyOpenCodeProvider(entry({ id: "deepseek", source }));
