@@ -4688,34 +4688,17 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
 
 ---
 
-## Phase PSC — Provider subscription copy (opened 2026-09-09; Kyle-directed)
+## Phase PSC — Provider subscription copy (✅ COMPLETE 2026-09-09; Kyle-directed)
 
-Branch: `fix/provider-subscription-copy` from current `next`.
-
-- [x] **Step PSC.1 — Verify the current integrations and provider sources.**
-  Codex uses app-server with documented ChatGPT authentication. Gemini uses
-  official headless CLI output with API-key auth; personal CLI access ended
-  June 18, and enterprise authentication is not implemented here. Google's
-  ACP integrations and limited maintainer acceptance are distinct from its
-  prohibition on direct backend access through reused OAuth. Research:
-  `docs/provider-subscriptions.md`.
-- [x] **Step PSC.2 — Remove ChatGPT warnings and synchronize policy copy.**
-  Setup hints, the subscription picker, and OpenCode ChatGPT notices lose
-  their uncertainty caveats. Gemini's fallback names the actual API-key
-  requirement. Anthropic restrictions, Zen disclosures, authentication,
-  credential classification, and paid-relay enforcement remain behaviorally
-  unchanged. Current policy docs supersede the July gray-area assessment.
-- [ ] **Step PSC.3 — Verify and open the change for review.**
-  Typecheck, relevant unit/session and browser checks, managed-browser visual
-  checks; review the final diff, sign off the commit, and open a PR to `next`.
-  Do not merge without Kyle's explicit approval.
-  Verification: typecheck and both builds pass; 1,201 unit tests pass across
-  122 files (five dotenv-related files excluded); seven focused Chrome E2E
-  checks pass; Chromium/Firefox/WebKit interactions and seven unchanged
-  visual baselines pass. The inspected picker baseline was updated for the
-  new text, and its focused visual rerun passes. A temporary read guard
-  prevents dotenv access; Corepack/Vite environment-file loading is disabled.
-  Chrome needed execution outside the sandbox to reach the local daemon.
+- [x] **PSC.1–PSC.3:** removed ChatGPT subscription warnings from setup,
+  credential selection, and OpenCode notices; documented Gemini's supported
+  integration mechanisms and retired personal access in
+  `docs/provider-subscriptions.md`. Anthropic, Zen, auth, and paid-relay
+  enforcement retain their prior behavior. Typecheck, builds, 1,201
+  dotenv-safe unit tests, seven focused Chrome checks, three managed-browser
+  interactions, and eight visual checks pass (picker baseline updated).
+  [PR #118](https://github.com/mirafold/mirafold/pull/118) targets `next`;
+  GitHub CI/review pending; unmerged. → PLAN-ARCHIVE.md.
 
 ---
 
