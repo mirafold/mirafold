@@ -191,7 +191,7 @@ test("AUDIT: a local tab's prompt on the same flipped session is NOT gated", () 
   const { c, seen } = conn(reg, false); // local
   send(c, { type: "attach", sessionId: e.id });
   e.kind = "subscription";
-  send(c, { type: "prompt", text: "local subscription use is the disclosed gray area" });
+  send(c, { type: "prompt", text: "local ChatGPT subscription use is supported" });
   assert.equal(errors(seen).length, 0);
   assert.ok(e.ring.buffer.some((m) => m.type === "user_prompt"));
   reg.end(e.id);

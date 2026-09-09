@@ -3,12 +3,12 @@ import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protoco
 import {
   agentLabel,
   backendLabel,
+  backendAvailabilityHint,
   backingLine,
   blockedHint,
   connectHint,
   localBackendLabel,
   localCapable,
-  subscriptionCaveat,
   localLiveHint,
 } from "../agents-meta";
 import { ModalCard } from "./ModalCard";
@@ -166,14 +166,14 @@ function BackendMenu({
           </span>
           {b.kind !== "local" && b.detail && <span className="agent-picker-backend-detail">{b.detail}</span>}
           {modelLine(b) && <span className="agent-picker-backend-model">{modelLine(b)}</span>}
-          {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
-            <span className="agent-picker-backend-caveat">{subscriptionCaveat(row.agent)}</span>
-          )}
           {/* The row's own hint wins (a declared provider missing its env
               key names the exact variable); the per-agent hint covers the
               prohibited-subscription rows it was written for. */}
           {!b.usable && (
             <span className="agent-picker-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
+          )}
+          {b.usable && backendAvailabilityHint(row.agent, b.kind) && (
+            <span className="agent-picker-backend-caveat">{backendAvailabilityHint(row.agent, b.kind)}</span>
           )}
         </button>
       ))}
@@ -353,7 +353,7 @@ export function AgentPicker({
               // subscription is present; say so and name the API-key fix (still
               // clickable — it runs the demo, like any non-live agent). none →
               // no credentials · demo.
-              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
+              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : backendAvailabilityHint(agent, kind);
               const statusText = live
                 ? "ready"
                 : blocked

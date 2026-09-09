@@ -16,37 +16,28 @@ export const LABEL: Record<AgentName, string> = {
 };
 
 // The hint for a NO-credentials agent — the one action that makes it
-// live, naming WHERE to get the credential. Claude/Gemini never suggest a
-// subscription login (prohibited in writing). Codex suggests `codex login`
-// under the disclosed-uncertainty rule (provider-policy.ts): the wording must
-// state UNCERTAINTY, never permission — a phrasing like "OpenAI permits it"
-// overclaims and must not appear. Every
-// closed agent also names the local/BYO route so "run your own model" reads
-// as supported, not absent.
+// live, naming WHERE to get the credential. Codex offers ChatGPT login and
+// an API key; Gemini offers its native sign-in and an API key.
+// Agents with local/BYO support name that route too.
 export const CONNECT_HINT: Record<AgentName, string> = {
   "claude-code":
     "set ANTHROPIC_API_KEY (get one at console.anthropic.com) — or point ANTHROPIC_BASE_URL at a local model (Ollama) or a hosted open-model API (DeepSeek, Kimi) with that provider's key",
   codex:
-    "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
+    "run `codex login` to use your ChatGPT subscription or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
-    "set GEMINI_API_KEY (get one at aistudio.google.com/apikey) — Gemini has no local path",
+    "sign in with Google in Gemini CLI to try your account access, or set GEMINI_API_KEY (get one at aistudio.google.com/apikey)",
   opencode:
-    "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. A ChatGPT login works too — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call. Other subscription logins (Copilot, …) aren't usable",
+    "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect your ChatGPT login or a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. Other subscription logins (Copilot, …) aren't usable",
 };
 
-// The hint for a BLOCKED agent — a prohibited subscription credential is
-// present. Distinct from CONNECT_HINT because the honest message names WHY it
-// won't run, not just how to fix it. Claude/Gemini land here today; the codex
-// entry is the disclosed-uncertainty rule's graceful-degradation half — it
-// shows the moment provider-policy flips codex off (one line, if OpenAI ever
-// enforces), so keep it current even while unused.
+// The hint for a BLOCKED agent. Gemini's fallback covers older daemons.
 export const BLOCKED_HINT: Partial<Record<AgentName, string>> = {
+  codex:
+    "ChatGPT sign-in is unavailable with this daemon — set OPENAI_API_KEY (get one at platform.openai.com/api-keys)",
   "claude-code":
     "a Claude subscription can't be used in third-party apps (Anthropic's terms) — set ANTHROPIC_API_KEY to use Claude here",
-  codex:
-    "a ChatGPT subscription can no longer be used in third-party apps (OpenAI's call, not ours) — set OPENAI_API_KEY to use Codex here",
   "gemini-cli":
-    "a Gemini subscription can't be used in third-party apps (Google's terms) — set GEMINI_API_KEY to use Gemini here",
+    "Gemini CLI sign-in is unavailable with this daemon — set GEMINI_API_KEY (get one at aistudio.google.com/apikey)",
 };
 
 // Look up through these, never index the records directly. The records
@@ -105,8 +96,15 @@ export function backendLabel(agent: string, kind: BackendKind): string {
   if (kind === "local") return "local endpoint";
   if (agent === "codex") return "ChatGPT subscription";
   if (agent === "claude-code") return "Claude subscription";
-  if (agent === "gemini-cli") return "Gemini subscription";
+  if (agent === "gemini-cli") return "Try your Gemini CLI sign-in";
   return "subscription";
+}
+
+/** Availability guidance for the native Google login, wherever it is picked. */
+export function backendAvailabilityHint(agent: string, kind: BackendKind | undefined): string | undefined {
+  return agent === "gemini-cli" && kind === "subscription"
+    ? "Access depends on your Google account and plan. If subscription access is unavailable, connect with a Gemini API key instead."
+    : undefined;
 }
 
 /** A `local` row's label. Its `detail` is already a full, opaque label of its
@@ -131,16 +129,6 @@ export function backingLine(
   if (kind === "local") return localBackendLabel(agent, detail);
   const label = backendLabel(agent, kind);
   return detail ? `${label} · ${detail}` : label;
-}
-
-/** The disclosed-uncertainty caveat riding the codex subscription OPTION
- *  (provider-policy.ts rule: state UNCERTAINTY, never permission — same bound as the
- *  CONNECT_HINT wording above). Other agents' subscriptions are blocked
- *  outright and carry BLOCKED_HINT instead. */
-export function subscriptionCaveat(agent: string): string | undefined {
-  return agent === "codex"
-    ? "not clearly permitted by OpenAI's terms, tolerated in practice — your account, your call"
-    : undefined;
 }
 
 /** Display-side mirror of the server's dialect map: which agents can run on

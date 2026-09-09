@@ -14,6 +14,7 @@
 
 import { agentBin } from "../types";
 import { jsonRpcOneShot } from "../jsonrpc-oneshot";
+import { geminiEnvironment, type GeminiCredential } from "./gemini-auth";
 
 export interface GeminiModel {
   id: string;
@@ -41,11 +42,12 @@ export const geminiBin = () => agentBin("MIRAFOLD_GEMINI_BIN", "gemini");
  * failure, protocol error, or timeout — the caller decides how to degrade
  * (the adapter surfaces an honest error, never a made-up list).
  */
-export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000): Promise<GeminiModelCatalog> {
+export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000, kind: GeminiCredential = "api-key"): Promise<GeminiModelCatalog> {
   return jsonRpcOneShot<GeminiModelCatalog>({
     command: geminiBin(),
     args: ["--acp"],
     cwd: workspaceDir,
+    env: geminiEnvironment(kind),
     timeoutMs,
     label: "gemini --acp",
     start: (send) =>

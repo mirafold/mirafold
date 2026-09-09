@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../../protocol";
 import { RENDER_GUIDANCE } from "../../render-guidance";
-import { type AgentSession, capOutput, emitPromptOptions, envWithout, errText, toolDetail } from "../types";
+import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "../types";
 import {
   MIRAFOLD_MCP,
   generativeUIMsg,
@@ -21,6 +21,7 @@ import { emitModelPicker } from "../model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../../security/workspace-trust";
 import { AsyncQueue, CLOSE } from "../async-queue";
 import { ResumeIdState } from "../resume-id";
+import { GEMINI_AUTH_SETTING, GEMINI_SIGN_IN_FALLBACK, geminiEnvironment, type GeminiCredential } from "./gemini-auth";
 
 // Same generative-UI stdio MCP server the Codex adapter injects. Gemini
 // loads MCP servers from settings.json, so we write a per-session project
@@ -67,9 +68,9 @@ export function parseRenderId(output: unknown): string {
  * the shared `WireMsg` union — no protocol change.
  *
  * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
- * concerns — the session cwd and model when set. Auth is API-key (the free
- * Google-login path stopped serving individual accounts in 2026); the key stays in the
- * server env, injected into the child, never on the wire. Approval for the
+ * concerns — the session cwd, model when set, and selected authentication.
+ * The native CLI uses its own Google sign-in or the selected API key;
+ * credentials never travel on the wire. Approval for the
  * user's own tools is inherited; only our `mirafold` MCP server is auto-trusted
  * (the analog of Codex's per-server `approve`), since headless can't prompt.
  */
@@ -89,6 +90,7 @@ export class GeminiCliSession implements AgentSession {
   private modelLabel: string | undefined;
   private model?: string;
   private workspaceDir: string;
+  private readonly kind: GeminiCredential;
   private listModels: () => Promise<GeminiModelCatalog>;
   // Non-render tool ids we announced, and buffered Mirafold render calls awaiting
   // their tool_result (which carries the assigned component id).
@@ -99,6 +101,7 @@ export class GeminiCliSession implements AgentSession {
   // can repeat it as a terminal result error (or omit result.error entirely),
   // so retain it long enough to report the outcome once and with real words.
   private streamErrorMessage?: string;
+  private signInHintShown = false;
   // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
   // yes is remembered on disk, so later turns never reach it.
@@ -130,17 +133,19 @@ export class GeminiCliSession implements AgentSession {
   constructor(opts: {
     workspaceDir: string;
     model?: string;
+    kind?: GeminiCredential;
     resumeId?: string;
     listModels?: () => Promise<GeminiModelCatalog>;
   }) {
     this.workspaceDir = path.resolve(opts.workspaceDir);
+    this.kind = opts.kind ?? "api-key";
     mkdirSync(this.workspaceDir, { recursive: true });
     this.model = opts.model;
     this.modelLabel = opts.model;
     this.sessionId = opts.resumeId ?? randomUUID();
     this.started = Boolean(opts.resumeId);
     this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
-    this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
+    this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir, undefined, this.kind));
     void this.worker();
   }
 
@@ -284,7 +289,7 @@ export class GeminiCliSession implements AgentSession {
   private writeMcpSettings() {
     this.assertSettingsPathIsOurs();
     const cfg = this.readSettings();
-    cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
+    cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: GEMINI_AUTH_SETTING } };
     cfg.mcpServers = {
       ...cfg.mcpServers,
       [MIRAFOLD_MCP]: geminiRenderMcpConfig(),
@@ -337,7 +342,8 @@ export class GeminiCliSession implements AgentSession {
         detail:
           `trust this folder — ${this.workspaceDir}. ` +
           `Yes lets Gemini run here, adds Mirafold's render tools to this folder's ` +
-          `.gemini/settings.json, and sets its auth type to API key (replacing any other choice). ` +
+          `.gemini/settings.json, and makes its auth type follow your Mirafold session's choice ` +
+          `(replacing the previous selection; API key when run outside Mirafold). ` +
           `Other settings are merged; if that file is not valid JSON, its original bytes are saved ` +
           `beside it before Mirafold replaces it. Terminal Gemini reads this file too.`,
       },
@@ -361,6 +367,13 @@ export class GeminiCliSession implements AgentSession {
 
   private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
+    if (
+      this.kind === "subscription" && !this.signInHintShown && msg.type === "error" &&
+      /auth|credential|sign.?in|login|ineligible|account|access|quota|capacity|unavailable|\b(?:401|403|429)\b/i.test(msg.message)
+    ) {
+      this.signInHintShown = true;
+      for (const cb of this.listeners) cb({ type: "notice", text: GEMINI_SIGN_IN_FALLBACK });
+    }
   }
 
   /** Serial turn loop. `/model` is handled here, between turns, so a switch
@@ -369,6 +382,7 @@ export class GeminiCliSession implements AgentSession {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
+      this.signInHintShown = false;
       try {
         const trimmed = item.trim();
         if (trimmed === "/model" || trimmed.startsWith("/model ")) {
@@ -411,6 +425,7 @@ export class GeminiCliSession implements AgentSession {
   private runModelCommand(arg: string): Promise<void> {
     return runSlashTurn((msg) => this.emit(msg), async () => {
       if (arg !== "set" && !arg.startsWith("set ")) {
+        this.prepareSettings();
         let catalog: GeminiModelCatalog;
         try {
           catalog = await this.listModels();
@@ -462,11 +477,14 @@ export class GeminiCliSession implements AgentSession {
     }
     // The consequential half of settings.json: only merged in once the
     // trust gate above has actually passed, and only once per session.
-    if (!this.mcpSettingsWritten) {
-      this.writeMcpSettings();
-      this.mcpSettingsWritten = true;
-    }
+    this.prepareSettings();
     return this.spawnTurn(text);
+  }
+
+  private prepareSettings() {
+    if (this.mcpSettingsWritten) return;
+    this.writeMcpSettings();
+    this.mcpSettingsWritten = true;
   }
 
   /** A denied (or timed-out) trust ask: say why, end the turn, spawn nothing. */
@@ -511,24 +529,7 @@ export class GeminiCliSession implements AgentSession {
 
       const child = spawn(geminiBin(), args, {
         cwd: this.workspaceDir,
-        env: {
-          ...envWithout(), // GEMINI_API_KEY lives here (never the daemon's own secrets); never serialized to the wire
-          // Only reached once ensureTrusted() holds the user's yes. This is
-          // ALSO what makes auth work, which is not obvious: 0.53.0 does not
-          // load a project's `.gemini/settings.json` for an UNTRUSTED folder,
-          // so the `selectedType: "gemini-api-key"` we write there is
-          // ignored and the CLI falls back to the user-scope selection — an
-          // `oauth-personal` login dies on IneligibleTierError (the free-tier
-          // client Google retired) while a perfectly good API key sits unused.
-          // One cause, two symptoms.
-          //
-          // `--skip-trust` is NOT equivalent and was measured failing: it lets
-          // the run proceed but still doesn't load project settings, so auth
-          // falls back and the turn dies. `GEMINI_DEFAULT_AUTH_TYPE` does
-          // nothing at all on 0.53.0 (measured: no project settings + that var
-          // + trust still fails). The env var below is the whole fix.
-          GEMINI_CLI_TRUST_WORKSPACE: "true",
-        },
+        env: geminiEnvironment(this.kind),
       });
       this.child = child;
 

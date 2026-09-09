@@ -1,8 +1,9 @@
 import type { AgentName } from "./protocol";
 
 // Per-provider credential policy — the ONE place the rule lives (R.4i, locked
-// 2026-07-10; re-verified row by row 2026-07-15, Phase K.3, against current
-// primary sources — cited per row below). Everything else consumes this;
+// 2026-07-10; OpenAI/Google re-checked 2026-09-09, Phase PSC, against current
+// primary sources — cited per row below and in docs/provider-subscriptions.md).
+// Everything else consumes this;
 // changing what a provider permits is a one-file edit here. NOT legal advice —
 // this is our reading of published terms as of the dates below, and all three
 // providers moved within H1 2026: treat the table as revisit-able, and
@@ -28,7 +29,7 @@ import type { AgentName } from "./protocol";
 //       arrived before the docs (Jan 2026 token blocking, with collateral
 //       account bans), and a downside that lands on the USER's account, not
 //       ours. That fails the disclosed-uncertainty rule's "visibly permissive
-//       posture" condition (contrast the OpenAI row), so this row does not
+//       posture" condition, so this row does not
 //       become a gray area even though the terms are now similarly ambiguous.
 //       Scope note: Free/Pro/Max fall under the Consumer Terms (§3(7) carries
 //       the third-party-client clause); Team/Enterprise fall under the
@@ -46,33 +47,27 @@ import type { AgentName } from "./protocol";
 //       local UI driving the official binary is covered is the only thing that
 //       would move this row (inquiry drafted 2026-08-17, unsent).
 //     - API key: allowed locally; relay = API key only.
-//   Google Gemini (gemini-cli), closed: subscription/OAuth isn't even a path
-//     anymore — Google stopped serving Gemini CLI requests for individual
-//     accounts (free / AI Pro / AI Ultra) on 2026-06-18 (official
-//     google-gemini/gemini-cli discussion #28017, posted by a maintainer;
-//     Antigravity CLI announced as the successor — adapter impact tracked as
-//     an R.6 check). API-key use continues under the Gemini API ToS. Already
-//     API-key-only in our detection. Google explicitly kept API-key and
-//     enterprise access supported and the open-source CLI maintained; Mirafold
-//     therefore continues to support this adapter (correction 2026-08-14).
-//   OpenAI (codex), closed: allowed for free LOCAL use **as a disclosed
-//     gray area** (Kyle's call, 2026-07-15, amending the same-day fail-closed
-//     flip — see the disclosed-uncertainty rule below). K.3's re-verification
-//     found NO written general permission: the Codex auth docs are silent on
-//     third-party harnesses, a Codex maintainer deferred to the general Terms
-//     of Use when asked directly (openai/codex discussion #8338), and the
-//     ChatGPT plan help pages say "Reselling access or using ChatGPT to power
-//     third-party services is prohibited." But OpenAI's demonstrated posture
-//     is actively permissive — Altman publicly invited ChatGPT-subscription
-//     sign-in to OpenClaw (2026-05-02), and press reports no enforcement
-//     against third-party routing. Uncertain terms + permissive posture +
-//     minimal exposure (free, uncharged, the credential lives inside OpenAI's
-//     own CLI which we merely drive) ⇒ allow locally WITH the uncertainty
-//     stated to the user (agents-meta.ts codex CONNECT_HINT) and never
-//     asserted as permission. The RELAY still refuses it — the reselling line
-//     is bright and stays fail-closed. If OpenAI enforces (the Anthropic
-//     pattern: server-side blocks first, docs later), the flip to blocked is
-//     this one line — the `blocked` UI state and its copy sit ready.
+//   Google Gemini (gemini-cli): native CLI sign-in may be tried locally
+//     (Kyle, 2026-09-09), with account/plan availability disclosed. Mirafold
+//     drives official headless CLI + ACP model discovery, never reuses its
+//     tokens to call Google's backend. Google collaborator jackwotherspoon
+//     explicitly confirmed headless mode and custom prompts as valid uses:
+//     https://github.com/google-gemini/gemini-cli/issues/20813#issuecomment-4067589940
+//     That does not guarantee access: consumer tiers ended 2026-06-18 while
+//     Code Assist Standard/Enterprise continued. A cached login may fail;
+//     preserve the CLI error and offer an explicit API-key alternative.
+//     https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals
+//     Direct backend access using reused CLI OAuth stays prohibited; this
+//     is why OpenCode's Google OAuth row below remains blocked:
+//     https://geminicli.com/docs/resources/tos-privacy/
+//     See docs/provider-subscriptions.md for scope and enforcement evidence.
+//   OpenAI (codex): ChatGPT login is supported for local use, without a
+//     subscription warning (Kyle, 2026-09-09). The official app-server docs
+//     explicitly describe embedding Codex in a product and its managed
+//     ChatGPT authentication. Mirafold drives that exact app-server surface:
+//     https://learn.chatgpt.com/docs/app-server
+//     This replaces the July gray-area assessment. The existing paid-relay
+//     restriction is a separate Mirafold policy and remains unchanged.
 //   Open / local endpoint (BYO, e.g. Ollama via ANTHROPIC_BASE_URL): anything
 //     goes, local and relay — the user's own compute, no first-party ToS.
 //
@@ -88,14 +83,14 @@ import type { AgentName } from "./protocol";
 //       a provider allows something we cannot cite;
 //   (2) enforcement must degrade gracefully — the `blocked` state, its copy,
 //       and the one-line flip stay ready at all times.
-// Bounds: a written PROHIBITION (Anthropic, Google) is always honored
-// outright, and the PAID relay always fails closed — charging is where our
+// Bounds: a written PROHIBITION is always honored within its actual scope,
+// and the PAID relay always fails closed — charging is where our
 // own exposure is real, so no gray-area credential ever crosses it.
 //
 // Why the relay is API-key-only for closed models even though the credential
 // never transits it (R.3 makes frames E2E-opaque and the daemon calls the model
 // LOCALLY): it's not the token that's the problem, it's that charging for remote
-// access to a subscription-backed agent trips the providers' reselling clauses.
+// access to a subscription-backed agent raises a separate reselling question.
 // API-key-only = the user pays the provider directly for metered use and we sell
 // only transport — the defensible line.
 
@@ -108,19 +103,17 @@ import type { AgentName } from "./protocol";
 export type CredentialKind = "api-key" | "subscription" | "local" | "gateway" | "none";
 
 // Whether a SUBSCRIPTION may drive a third-party app for free LOCAL use.
-// Anthropic + Google: NO, prohibited in writing. OpenAI: YES as a disclosed
-// gray area — the disclosed-uncertainty rule above (uncertain terms,
-// permissive posture, minimal exposure ⇒ allow with the caveat shown to the
-// user). The codex CONNECT_HINT carries the required disclosure.
+// Anthropic stays blocked. Gemini drives the official CLI's native login,
+// with account availability disclosed (not a promise of subscription access).
+// OpenAI is supported without a caveat; see the dated provider notes above.
 const SUBSCRIPTION_LOCAL_OK: Record<AgentName, boolean> = {
   "claude-code": false,
-  "gemini-cli": false,
+  "gemini-cli": true,
   codex: true,
   // OpenCode is a multi-provider harness: whether a subscription OAuth may
   // drive it locally is a fact about the UNDERLYING provider, not the agent
-  // (anthropic/google → prohibited in writing; openai → the disclosed gray
-  // area; copilot and others → unread, so blocked). Until PLAN OC.3 lands the
-  // provider-keyed classification here, the agent-level answer fails closed.
+  // (anthropic/google → blocked; openai → supported; others → unreviewed).
+  // The agent-level answer fails closed until the provider is classified.
   opencode: false,
 };
 
@@ -160,21 +153,22 @@ const OPENCODE_OAUTH_MARKER = "opencode-oauth-dummy-key";
 const OPENCODE_ZEN_MARKER = "public";
 
 // Which providers' subscription OAuth may drive OpenCode locally. Only
-// OpenAI qualifies (the same disclosed-uncertainty call as the codex
-// adapter's ChatGPT login — uncertain terms, permissive posture, minimal
-// exposure). Everything else — GitHub Copilot, GitLab Duo, Poe,
+// OpenAI remains allowed, with the ChatGPT warning removed across both
+// adapters at Kyle's direction (2026-09-09). Codex's app-server documentation
+// establishes that integration; it is not documentation of OpenCode's auth.
+// Everything else — GitHub Copilot, GitLab Duo, Poe,
 // DigitalOcean, Snowflake, xAI, and whatever a future version adds — stays
 // false until its terms have actually been read and cited here.
 const OPENCODE_SUBSCRIPTION_LOCAL_OK: Record<string, boolean | undefined> = {
   openai: true,
   anthropic: false, // written prohibition; also not even offered by 1.18.18
-  google: false, // written prohibition; same
+  google: false, // direct reuse of Gemini CLI OAuth is prohibited; same
 };
 
 /** May THIS provider's subscription OAuth drive OpenCode locally? The
  *  restore path needs the provider-keyed answer directly: a session whose
  *  classified kind was checkpointed as `subscription` must resolve live for
- *  openai (the disclosed gray) and dead for everything else. */
+ *  openai and dead for everything else. */
 export function opencodeSubscriptionAllowed(provider: string | undefined): boolean {
   return provider !== undefined && (OPENCODE_SUBSCRIPTION_LOCAL_OK[provider] ?? false);
 }
@@ -210,21 +204,14 @@ export function classifyOpenCodeProvider(entry: OpenCodeProviderEntry): OpenCode
         return {
           kind: "subscription",
           allowed: ok,
-          ...(ok
+          ...(!ok
             ? {
-                // The codex CONNECT_HINT contract, session-time edition:
-                // uncertainty stated, never permission (K.3, 2026-07-15).
-                disclosure:
-                  "This session runs on your ChatGPT login through opencode — not clearly " +
-                  "permitted by OpenAI's terms, tolerated in practice; your account, your " +
-                  "call. It will never run over the relay.",
-              }
-            : {
                 reason:
                   `the "${entry.id}" login in opencode is a subscription OAuth, which ` +
                   `can't drive a third-party app${entry.id === "anthropic" || entry.id === "google" ? " (provider's written terms)" : " (terms unread — refused until they are)"} — ` +
                   `connect ${entry.id} with an API key in opencode instead`,
-              }),
+              }
+            : {}),
         };
       }
       if (entry.id === "opencode" && entry.apiKeyOption === OPENCODE_ZEN_MARKER) {
@@ -284,11 +271,9 @@ export function allowedLocally(agent: AgentName, kind: CredentialKind): boolean 
  * future kind that nobody remembered to classify should be kept off the relay,
  * not waved through. Eligible: an API key (the user pays the provider directly),
  * a local/BYO endpoint (their own compute), and `none` (a credential-less demo —
- * no provider, no ToS concern). `subscription` is the one excluded kind today —
- * charging for remote access to a subscription-backed agent trips the providers'
- * reselling clauses, even where local use is allowed as a disclosed gray area
- * (the disclosed-uncertainty rule's hard bound: the paid relay always fails
- * closed, no gray-area credential crosses it). Payment itself is a
+ * no provider, no ToS concern). Subscriptions and free gateways remain excluded
+ * by Mirafold's paid-relay policy, independently of supported local use.
+ * Payment itself is a
  * SEPARATE gate (R.5 entitlement); this one only keeps subscription use off the
  * relay.
  */
