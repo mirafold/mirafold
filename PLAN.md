@@ -4122,6 +4122,16 @@ regression that failed on the card before the fix and now opens the HTML
 file from prose, cards, lists, detail text, and pinned cards without a new
 tab. No merge or release; Kyle explicitly prohibited merging.
 
+Review follow-up: automated review of `18c95cc` identified a question-option
+interaction. A browser reproduction confirmed that opening a file from an
+option's detail also emitted that option's prompt. Question answer buttons
+and Markdown details now occupy separate controls; the answer button keeps
+the option's click area, while file/web links remain independent and usable
+after answering. Verified: typecheck, all 1,264 unit tests, the real question
+prompt round trip, and the expanded file-link browser regression (mouse,
+Enter/Space, web links, pinned questions, and accessibility before/after an
+answer). Follow-up commit still requires CI and fresh automated review.
+
 ---
 
 ## Phase CF — Cockpit follow-ups (opened 2026-08-31; Kyle-directed)
