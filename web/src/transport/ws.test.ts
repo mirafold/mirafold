@@ -137,6 +137,28 @@ test("sendIfOpen never replays a user-gesture side effect after reconnect", (t) 
   assert.deepEqual(sock().parsedSent(), [], "the disconnected click was not replayed");
 });
 
+for (const alreadyOpen of [false, true]) {
+  test(`an unserializable action cannot poison later reconnects (already open: ${alreadyOpen})`, (t) => {
+    const { client, sock } = setup(t);
+    t.after(() => client.close());
+    client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+    if (alreadyOpen) sock().open();
+    const args: Record<string, unknown> = {};
+    args.self = args; // structured-clone messages from an artifact can carry cycles
+    const send = () => client.send({ type: "action", sourceId: "artifact", action: { kind: "tool", name: "workspace_ls", args } });
+    if (alreadyOpen) assert.throws(send, TypeError);
+    else {
+      send();
+      assert.throws(() => sock().open(), TypeError);
+    }
+    sock().finishClose();
+    t.mock.timers.tick(BACKOFF_MIN_MS);
+    assert.doesNotThrow(() => sock().open());
+    client.send({ type: "prompt", text: "still usable" });
+    assert.deepEqual(sock().parsedSent().map((m) => m.type), ["attach", "prompt"]);
+  });
+}
+
 test("viewportRefusalReason maps relay refusal codes; ordinary drops are undefined", () => {
   assert.match(viewportRefusalReason(4003)!, /Desktop not reachable/); // CLOSE_BAD_CODE
   assert.match(viewportRefusalReason(4004)!, /capacity/); // CLOSE_OVERLOADED

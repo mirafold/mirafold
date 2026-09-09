@@ -4110,8 +4110,11 @@ and closed two outgoing-order cases: a newer interrupt overtaking a sealed
 predecessor prompt, and an open callback scheduling a prompt twice. Accepted
 messages now remain in the existing queue until handoff; hello and queued
 work are scheduled before open notifications. Uncertain sends are not retried.
+A serialization failure removes its offending queued message before rethrowing,
+so a structured-clone cycle from an artifact cannot poison later reconnects;
+both initially queued and already-connected cases are covered and reviewed.
 
-Local validation: typecheck, production build, 1,275 unit tests, 196 real-daemon integration
+Local validation: typecheck, production build, 1,277 unit tests, 196 real-daemon integration
 tests, focused regressions, whitespace checks, and unchanged generated license
 notices pass. Unit validation runs in `/tmp/mirafold-tightening-validation/`
 without workspace dotenv files; the existing `project-env.test.ts` suite

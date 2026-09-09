@@ -248,11 +248,17 @@ export class SocketClient {
     let recvChain: Promise<void> = Promise.resolve();
 
     this.transmit = (msg: ClientMsg) => {
-      const text = JSON.stringify(msg);
       const forgetPending = () => {
         const index = this.pending.indexOf(msg);
         if (index !== -1) this.pending.splice(index, 1);
       };
+      let text: string;
+      try {
+        text = JSON.stringify(msg);
+      } catch (err) {
+        forgetPending();
+        throw err;
+      }
       if (!pair) {
         if (sock.readyState === WebSocket.OPEN) {
           try { sock.send(text); } finally { forgetPending(); }
