@@ -4079,6 +4079,15 @@ here, not chased on this branch.
 
 ## Phase TP — Tightening pass (2026-09-09; Kyle-directed)
 
+**Release authorization (2026-09-09):** Kyle approved merging PR #113 into
+`next` (`8831350`) and then publishing these changes. The release is **0.9.1**:
+bug fixes, hardening, and behavior-preserving refactors since 0.9.0. This
+supersedes the historical merge/release holds below. Final PR #113 CI passed
+all 1,281 unit, 196 integration, 144 Chrome end-to-end, and 11 managed-browser
+and visual tests; all review findings were resolved. Release preparation
+changes only the package version and this record. The original iPhone Chrome
+layout report still requires verification on the actual device after release.
+
 Scope: all six phases of the supplied `mirafold-tightening-pass-spec.md`,
 on `fix/session-entry-layout` for PR #113. Keep the existing APIs, provider
 behavior, trust/security checks, and replay/handshake design. No dependencies,
