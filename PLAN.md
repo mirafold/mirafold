@@ -624,7 +624,7 @@ with it. Both sequence BEFORE R.5.**
 
 - [x] **Step R.4e — Prove the artifact sandbox fails closed** — done 2026-07-08; Tier-1 unit tests on `parseBridgeAction`/`wrap()` + a Tier-3 hostile-artifact suite, with a flip-each-defense proof (each containment property has a test that fails when the defense is removed). → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: Claude/Gemini subscription blocked, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. Verified all three tiers. → PLAN-ARCHIVE.md.
+- [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: the then-current Claude/Gemini subscription blocks, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. The Gemini block was superseded by Phase GSI on 2026-09-09; Anthropic and the relay boundary remain. Verified all three tiers. → PLAN-ARCHIVE.md.
 
 - [x] **Step R.4j — Reconcile docs & business to the provider policy** — done 2026-07-10 (prose-only); PLAN Auth decision, BUSINESS.md §2/§7/§8.5, both CLAUDE.md files, `.env.example`, README, and the private `mirafold-relay/README` all cite `provider-policy.ts`. → PLAN-ARCHIVE.md.
 
@@ -2402,7 +2402,7 @@ fourth adapter. The feasibility spike is **`server/adapters/opencode/opencode.sp
   - **Zen OPENED by Kyle 2026-08-13** under the disclosed-uncertainty rule:
     `gateway` CredentialKind, local-only, NEVER relay-eligible, uncertainty +
     training-data disclosure shown (canonical row in provider-policy.ts).
-  - The ChatGPT gray runs locally under its TRUE classified kind
+  - ChatGPT login runs locally under its TRUE classified kind
     (`onBackendKind` → registry; `kindPending` refuses remote actions until
     verified).
 
@@ -4751,6 +4751,21 @@ copy on PR #118. This continues the provider work on the existing branch.
   the owner edit. Repeat the existing dotenv-safe validation, request review
   of the new head with all dotenv files excluded, resolve the stale-copy
   threads on the owner's confirmation, and obtain merge approval when ready.
+
+  **2026-09-14 review follow-up:** CI passed on `2777bb1`; its Codex review
+  identified two runtime gaps and remaining current-policy copy. An early
+  Gemini ACP authentication exit lost stderr, hiding Google's error and the
+  API-key next step; native sign-in catalog requests now retain a 4,000-byte
+  stderr tail through process close. Older clients received no availability
+  guidance; the existing agent/backend `detail` fields now carry it, with
+  duplicate guidance suppressed in the current picker. The cited BUSINESS,
+  PLAN, and protocol comments are reconciled. Direct probes verify the full
+  `/model` error/fallback, bounded diagnostic retention, and the previous
+  client's detail rendering. Typecheck, builds, 1,207 dotenv-safe unit cases,
+  and four affected browser cases pass. Repository tests remain unchanged
+  under the closeout spec's restriction; regression extensions require
+  Kyle's explicit exception. The required fresh read-only review found no
+  actionable defects; current-head GitHub CI and Codex review remain owed.
 
 ---
 

@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import { ClaudeCodeSession } from "./claude-code/claude-code";
 import { CodexSession } from "./codex/codex";
 import { GeminiCliSession } from "./gemini-cli/gemini-cli";
+import { GEMINI_SIGN_IN_AVAILABILITY } from "./gemini-cli/gemini-auth";
 import { OpenCodeSession, parseModelPin } from "./opencode/opencode";
 import { MockSession } from "./mock/mock";
 import { installedAgentBin } from "./types";
@@ -323,7 +324,7 @@ export function backendOptions(agent: AgentName): BackendOption[] {
     case "gemini-cli": {
       const { apiKey, subscriptionLogin } = probe.gemini();
       if (apiKey) addCredentialRow("api-key");
-      if (subscriptionLogin) addCredentialRow("subscription");
+      if (subscriptionLogin) addCredentialRow("subscription", GEMINI_SIGN_IN_AVAILABILITY);
       break;
     }
     case "opencode": {
@@ -485,6 +486,10 @@ export function availableAgents(): AgentInfo[] {
  */
 function agentDetail(agent: AgentName, kind: CredentialKind): string | undefined {
   if (kind === "local") return endpointDetail(agent);
+  // Existing clients render detail before offering the one-click choice.
+  if (agent === "gemini-cli" && kind === "subscription") {
+    return [modelFor(agent), GEMINI_SIGN_IN_AVAILABILITY].filter(Boolean).join(" · ");
+  }
   return modelFor(agent) || undefined;
 }
 

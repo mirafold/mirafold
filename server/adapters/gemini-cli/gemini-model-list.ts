@@ -48,6 +48,7 @@ export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000, kind:
     args: ["--acp"],
     cwd: workspaceDir,
     env: geminiEnvironment(kind),
+    captureStderr: kind === "subscription",
     timeoutMs,
     label: "gemini --acp",
     start: (send) =>

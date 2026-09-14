@@ -101,10 +101,9 @@ export function backendLabel(agent: string, kind: BackendKind): string {
 }
 
 /** Availability guidance for the native Google login, wherever it is picked. */
-export function backendAvailabilityHint(agent: string, kind: BackendKind | undefined): string | undefined {
-  return agent === "gemini-cli" && kind === "subscription"
-    ? "Access depends on your Google account and plan. If subscription access is unavailable, connect with a Gemini API key instead."
-    : undefined;
+export function backendAvailabilityHint(agent: string, kind: BackendKind | undefined, detail?: string): string | undefined {
+  const hint = "Access depends on your Google account and plan. If subscription access is unavailable, connect with a Gemini API key instead.";
+  return agent === "gemini-cli" && kind === "subscription" && !detail?.includes(hint) ? hint : undefined;
 }
 
 /** A `local` row's label. Its `detail` is already a full, opaque label of its

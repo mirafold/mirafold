@@ -24,3 +24,6 @@ export function geminiEnvironment(kind: GeminiCredential): Record<string, string
 
 export const GEMINI_SIGN_IN_FALLBACK =
   "If Gemini CLI sign-in is unavailable for your account, start a new Gemini CLI session with a Gemini API key. Set GEMINI_API_KEY (aistudio.google.com/apikey) if that option is not listed. Mirafold does not switch to API billing automatically.";
+
+export const GEMINI_SIGN_IN_AVAILABILITY =
+  "Access depends on your Google account and plan. If subscription access is unavailable, connect with a Gemini API key instead.";

@@ -376,16 +376,18 @@ The free local skin is the funnel feeding all of it.
 5. **SDK/ToS drift.** The Agent SDK's key requirements, subscription-auth
    rules, or rate structures change under you. *Mitigation:* BYOK keeps you
    out of the blast radius of most pricing changes; wire-protocol seam keeps
-   you portable if the SDK shifts. *Concrete stance (2026-07-10 provider-terms
-   review, enforced in `server/provider-policy.ts`):* closed-provider
-   subscriptions are prohibited where their terms say so — Anthropic + Gemini
-   everywhere, OpenAI over the relay — and this is a dated, one-file,
-   revisit-able rule, so a terms change is a small edit, not a scramble. All
-   three moved in H1 2026; treat the table as living. This is our reading of
+   you portable if the SDK shifts. *Concrete stance (2026-09-09 provider review,
+   enforced in `server/provider-policy.ts`):* Anthropic subscriptions remain
+   blocked; ChatGPT login is an ordinary supported local option; users may try
+   their native Gemini CLI sign-in locally, with account/plan availability
+   disclosed. No subscription is available over the paid relay. Google's
+   restriction on reused CLI OAuth is not a blanket ban on interfaces driving
+   the official CLI; retired personal entitlements still do not regain access.
+   The policy is dated and revisitable; `docs/provider-subscriptions.md` records
+   the evidence. This is our reading of
    published terms, not legal advice — but a lawyer is only *warranted* if we
    ever monetize a subscription-dependent path, which the current design avoids
-   (paid = API-key/local only; the free local Codex path is a disclosed
-   gray area at personal-use scope). So it's a conditional pre-launch item, not an
+   (paid = API-key/local only). So it's a conditional pre-launch item, not an
    unconditional blocker (revisit at PLAN R.6 if the design changes).
 
 ## 9. Milestones & validation gates
