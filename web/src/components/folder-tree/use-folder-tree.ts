@@ -8,6 +8,7 @@ import {
   childDirPaths,
   emptyDirStore,
   pruneDirStore,
+  shownListing,
   type DirStore,
 } from "../../workspace/folder-tree";
 
@@ -42,7 +43,7 @@ export function useFolderTree({
 }: {
   open: boolean;
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
-  requestListdir: (path: string) => string;
+  requestListdir: (path: string, continuation?: string) => string;
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
 }) {
@@ -50,7 +51,7 @@ export function useFolderTree({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [rootOpen, setRootOpen] = useState(true);
 
-  const dirReqIds = useRef<Map<string, string>>(new Map());
+  const dirReqIds = useRef<Map<string, { id: string; append: boolean }>>(new Map());
   // When true, the next root reply fans out the first-level prefetch —
   // armed by opening (and session switch), not by turn-end refreshes.
   const prefetchArmed = useRef(false);
@@ -58,12 +59,15 @@ export function useFolderTree({
   // current panel state without re-subscribing.
   const openRef = useRef(open);
   openRef.current = open;
+  const sessionKeyRef = useRef(sessionKey);
+  sessionKeyRef.current = sessionKey;
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
-  const fetchDir = (path: string) => {
-    dirReqIds.current.set(path, requestListdir(path));
-    setStore((s) => beginDirFetch(s, path));
+  const fetchDir = (path: string, continuation?: string) => {
+    const append = continuation !== undefined;
+    dirReqIds.current.set(path, { id: requestListdir(path, continuation), append });
+    setStore((s) => beginDirFetch(s, path, append));
   };
 
   // The refresh boundary (open, turn-end, the button): refetch the root
@@ -109,9 +113,10 @@ export function useFolderTree({
       subscribe((m) => {
         if (m.type === "fs_dir") {
           const d = m as FsDir;
-          if (dirReqIds.current.get(d.path) !== d.id) return; // stale per-dir
+          const request = dirReqIds.current.get(d.path);
+          if (request?.id !== d.id) return; // stale per-dir
           dirReqIds.current.delete(d.path);
-          setStore((s) => applyDirReply(s, d.path, d));
+          setStore((s) => applyDirReply(s, d.path, d, request.append));
           // The open-panel prefetch: the root reply just named the first
           // level — fetch its child dirs so expanding them is instant.
           if (d.path === "" && prefetchArmed.current) {
@@ -122,6 +127,11 @@ export function useFolderTree({
               }
             }
           }
+        } else if (m.type === "session_created") {
+          // Directory replies and continuation tokens belong to the old
+          // connection. Coalesce the refresh with any replayed turn bells.
+          dirReqIds.current.clear();
+          if (m.sessionId === sessionKeyRef.current) onBell();
         } else if (m.type === "turn_end" && openRef.current) {
           // The agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
@@ -191,5 +201,12 @@ export function useFolderTree({
     }
   };
 
-  return { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree };
+  const loadMore = (path: string) => {
+    if (dirReqIds.current.has(path)) return;
+    const state = store.get(path);
+    const continuation = state && shownListing(state)?.continuation;
+    if (continuation) fetchDir(path, continuation);
+  };
+
+  return { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree, loadMore };
 }

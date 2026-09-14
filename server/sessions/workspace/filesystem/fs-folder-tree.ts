@@ -58,7 +58,7 @@ const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
 // the raw scan needs headroom beyond FS_DIR_MAX_ENTRIES. It still needs a hard
 // ceiling of its own: readdirSync would otherwise allocate every name in a
 // pathological flat directory before either reply cap saw it.
-const FS_DIR_MAX_SCAN_ENTRIES = 10_000;
+export const FS_DIR_MAX_SCAN_ENTRIES = 10_000;
 
 // A file read is bounded twice: the sniff window that decides binary vs
 // text, and the content cap — same size and same honesty contract as the
@@ -199,49 +199,87 @@ export function readDirRaw(
   rel: string,
   maxScanEntries = FS_DIR_MAX_SCAN_ENTRIES,
 ): { real: string; all: FsDirEntry[]; truncated: boolean } | { error: string } {
+  let scan: RawDirectory | undefined;
+  try {
+    scan = openDirRaw(root, rel, maxScanEntries);
+    const page = scan.read();
+    return { real: scan.real, all: page.all, truncated: !page.done };
+  } catch (err) {
+    return { error: (err as Error).message };
+  } finally {
+    scan?.close();
+  }
+}
+
+export type RawDirectory = {
+  real: string;
+  check: () => void;
+  read: () => { all: FsDirEntry[]; done: boolean; scanned: number };
+  close: () => void;
+};
+
+/** Keep one directory handle positioned between bounded pages; never rescan
+ * an offset. Revalidate its path and identity before serving retained names. */
+export function openDirRaw(root: string, rel: string, maxScanEntries = FS_DIR_MAX_SCAN_ENTRIES): RawDirectory {
   const real = inside(root, rel === "" ? "." : rel);
-  if (!real) return { error: "path is outside the session workspace" };
+  if (!real) throw new Error("path is outside the session workspace");
+  const identity = lstatSync(real);
   let dir;
   try {
-    dir = opendirSync(real);
+    dir = opendirSync(real, { bufferSize: 1 });
   } catch (err) {
-    return {
-      error:
-        (err as NodeJS.ErrnoException).code === "ENOTDIR"
-          ? "path is not a directory"
-          : "directory is not readable",
-    };
+    throw new Error((err as NodeJS.ErrnoException).code === "ENOTDIR"
+      ? "path is not a directory" : "directory is not readable");
   }
+  let closed = false;
+  let done = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    try { dir.closeSync(); } catch { /* Already closed or unreadable. */ }
+  };
+  const check = () => {
+    try {
+      const current = inside(root, rel === "" ? "." : rel);
+      const stat = current === real ? lstatSync(real) : null;
+      if (!stat || stat.dev !== identity.dev || stat.ino !== identity.ino) throw new Error();
+    } catch {
+      close();
+      throw new Error("the directory changed or is no longer inside the session workspace");
+    }
+  };
   const kindOf = (d: Dirent): FsDirEntry["kind"] =>
     // Order matters: isDirectory() is false for a symlink-to-dir (lstat
     // semantics), so the symlink check needn't come first — but a FIFO or
     // socket lands as `file`, same as the walk lists it (refused at read time).
     d.isDirectory() ? "dir" : d.isSymbolicLink() ? "symlink" : "file";
-  const all: FsDirEntry[] = [];
-  let scanned = 0;
-  let truncated = false;
-  try {
-    for (;;) {
-      const d = dir.readSync();
-      if (!d) break;
-      if (scanned++ >= maxScanEntries) {
-        truncated = true;
-        break;
-      }
-      if (!(d.isDirectory() && SKIP_DIRS.has(d.name))) {
-        all.push({ name: d.name, kind: kindOf(d) });
-      }
-    }
-  } catch {
-    return { error: "directory is not readable" };
-  } finally {
+  const limit = Math.max(1, Math.min(maxScanEntries, FS_DIR_MAX_SCAN_ENTRIES));
+  return { real, check, close, read: () => {
+    check();
+    const all: FsDirEntry[] = [];
+    let scanned = 0;
+    if (done) return { all, done, scanned };
     try {
-      dir.closeSync();
+      while (scanned < limit) {
+        scanned++;
+        const d = dir.readSync();
+        if (!d) {
+          done = true;
+          close();
+          break;
+        }
+        if (!(d.isDirectory() && SKIP_DIRS.has(d.name))) {
+          all.push({ name: d.name, kind: kindOf(d) });
+        }
+      }
     } catch {
-      // The listing result already says whether the scan itself succeeded.
+      close();
+      throw new Error("directory is not readable");
     }
-  }
-  return { real, all, truncated };
+    // At the exact boundary, EOF is discovered on the next request. A
+    // lookahead here would exceed the raw-work budget.
+    return { all, done, scanned };
+  } };
 }
 
 /**

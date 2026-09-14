@@ -177,6 +177,18 @@ test("a silent (!!) bang sends silent: true, and a plain ! sends no flag at all"
   );
 });
 
+test("directory continuations are forwarded opaquely with a new correlation id", t => {
+  const { bus, sock } = setup(t);
+  const before = sock().sent.length;
+  const first = bus.requestFsListdir("src");
+  const next = bus.requestFsListdir("src", "opaque-listing-token");
+  assert.notEqual(first, next);
+  assert.deepEqual(sock().parsedSent().slice(before), [
+    { type: "fs_listdir", id: first, path: "src" },
+    { type: "fs_listdir", id: next, path: "src", continuation: "opaque-listing-token" },
+  ]);
+});
+
 test("connection listeners see transitions, and a relay refusal code arrives as its reason", (t) => {
   const { bus, sock } = setup(t);
   const seen: [boolean, string | undefined][] = [];

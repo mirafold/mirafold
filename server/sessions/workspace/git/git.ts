@@ -855,6 +855,7 @@ export function decorateGitDir(
   raw: FsDirEntry[],
   dirRel: string,
   st: RepoStatusData,
+  includeDeleted = true,
 ): FsDirEntry[] {
   const key = (name: string) => (dirRel ? `${dirRel}/${name}` : name);
   const out: FsDirEntry[] = [];
@@ -868,7 +869,7 @@ export function decorateGitDir(
       (st.untrackedDirs.has(p) || underAny(p, st.untrackedDirs) ? "U" : undefined);
     out.push({ ...e, ...(status ? { status } : {}) });
   }
-  for (const [p, c] of st.files) {
+  for (const [p, c] of includeDeleted ? st.files : []) {
     if (c !== "D") continue;
     const cut = p.lastIndexOf("/");
     if ((cut === -1 ? "" : p.slice(0, cut)) !== dirRel) continue;

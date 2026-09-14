@@ -134,8 +134,11 @@ export function openConnection(
   const deliver = viewport;
   viewport = (msg) => {
     if (entry) {
-      if (msg.type === "refused" && !entry.viewports.has(viewport)) entry = null;
-      else if (msg.type === "session_ended" && msg.sessionId === entry.id) entry = null;
+      if ((msg.type === "refused" && !entry.viewports.has(viewport)) ||
+          (msg.type === "session_ended" && msg.sessionId === entry.id)) {
+        fs.reset();
+        entry = null;
+      }
     }
     deliver(msg);
   };
@@ -201,6 +204,7 @@ export function openConnection(
       return false;
     }
     if (entry) registry.detach(entry, viewport);
+    if (entry !== e) fs.reset();
     entry = e;
     const resumed = afterSeq !== undefined && registry.canResume(e, afterSeq);
     viewport({
@@ -520,6 +524,7 @@ export function openConnection(
         break;
       case "watch_sessions":
         // This connection is the fleet page — snapshots, not a session.
+        fs.reset();
         if (entry) {
           registry.detach(entry, viewport);
           entry = null;
@@ -715,6 +720,7 @@ export function openConnection(
 
   const close = () => {
     closed = true;
+    fs.reset();
     unsubscribeEntitlement?.();
     folderPicker.close();
     uploads.dispose();

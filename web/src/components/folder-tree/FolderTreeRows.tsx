@@ -36,6 +36,7 @@ export function DirChildren({
   store,
   expanded,
   onToggleDir,
+  onLoadMore,
   onOpenFile,
 }: {
   path: string;
@@ -43,6 +44,7 @@ export function DirChildren({
   store: DirStore;
   expanded: Set<string>;
   onToggleDir: (path: string) => void;
+  onLoadMore: (path: string) => void;
   onOpenFile: (path: string, status?: string) => void;
 }) {
   const dirState = store.get(path);
@@ -63,7 +65,7 @@ export function DirChildren({
   }
   return (
     <ul className="folder-tree-ul" role="group">
-      {listing.entries.length === 0 && (
+      {dirState.phase !== "error" && listing.entries.length === 0 && !listing.truncated && !listing.continuation && (
         <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
           (empty)
         </li>
@@ -89,6 +91,7 @@ export function DirChildren({
                   store={store}
                   expanded={expanded}
                   onToggleDir={onToggleDir}
+                  onLoadMore={onLoadMore}
                   onOpenFile={onOpenFile}
                 />
               )}
@@ -120,7 +123,18 @@ export function DirChildren({
           </li>
         );
       })}
-      {listing.truncated && (
+      {dirState.phase === "error" ? (
+        <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
+          {dirState.error}
+        </li>
+      ) : listing.continuation ? (
+        <li role="treeitem">
+          <button className="folder-tree-row folder-tree-load-more" style={pad}
+            disabled={dirState.phase === "loading"} onClick={() => onLoadMore(path)}>
+            {dirState.phase === "loading" ? "Loading…" : "Load more"}
+          </button>
+        </li>
+      ) : listing.truncated && (
         <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
           …more entries than can be listed
         </li>
