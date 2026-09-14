@@ -59,6 +59,8 @@ export function useFolderTree({
   // current panel state without re-subscribing.
   const openRef = useRef(open);
   openRef.current = open;
+  const sessionKeyRef = useRef(sessionKey);
+  sessionKeyRef.current = sessionKey;
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
@@ -125,6 +127,11 @@ export function useFolderTree({
               }
             }
           }
+        } else if (m.type === "session_created") {
+          // Directory replies and continuation tokens belong to the old
+          // connection. Coalesce the refresh with any replayed turn bells.
+          dirReqIds.current.clear();
+          if (m.sessionId === sessionKeyRef.current) onBell();
         } else if (m.type === "turn_end" && openRef.current) {
           // The agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale

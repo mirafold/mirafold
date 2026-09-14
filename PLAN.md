@@ -4818,8 +4818,20 @@ production merge, or publication belongs to this phase.
   review found that continuation errors were hidden beside retained rows;
   the browser regression failed before the fix and passed afterward. Errors
   now remain visible with their refresh guidance, and the reviewer confirmed
-  closure with no further findings. Normal CI, automated review, explicit
-  merge approval, merge, and issue closure remain open.
+  closure. PR #119 opened into `next` at `6eb6750`. Codex then reproduced two
+  further findings: a lost continuation reply left Load more disabled after
+  reconnect, and many staged deletions triggered unbounded synchronous file
+  checks. Reattachment now clears outstanding requests and refreshes through
+  the existing coalescer; a failing browser regression passes after the fix.
+  Deleted-record iteration shares the 10,000-operation raw-page budget,
+  including skipped records and EOF probes. New tests count both raw reads
+  and deletion checks through the production handler against 12,000 staged
+  deletions. Final local verification passed: 1,224 dotenv-safe unit tests,
+  both real-socket tests, all four pagination browser tests, four existing
+  browser setup/folder-tree regressions, typecheck, and server/web builds.
+  The independent reviewer confirmed both fixes with no remaining findings.
+  Current-head CI and automated review, explicit merge approval, merge, and
+  issue closure remain open.
 
 ---
 

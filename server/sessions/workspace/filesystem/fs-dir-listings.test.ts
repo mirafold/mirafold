@@ -1,11 +1,13 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DirectoryListings } from "./fs-dir-listings";
 import { createFsHandlers } from "./fs-handlers";
+import { repoStatus } from "../git/git";
 import { openConnection } from "../../connection";
 import { SessionRegistry } from "../../registry";
 import type { FsDirEntry, WireMsg } from "../../../protocol";
@@ -103,6 +105,97 @@ test("empty filtered pages continue, while directory skips and symlink kinds rem
   assert.ok(second.continuation, "exact raw boundary does not read ahead");
   const last = listings.page(listings.resume(scope, root, "", second.continuation));
   assert.deepEqual(last, { entries: [] });
+});
+
+test("Git record visits share the raw budget, including skipped records and retained tails", t => {
+  const { root, handles } = fixture(t, files(3));
+  const listings = new DirectoryListings();
+  t.after(() => listings.clear());
+  const scope = {};
+  let listing = listings.open(scope, root, "");
+  let visited = 0;
+  listing.extra = (function* () {
+    for (let i = 0; i < 25_000; i++) {
+      visited++;
+      yield i < 10_000 ? undefined : { name: `deleted-${i}`, kind: "file" as const, status: "D" };
+    }
+  })();
+  let previousWork = 0;
+  const names: string[] = [];
+  for (let requests = 0; ; requests++) {
+    assert.ok(requests < 20);
+    const page = listings.page(listing);
+    const work = handles[0].reads + visited;
+    assert.ok(work - previousWork <= 10_000, "skipped records also spend the shared budget");
+    assert.ok(page.entries.length <= 2_000);
+    assert.ok(page.entries.reduce((n, e) => n + Buffer.byteLength(e.name), 0) <= 200_000);
+    if (requests === 0) assert.equal(visited, 9_996, "three raw entries and EOF leave only 9,996 Git visits");
+    previousWork = work;
+    names.push(...page.entries.map(e => e.name));
+    if (!page.continuation) break;
+    listing = listings.resume(scope, root, "", page.continuation);
+  }
+  assert.equal(visited, 25_000);
+  assert.equal(names.length, 15_003);
+  assert.equal(new Set(names).size, names.length);
+});
+
+test("many staged deletions never perform more than one shared page of synchronous filesystem work", async t => {
+  const { root, handles } = fixture(t, [{ name: ".git", kind: "dir" }]);
+  const git = (args: string[], input?: string) => execFileSync("git", [
+    "-C", root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", ...args,
+  ], {
+    input, encoding: "utf8", stdio: "pipe",
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+  });
+  git(["init", "-q"]);
+  const blob = git(["hash-object", "-w", "--stdin"], "fixture\n").trim();
+  const expected = Array.from({ length: 12_000 }, (_, i) => `deleted-${String(i).padStart(6, "0")}.txt`);
+  git(["update-index", "--index-info"], expected.map(name => `100644 ${blob}\t${name}\n`).join(""));
+  git(["commit", "-qm", "fixture"]);
+  git(["read-tree", "--empty"]);
+  const status = await repoStatus(root);
+  assert.ok("files" in status);
+  assert.equal(status.files.size, expected.length);
+  const originalStat = fs.lstatSync;
+  let stats = 0;
+  t.mock.method(fs, "lstatSync", (p: fs.PathLike, ...args: unknown[]) => {
+    if (String(p).startsWith(path.join(root, "deleted-"))) stats++;
+    return originalStat(p, args[0] as never);
+  });
+  syncBuiltinESMExports();
+  type Page = Extract<WireMsg, { type: "fs_dir" }>;
+  let receive: (page: Page) => void = () => {};
+  const entry = { cwd: root };
+  const handlers = createFsHandlers({
+    viewport: message => { if (message.type === "fs_dir") receive(message); },
+    getEntry: () => entry as never, isClosed: () => false,
+  });
+  t.after(() => handlers.reset());
+  let token: string | undefined;
+  let previousWork = 0;
+  const names: string[] = [];
+  for (let i = 0; ; i++) {
+    assert.ok(i < 10);
+    const page = await new Promise<Page>(resolve => {
+      receive = resolve;
+      handlers.listdir({ type: "fs_listdir", id: `deletions-${i}`, path: "", continuation: token });
+    });
+    assert.equal(page.error, undefined);
+    const work = handles[0].reads + stats;
+    assert.ok(work - previousWork <= 10_000, "raw reads and deletion stats share one bounded page");
+    assert.ok(page.entries.length <= 2_000);
+    assert.ok(page.entries.reduce((n, e) => n + Buffer.byteLength(e.name), 0) <= 200_000);
+    assert.ok(page.entries.every(e => e.status === "D"));
+    previousWork = work;
+    names.push(...page.entries.map(e => e.name));
+    token = page.continuation;
+    if (!token) break;
+  }
+  assert.equal(stats, expected.length, "deleted paths are checked once across all requests");
+  assert.deepEqual(names.sort(), expected);
+  assert.equal(handles.length, 1);
+  assert.equal(handles[0].closes, 1);
 });
 
 test("scope, replacement, and connection boundaries invalidate continuations", t => {

@@ -20,7 +20,7 @@ import { createLogger } from "../../../log";
 import type { ConnectionContext } from "../../handler-context";
 import { badClientId } from "../../client-id";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../../../throttle";
-import type { ClientMsg, FsEntry } from "../../../protocol";
+import type { ClientMsg, FsDirEntry, FsEntry } from "../../../protocol";
 import {
   capBuffer,
   contentRevision,
@@ -277,13 +277,25 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
             replied = true;
             if (!("notGit" in st) && !("error" in st) && listings.has(listing)) {
               listing.decorate = entries => decorateGitDir(entries, dirRel, st, false);
-              // Merge deleted children once. A staged deletion may still
-              // exist on disk on a later raw page; that page decorates it.
-              listing.extra = decorateGitDir([], dirRel, st).filter(e => {
-                if (!decorateGitDir([e], dirRel, st, false).length) return true;
-                try { lstatSync(path.join(listing.raw.real, e.name)); return false; }
-                catch (err) { return (err as NodeJS.ErrnoException).code === "ENOENT"; }
-              });
+              // Visit each status record once, within the page's shared work
+              // budget. Existing disk entries keep their raw kind/status;
+              // ignored staged deletions still need their synthetic D row.
+              listing.extra = (function* (): Generator<FsDirEntry | undefined> {
+                for (const [p, status] of st.files) {
+                  const cut = p.lastIndexOf("/");
+                  if (status !== "D" || (cut === -1 ? "" : p.slice(0, cut)) !== dirRel) {
+                    yield undefined;
+                    continue;
+                  }
+                  const e: FsDirEntry = { name: p.slice(cut + 1), kind: "file", status: "D" };
+                  let include = !decorateGitDir([e], dirRel, st, false).length;
+                  if (!include) {
+                    try { lstatSync(path.join(listing.raw.real, e.name)); }
+                    catch (err) { include = (err as NodeJS.ErrnoException).code === "ENOENT"; }
+                  }
+                  yield include ? e : undefined;
+                }
+              })();
             }
             return sendDir();
           }

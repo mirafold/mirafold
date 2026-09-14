@@ -24,14 +24,26 @@ async function withDirectoryPage(emptyFirst: boolean, run: (page: Page) => Promi
       await page.addInitScript(({ emptyFirst }) => {
         const native = window.WebSocket;
         let replaced = false;
-        const state = window as unknown as { directoryReplies: { count: number; directories: number; continuation?: string }[] };
+        const state = window as unknown as {
+          directoryReplies: { count: number; directories: number; continuation?: string }[];
+          directoryAttaches: number;
+          dropNextDirectoryReply?: boolean;
+        };
         state.directoryReplies = [];
+        state.directoryAttaches = 0;
         window.WebSocket = new Proxy(native, {
           construct(Target, args) {
             const socket = Reflect.construct(Target, args) as WebSocket;
             socket.addEventListener("message", event => {
               const message = JSON.parse(String(event.data));
+              if (message.type === "session_created") state.directoryAttaches++;
               if (message.type !== "fs_dir" || message.path !== "") return;
+              if (state.dropNextDirectoryReply) {
+                state.dropNextDirectoryReply = false;
+                event.stopImmediatePropagation();
+                socket.close();
+                return;
+              }
               // An ignored raw page can be empty with a valid continuation.
               // Replace just that reply body to isolate the browser's empty
               // state; the following click uses the real server token.
@@ -134,5 +146,22 @@ test("a rejected continuation keeps loaded rows, explains recovery, and refresh 
     await page.locator(".folder-tree-load-more").waitFor();
     assert.equal(await page.getByText("This folder listing is no longer available. Refresh files to continue.", { exact: true }).count(), 0);
     assert.equal(await page.locator(".folder-tree-file-row").count(), 2_000);
+  });
+});
+
+test("reconnecting after a lost continuation reply refreshes the listing and makes Load more usable", async () => {
+  await withDirectoryPage(false, async page => {
+    await page.evaluate(() => {
+      (window as unknown as { dropNextDirectoryReply: boolean }).dropNextDirectoryReply = true;
+    });
+    await page.locator(".folder-tree-load-more").click();
+    await page.waitForFunction(() => (window as unknown as { directoryAttaches: number }).directoryAttaches >= 2);
+    await page.waitForFunction(() => {
+      const button = document.querySelector<HTMLButtonElement>(".folder-tree-load-more");
+      return button && !button.disabled && button.textContent === "Load more";
+    }, undefined, { timeout: 5_000 });
+    assert.equal(await page.locator(".folder-tree-file-row").count(), 2_000);
+    await page.locator(".folder-tree-load-more").click();
+    await page.waitForFunction(() => document.querySelectorAll(".folder-tree-file-row").length === 4_000);
   });
 });

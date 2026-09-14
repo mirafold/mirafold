@@ -58,7 +58,7 @@ const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
 // the raw scan needs headroom beyond FS_DIR_MAX_ENTRIES. It still needs a hard
 // ceiling of its own: readdirSync would otherwise allocate every name in a
 // pathological flat directory before either reply cap saw it.
-const FS_DIR_MAX_SCAN_ENTRIES = 10_000;
+export const FS_DIR_MAX_SCAN_ENTRIES = 10_000;
 
 // A file read is bounded twice: the sniff window that decides binary vs
 // text, and the content cap — same size and same honesty contract as the
@@ -214,7 +214,7 @@ export function readDirRaw(
 export type RawDirectory = {
   real: string;
   check: () => void;
-  read: () => { all: FsDirEntry[]; done: boolean };
+  read: () => { all: FsDirEntry[]; done: boolean; scanned: number };
   close: () => void;
 };
 
@@ -257,9 +257,11 @@ export function openDirRaw(root: string, rel: string, maxScanEntries = FS_DIR_MA
   return { real, check, close, read: () => {
     check();
     const all: FsDirEntry[] = [];
-    if (done) return { all, done };
+    let scanned = 0;
+    if (done) return { all, done, scanned };
     try {
-      for (let scanned = 0; scanned < limit; scanned++) {
+      while (scanned < limit) {
+        scanned++;
         const d = dir.readSync();
         if (!d) {
           done = true;
@@ -276,7 +278,7 @@ export function openDirRaw(root: string, rel: string, maxScanEntries = FS_DIR_MA
     }
     // At the exact boundary, EOF is discovered on the next request. A
     // lookahead here would exceed the raw-work budget.
-    return { all, done };
+    return { all, done, scanned };
   } };
 }
 

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { FsDirEntry } from "../../../protocol";
-import { openDirRaw, sortAndCapDir, type RawDirectory } from "./fs-folder-tree";
+import { FS_DIR_MAX_SCAN_ENTRIES, openDirRaw, sortAndCapDir, type RawDirectory } from "./fs-folder-tree";
 
 const UNAVAILABLE = "This folder listing is no longer available. Refresh files to continue.";
 const MAX_LISTINGS = 32;
@@ -15,7 +15,8 @@ type Listing = {
   pending: FsDirEntry[];
   done: boolean;
   decorate?: Decoration;
-  extra: FsDirEntry[];
+  // One yield per Git record visited, including records that produce no row.
+  extra?: Iterator<FsDirEntry | undefined>;
   token?: string;
   timer?: ReturnType<typeof setTimeout>;
 };
@@ -51,7 +52,7 @@ export class DirectoryListings {
     clearTimeout(listing.timer);
     listing.raw.close();
     listing.pending = [];
-    listing.extra = [];
+    listing.extra = undefined;
     listing.decorate = undefined;
     this.active.delete(listing);
     if (listing.token) this.tokens.delete(listing.token);
@@ -79,7 +80,7 @@ export class DirectoryListings {
     }
     const raw = openDirRaw(root, path, this.limits.maxScanEntries);
     const listing: Listing = {
-      scope, root, path, raw, pending: [], done: false, extra: [],
+      scope, root, path, raw, pending: [], done: false,
     };
     this.active.add(listing);
     this.arm(listing);
@@ -106,11 +107,21 @@ export class DirectoryListings {
       if (listing.token) this.tokens.delete(listing.token);
       listing.token = undefined;
       listing.raw.check();
-      if (!listing.pending.length && !listing.done) {
-        const raw = listing.raw.read();
-        listing.done = raw.done;
-        listing.pending = [...(listing.decorate?.(raw.all) ?? raw.all), ...listing.extra];
-        listing.extra = [];
+      if (!listing.pending.length) {
+        let remaining = Math.max(1, Math.min(this.limits.maxScanEntries ?? FS_DIR_MAX_SCAN_ENTRIES, FS_DIR_MAX_SCAN_ENTRIES));
+        if (!listing.done) {
+          const raw = listing.raw.read();
+          listing.done = raw.done;
+          listing.pending = listing.decorate?.(raw.all) ?? raw.all;
+          remaining -= raw.scanned;
+        }
+        // Deleted rows share the raw scan's work budget. On-disk duplicates
+        // have already been enumerated; checks stay lazy even for huge indexes.
+        while (listing.done && listing.extra && remaining-- > 0) {
+          const next = listing.extra.next();
+          if (next.done) listing.extra = undefined;
+          else if (next.value) listing.pending.push(next.value);
+        }
       }
       const result = sortAndCapDir(listing.pending, this.limits);
       if (!result.entries.length && listing.pending.length) {
@@ -118,7 +129,7 @@ export class DirectoryListings {
       }
       const sent = new Set(result.entries);
       listing.pending = listing.pending.filter(entry => !sent.has(entry));
-      if (!listing.pending.length && listing.done) {
+      if (!listing.pending.length && listing.done && !listing.extra) {
         this.close(listing);
         return { entries: result.entries };
       }
