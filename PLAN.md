@@ -4743,6 +4743,46 @@ copy on PR #118. This continues the provider work on the existing branch.
   The Gemini implementation is pushed to PR #118 (`df2e58c`); current-head
   GitHub checks/review must be checked before merge. No merge authorized.
 
+  **2026-09-14 closeout:** Kyle reports the setup-template comments updated
+  and explicitly authorized committing his edit. Commit `4f48a6b` records
+  that owner edit without the implementation agent inspecting its contents.
+  The older Codex blocked-hint finding remains fixed (source inspection and
+  direct probe); typecheck and 65 focused provider/Gemini tests passed before
+  the owner edit. Repeat the existing dotenv-safe validation, request review
+  of the new head with all dotenv files excluded, resolve the stale-copy
+  threads on the owner's confirmation, and obtain merge approval when ready.
+
+---
+
+## Phase OIC — Open-item closeout (Kyle-directed 2026-09-14)
+
+Scope is only PR #118, PR #116, and issue #99. Follow the existing one-branch
+workflow in `docs/RELEASING.md`: finish and merge each PR before starting the
+next work branch from fresh `next`. Stop after these changes reach `next`;
+further staging work will follow separately. No release branch, version bump,
+production merge, or publication belongs to this phase.
+
+- [ ] **OIC.1 — Finish PR #118.** Complete GSI.3 with the owner-edited template,
+  existing dotenv-safe validation, current-head CI and Codex review, resolved
+  review findings, and explicit merge approval. Do not inspect or test any
+  dotenv file, including the template; no new tests unless the edit breaks
+  an existing test.
+- [ ] **OIC.2 — Finish PR #116.** Retarget from `main` to `next`, retain only
+  the `yarn.lock` update from `hono` 4.13.0 to 4.13.7, run CI against `next`,
+  check automated review, and merge after explicit approval.
+- [ ] **OIC.3 — Implement issue #99 in a separate PR.** Add opaque, stateful
+  continuation to `fs_listdir`/`fs_dir` and append pages behind one **Load
+  more** row. Keep the 10,000-entry raw scan cap, one bounded raw page per
+  request, and existing reply count/name-byte caps. Scope each listing to
+  its connection, session, and directory; close it on completion, error,
+  expiry, session change, or disconnect. Preserve jail, skipped directories,
+  symlinks, Git filtering/status decoration, throttling, wire caps, and
+  incomplete/error UI. Prove that a files-only first raw page can be followed
+  by reachable directories while every request stays bounded. Run focused
+  protocol/server/UI tests and normal CI, review and merge to `next`, then
+  close #99. Stop and report if this requires broader protocol/tree redesign,
+  dependency changes, or unrelated cleanup.
+
 ---
 
 ## Post-release ideas (parked — organize after R.7)
