@@ -426,6 +426,9 @@ export type ViewportMsgBody =
       id: string;
       path: string;
       entries: FsDirEntry[];
+      // Opaque, single-use continuation of this connection/session/directory
+      // listing. Older clients still see truncated; absent means no next page.
+      continuation?: string;
       truncated?: boolean;
       error?: string;
     }
@@ -775,7 +778,7 @@ export type ClientMsg =
   // fs_list/fs_tree stay untouched beside this — the app bundle and a
   // user's daemon can be version-skewed, so the whole-tree pair is the
   // compatibility floor, never removed here.
-  | { type: "fs_listdir"; id: string; path: string }
+  | { type: "fs_listdir"; id: string; path: string; continuation?: string }
   // File drag-and-drop input: a dropped file's bytes, chunked.
   // `begin` declares a sanitized display name and the exact total size (the
   // cap check runs before any byte arrives); `chunk.data` is base64, each

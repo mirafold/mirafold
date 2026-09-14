@@ -14,21 +14,21 @@
 // throw would exit the daemon.
 
 import path from "node:path";
+import { lstatSync } from "node:fs";
+import { DirectoryListings } from "./fs-dir-listings";
 import { createLogger } from "../../../log";
 import type { ConnectionContext } from "../../handler-context";
 import { badClientId } from "../../client-id";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../../../throttle";
-import type { ClientMsg, FsDirEntry, FsEntry } from "../../../protocol";
+import type { ClientMsg, FsEntry } from "../../../protocol";
 import {
   capBuffer,
   contentRevision,
   listTree,
-  readDirRaw,
   readWorkspaceDiffEntry,
   readWorkspaceFile,
   reviewDiffRevision,
   sniffBinary,
-  sortAndCapDir,
 } from "./fs-folder-tree";
 import {
   cleanRelPath,
@@ -111,6 +111,7 @@ type FsChanges = Extract<ClientMsg, { type: "fs_changes" }>;
 type FsDeps = Pick<ConnectionContext, "viewport" | "getEntry" | "isClosed">;
 
 export type FsHandlers = {
+  reset: () => void;
   list: (msg: FsList) => void;
   listdir: (msg: FsListdir) => void;
   read: (msg: FsRead) => void;
@@ -128,6 +129,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   const diffGate = minInterval(FS_MIN_INTERVAL_MS);
   const changesGate = minInterval(FS_MIN_INTERVAL_MS);
   const listdirBucket = tokenBucket(FS_LISTDIR_MAX_PER_SEC);
+  const listings = new DirectoryListings();
   const gitSlot = inflightSlot();
   // Repos whose status outran the listing bound — this connection is
   // owed ONE follow-up bell per repo when that status lands, however many
@@ -209,29 +211,38 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
 
   const listdir = (msg: FsListdir): void => {
     if (badId(msg.id)) return;
-    const sendErr = (p: string, error: string) =>
+    const sendErr = (p: string, error: string) => {
+      listings.cancel(msg.continuation);
       viewport({ type: "fs_dir", id: msg.id, path: p, entries: [], error });
+    };
     // "" and "." both mean the session root — a length-0 path is valid here,
     // unlike fs_read's. The cap mirrors fs_read's; the jail does the rest.
     if (typeof msg.path !== "string" || msg.path.length > 4_096) {
       return sendErr("", "bad path");
     }
     const entry = getEntry();
-    if (!entry) return sendErr(msg.path, "no session attached");
+    if (!entry) {
+      listings.clear();
+      return sendErr(msg.path, "no session attached");
+    }
     if (!listdirBucket.take()) return sendErr(msg.path, TOO_FAST);
     try {
-      const raw = readDirRaw(entry.cwd, msg.path);
-      if ("error" in raw) return sendErr(msg.path, raw.error);
-      const sendDir = (all: FsDirEntry[]) => {
-        const r = sortAndCapDir(all);
-        viewport({
-          type: "fs_dir",
-          id: msg.id,
-          path: msg.path,
-          entries: r.entries,
-          ...(raw.truncated || r.truncated ? { truncated: true } : {}),
-        });
+      const listing = msg.continuation === undefined
+        ? listings.open(entry, entry.cwd, msg.path)
+        : listings.resume(entry, entry.cwd, msg.path, msg.continuation);
+      const current = () => !isClosed() && getEntry() === entry;
+      const sendDir = () => {
+        if (!current()) return listings.close(listing);
+        try {
+          const page = listings.page(listing);
+          viewport({ type: "fs_dir", id: msg.id, path: msg.path, ...page });
+        } catch (err) {
+          sendErr(msg.path, errText(err));
+        }
       };
+      // Later pages retain this listing's chosen Git snapshot (or its plain
+      // fallback); status-ready bells refresh the whole listing as before.
+      if (msg.continuation !== undefined) return sendDir();
       // A directory inside a repo lists through THAT repo's view —
       // its own ignore rules honored, its own statuses attached (cached per
       // repo, one git child at a time — repoStatus serializes). Outside any
@@ -247,25 +258,34 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       // status is cached (TTL from settle), so the refetch decorates
       // instantly instead of timing out again. A status that settles
       // degraded (not a repo, git error) rings nothing: plain was final.
-      const repoRoot = findRepoRoot(raw.real);
-      if (!repoRoot) return sendDir(raw.all);
+      const repoRoot = findRepoRoot(listing.raw.real);
+      if (!repoRoot) return sendDir();
       void noticeRefusedPrograms(repoRoot);
-      const dirRel = repoRelPath(repoRoot, raw.real);
+      const dirRel = repoRelPath(repoRoot, listing.raw.real);
       let replied = false;
       const timer = setTimeout(() => {
-        if (replied || isClosed()) return;
+        if (replied || !current()) return;
         replied = true;
         lateStatusBells.add(repoRoot);
-        sendDir(raw.all);
+        sendDir();
       }, FS_LISTDIR_STATUS_WAIT_MS);
       void repoStatus(repoRoot)
         .then((st) => {
-          if (isClosed()) return clearTimeout(timer);
+          if (!current()) return clearTimeout(timer);
           if (!replied) {
             clearTimeout(timer);
             replied = true;
-            if ("notGit" in st || "error" in st) return sendDir(raw.all);
-            return sendDir(decorateGitDir(raw.all, dirRel, st));
+            if (!("notGit" in st) && !("error" in st) && listings.has(listing)) {
+              listing.decorate = entries => decorateGitDir(entries, dirRel, st, false);
+              // Merge deleted children once. A staged deletion may still
+              // exist on disk on a later raw page; that page decorates it.
+              listing.extra = decorateGitDir([], dirRel, st).filter(e => {
+                if (!decorateGitDir([e], dirRel, st, false).length) return true;
+                try { lstatSync(path.join(listing.raw.real, e.name)); return false; }
+                catch (err) { return (err as NodeJS.ErrnoException).code === "ENOENT"; }
+              });
+            }
+            return sendDir();
           }
           const owed = lateStatusBells.delete(repoRoot);
           if (owed && !("notGit" in st) && !("error" in st)) {
@@ -273,11 +293,12 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           }
         })
         .catch(() => {
-          lateStatusBells.delete(repoRoot);
           clearTimeout(timer);
-          if (isClosed() || replied) return;
+          if (!current()) return;
+          lateStatusBells.delete(repoRoot);
+          if (replied) return;
           replied = true;
-          sendDir(raw.all);
+          sendDir();
         });
     } catch (err) {
       sendErr(msg.path, errText(err));
@@ -433,5 +454,8 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       });
   };
 
-  return { list, listdir, read, diff, changes };
+  return { list, listdir, read, diff, changes, reset: () => {
+    listings.clear();
+    lateStatusBells.clear();
+  } };
 }

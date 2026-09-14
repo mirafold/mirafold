@@ -120,3 +120,33 @@ test("bellRefreshDelay: immediate when the gap has passed, trailing remainder in
   assert.equal(bellRefreshDelay(10_000, 9_400, 1_000), 400, "inside the gap → wait the remainder");
   assert.equal(bellRefreshDelay(10_000, 10_000, 1_000), 1_000, "same-instant repeat → full gap");
 });
+
+test("continuations append later directories and replace repeated names without dropping earlier rows", () => {
+  let store = applyDirReply(emptyDirStore(), "", {
+    entries: [{ name: "early.txt", kind: "file" }], truncated: true, continuation: "first",
+  });
+  store = beginDirFetch(store, "", true);
+  assert.equal(shownListing(store.get("")!)?.continuation, "first");
+  store = applyDirReply(store, "", {
+    entries: [{ name: "early.txt", kind: "file", status: "M" }, { name: "late-dir", kind: "dir" }],
+  }, true);
+  assert.deepEqual(shownListing(store.get("")!), {
+    entries: [{ name: "early.txt", kind: "file", status: "M" }, { name: "late-dir", kind: "dir" }],
+    truncated: false,
+  });
+});
+
+test("empty pages preserve continuation; refresh and errors retire it while keeping prior rows", () => {
+  let store = applyDirReply(emptyDirStore(), "", { entries: [], truncated: true, continuation: "first" });
+  assert.equal(shownListing(store.get("")!)?.continuation, "first");
+  store = applyDirReply(beginDirFetch(store, "", true), "", {
+    entries: [{ name: "visible", kind: "dir" }], truncated: true, continuation: "second",
+  }, true);
+  const refreshed = beginDirFetch(store, "");
+  assert.equal(shownListing(refreshed.get("")!)?.continuation, undefined);
+  const failed = applyDirReply(beginDirFetch(store, "", true), "", { entries: [], error: "expired" }, true);
+  assert.equal(failed.get("")?.phase, "error");
+  assert.deepEqual(shownListing(failed.get("")!), {
+    entries: [{ name: "visible", kind: "dir" }], truncated: true,
+  });
+});

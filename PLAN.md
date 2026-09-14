@@ -4702,7 +4702,7 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
 
 ---
 
-## Phase GSI — Native Gemini CLI sign-in (IN REVIEW; Kyle-directed 2026-09-09)
+## Phase GSI — Native Gemini CLI sign-in (MERGED 2026-09-14; Kyle-directed 2026-09-09)
 
 Kyle approved adding the actual sign-in option and its account-availability
 copy on PR #118. This continues the provider work on the existing branch.
@@ -4711,7 +4711,7 @@ copy on PR #118. This continues the provider work on the existing branch.
   per-child auth for prompts and ACP catalogs, non-interactive auth failure,
   approved picker copy, and current research are implemented. The CLI owns
   its tokens; API fallback requires an explicit choice. → PLAN-ARCHIVE.md.
-- [ ] **GSI.3 — Verify and review.** Test both credentials in the same
+- [x] **GSI.3 — Verify and review.** Test both credentials in the same
   workspace, sign-in-only detection, restore, unavailable accounts, and the
   real browser picker. Run typecheck, proportionate unit/integration/browser
   checks and visual verification with dotenv access disabled. Update PR #118
@@ -4765,7 +4765,10 @@ copy on PR #118. This continues the provider work on the existing branch.
   and four affected browser cases pass. Repository tests remain unchanged
   under the closeout spec's restriction; regression extensions require
   Kyle's explicit exception. The required fresh read-only review found no
-  actionable defects; current-head GitHub CI and Codex review remain owed.
+  actionable defects; current-head GitHub CI and Codex review remained owed
+  at that checkpoint. **Final closure, 2026-09-14:** all checks and Codex
+  review passed on `3b42f37`, all six threads were resolved, and Kyle approved
+  the merge. PR #118 merged into `next` as `91d2391`.
 
 ---
 
@@ -4777,14 +4780,17 @@ next work branch from fresh `next`. Stop after these changes reach `next`;
 further staging work will follow separately. No release branch, version bump,
 production merge, or publication belongs to this phase.
 
-- [ ] **OIC.1 — Finish PR #118.** Complete GSI.3 with the owner-edited template,
+- [x] **OIC.1 — Finish PR #118.** Complete GSI.3 with the owner-edited template,
   existing dotenv-safe validation, current-head CI and Codex review, resolved
   review findings, and explicit merge approval. Do not inspect or test any
   dotenv file, including the template; no new tests unless the edit breaks
-  an existing test.
-- [ ] **OIC.2 — Finish PR #116.** Retarget from `main` to `next`, retain only
+  an existing test. Done 2026-09-14; merged as `91d2391` after approval.
+- [x] **OIC.2 — Finish PR #116.** Retarget from `main` to `next`, retain only
   the `yarn.lock` update from `hono` 4.13.0 to 4.13.7, run CI against `next`,
-  check automated review, and merge after explicit approval.
+  check automated review, and merge after explicit approval. Done 2026-09-14;
+  the original signed-off Dependabot commit was retained. Fresh CI run
+  `34887920434` used `next` at `91d2391`; all checks and Codex review passed.
+  Kyle approved the merge; PR #116 merged into `next` as `35597ef`.
 - [ ] **OIC.3 — Implement issue #99 in a separate PR.** Add opaque, stateful
   continuation to `fs_listdir`/`fs_dir` and append pages behind one **Load
   more** row. Keep the 10,000-entry raw scan cap, one bounded raw page per
@@ -4797,6 +4803,23 @@ production merge, or publication belongs to this phase.
   protocol/server/UI tests and normal CI, review and merge to `next`, then
   close #99. Stop and report if this requires broader protocol/tree redesign,
   dependency changes, or unrelated cleanup.
+
+  **2026-09-14 implementation:** `fix/folder-tree-pagination` starts from
+  `35597ef`. Retain one bounded raw page and its unsent reply tail, with
+  single-use tokens, at most 32 active listings per connection, and a
+  two-minute expiry. Refresh, errors, session changes, and disconnects close
+  retained handles. Git decoration uses one snapshot per listing and merges
+  deleted children once. The browser appends pages behind one Load more row;
+  empty pages remain reachable and refresh replaces accumulated rows.
+  Local verification passed: typecheck, server/web builds, 1,222 dotenv-safe
+  unit tests (five existing dotenv fixture files excluded), both real-socket
+  pagination/Git tests, three pagination browser tests, four existing browser
+  setup/folder-tree regressions, and the 11-check browser/visual gate. A fresh
+  review found that continuation errors were hidden beside retained rows;
+  the browser regression failed before the fix and passed afterward. Errors
+  now remain visible with their refresh guidance, and the reviewer confirmed
+  closure with no further findings. Normal CI, automated review, explicit
+  merge approval, merge, and issue closure remain open.
 
 ---
 
