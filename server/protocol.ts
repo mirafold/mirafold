@@ -301,12 +301,13 @@ export type ViewportMsgBody =
   // `version` (optional/additive) — the daemon's package version, for the
   // status bar and bug reports.
   // `blocked` per agent entry (optional/additive): true means a prohibited
-  // subscription credential is present (an Anthropic/Gemini login, which
-  // their terms don't allow in a third-party app) — the picker shows the
+  // subscription credential is present (currently an Anthropic login) —
+  // provider-policy.ts owns that decision. The picker shows the
   // API-key fix instead of a demo or a dead badge. Old clients ignore it and
   // see `live: false`. `detail` (optional/additive): a "what's behind this
-  // row" label for a LIVE agent — its local endpoint or configured model —
-  // so a local-model user sees their setup was picked up.
+  // row" label for a LIVE agent — its local endpoint, configured model, or
+  // credential availability guidance. Gemini sign-in guidance rides here
+  // so older browser bundles also display it before the user chooses.
   // `backends` per agent entry (optional/additive): EVERY way that agent
   // could run — each detected credential (no precedence collapse) plus each
   // running local model server the agent's API dialect can drive, discovered

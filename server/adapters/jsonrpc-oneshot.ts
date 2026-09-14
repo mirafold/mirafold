@@ -5,6 +5,7 @@ import { envWithout } from "./types";
 // stdout as it crosses the process boundary so a corrupt binary cannot retain
 // arbitrary data during the otherwise time-bounded lookup.
 const ONE_SHOT_STDOUT_MAX_BYTES = 1_000_000;
+const ONE_SHOT_STDERR_MAX_BYTES = 4_000;
 
 // One-shot newline-delimited JSON-RPC against a spawned agent binary — the
 // plumbing shared by codex-model-list.ts (`codex app-server`) and
@@ -18,6 +19,10 @@ export function jsonRpcOneShot<T>(opts: {
   command: string;
   args: string[];
   cwd?: string;
+  /** A caller-prepared child environment; must exclude daemon credentials. */
+  env?: Record<string, string>;
+  /** Preserve a bounded diagnostic tail when this process exits before replying. */
+  captureStderr?: boolean;
   timeoutMs: number;
   /** Error-message prefix naming the surface (e.g. "codex app-server"). */
   label: string;
@@ -29,10 +34,18 @@ export function jsonRpcOneShot<T>(opts: {
   return new Promise((resolve, reject) => {
     const child = spawn(opts.command, opts.args, {
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      env: envWithout(), // never the daemon's own secrets
-      stdio: ["pipe", "pipe", "ignore"],
+      env: opts.env ?? envWithout(), // never the daemon's own secrets
+      stdio: ["pipe", "pipe", opts.captureStderr ? "pipe" : "ignore"],
     });
+    // Optional stderr widens Node's overload; stdin/stdout are fixed pipes.
+    const stdin = child.stdin!;
+    const stdout = child.stdout!;
     let settled = false;
+    let stderr = Buffer.alloc(0);
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr = Buffer.concat([stderr, chunk.subarray(-ONE_SHOT_STDERR_MAX_BYTES)])
+        .subarray(-ONE_SHOT_STDERR_MAX_BYTES);
+    });
     const finish = (err: Error | null, result?: T) => {
       if (settled) return;
       settled = true;
@@ -46,13 +59,20 @@ export function jsonRpcOneShot<T>(opts: {
     };
     const timer = setTimeout(() => finish(new Error(`${opts.label}: timed out`)), opts.timeoutMs);
     child.on("error", (err) => finish(err));
-    child.stdin.on("error", (err) => finish(err));
-    child.on("exit", () => finish(new Error(`${opts.label}: exited before answering`)));
+    stdin.on("error", (err: NodeJS.ErrnoException) => {
+      // An early auth exit can close stdin before its stderr has drained.
+      if (opts.captureStderr && (err.code === "EPIPE" || err.code === "ERR_STREAM_DESTROYED")) return;
+      finish(err);
+    });
+    child.on(opts.captureStderr ? "close" : "exit", () => {
+      const diagnostic = stderr.toString("utf8").trim();
+      finish(new Error(`${opts.label}: exited before answering${diagnostic ? `: ${diagnostic}` : ""}`));
+    });
 
-    const send: OneShotSend = (obj) => child.stdin.write(`${JSON.stringify(obj)}\n`);
+    const send: OneShotSend = (obj) => stdin.write(`${JSON.stringify(obj)}\n`);
     let buf = "";
     let stdoutBytes = 0;
-    child.stdout.on("data", (chunk: Buffer) => {
+    stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.byteLength;
       if (stdoutBytes > ONE_SHOT_STDOUT_MAX_BYTES) {
         finish(new Error(`${opts.label}: stdout exceeded ${ONE_SHOT_STDOUT_MAX_BYTES} bytes`));

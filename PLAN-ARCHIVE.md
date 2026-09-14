@@ -12426,3 +12426,60 @@ One non-blocking release-tooling item remains: successful workflow
 #34010536859 repeated GitHub's warning that the pinned `actions/upload-artifact`
 v4 commit declares Node 20 and is forcibly run on Node 24. The release passed;
 the action should be updated on a normal branch.
+
+
+## Archived 2026-09-09 — Provider subscription copy
+
+## Phase PSC — Provider subscription copy (opened + ✅ COMPLETE 2026-09-09; Kyle-directed; PR #118 → next)
+
+Branch: `fix/provider-subscription-copy` from current `next`.
+
+- [x] **Step PSC.1 — Verify the current integrations and provider sources.**
+  Codex uses app-server with documented ChatGPT authentication. Gemini uses
+  official headless CLI output with API-key auth; personal CLI access ended
+  June 18, and enterprise authentication is not implemented here. Google's
+  ACP integrations and limited collaborator acceptance are distinct from its
+  prohibition on direct backend access through reused OAuth. Research:
+  `docs/provider-subscriptions.md`.
+- [x] **Step PSC.2 — Remove ChatGPT warnings and synchronize policy copy.**
+  Setup hints, the subscription picker, and OpenCode ChatGPT notices lose
+  their uncertainty caveats. Gemini's fallback names the actual API-key
+  requirement. Anthropic restrictions, Zen disclosures, authentication,
+  credential classification, and paid-relay enforcement remain behaviorally
+  unchanged. Current policy docs supersede the July gray-area assessment.
+- [x] **Step PSC.3 — Verify and open the change for review.**
+  Typecheck, relevant unit/session and browser checks, managed-browser visual
+  checks; review the final diff, sign off the commit, and open a PR to `next`.
+  PR #118 is open against `next`; local validation is complete. GitHub CI
+  and automated review are pending. Do not merge without Kyle's explicit approval.
+  Verification: typecheck and both builds pass; 1,201 unit tests pass across
+  122 files (five dotenv-related files excluded); seven focused Chrome E2E
+  checks pass; Chromium/Firefox/WebKit interactions and seven unchanged
+  visual baselines pass. The inspected picker baseline was updated for the
+  new text, and its focused visual rerun passes. A temporary read guard
+  prevents dotenv access; Corepack/Vite environment-file loading is disabled.
+  Chrome needed execution outside the sandbox to reach the local daemon.
+
+---
+
+## Phase GSI — Native Gemini CLI sign-in (2026-09-09)
+
+- [x] **GSI.1 — Native authentication selection.** Detect the CLI's existing
+  login by file existence only, offer it locally, and carry the selected
+  credential through creation, restore, prompts, and model discovery. Keep
+  Google OAuth inside the official binary; no automatic API billing fallback.
+- [x] **GSI.2 — Honest setup and failure copy.** Use “Try your Gemini CLI
+  sign-in” and the approved account/plan availability note. Preserve the
+  Google error and offer an explicit API-key next step. Update provider
+  research with Google's headless-mode clarification. Anthropic, OpenCode's
+  Google OAuth restriction, and paid-relay policy retain their behavior.
+**Implementation status (2026-09-09):** the native cached-login file is
+probed by existence only. Each session's selected kind survives restoration
+and configures both its prompt child and ACP model catalog; project settings
+use Gemini's documented environment expansion after folder consent, avoiding
+credential races between Mirafold sessions in the same folder. Sign-in
+children cannot launch a browser login and receive empty API-key variables.
+Google's own availability error is preserved with an explicit API-key next
+step. Anthropic, OpenCode Google OAuth, and paid-relay boundaries retain their
+behavior. Source and offline expansion were checked against Gemini CLI 0.58.0.
+The remaining review/template status is tracked in PLAN.md GSI.3.

@@ -18,25 +18,16 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **Rendering:** curated component registry first (Level 2), sandboxed
   arbitrary artifacts later (Level 3).
 - **Model:** `claude-sonnet-4-6` default, `claude-opus-4-8` switchable per-task.
-- **Auth:** personal API keys, server-side only — and for the **closed
-  providers** (Anthropic, OpenAI, Google) an API key is the only *fully*
-  supported credential. Their terms restrict driving a subscription/OAuth login
-  from a third-party app: Anthropic and Google prohibit it outright (local and
-  relay) — a Claude/Gemini login shows as `blocked` with the API-key fix — and
-  OpenAI grants no written permission either way, so a Codex/ChatGPT login is
-  allowed for free LOCAL use as a **disclosed gray area** under the
-  **disclosed-uncertainty rule** (Kyle, 2026-07-15: uncertain terms +
-  permissive provider posture + minimal exposure ⇒ permissive reading with
-  the uncertainty stated to the user, never asserted as permission; the
-  `blocked` machinery stays ready for a one-line flip if OpenAI enforces).
-  NO subscription of any kind is driven over the paid relay — that bound is
-  absolute. API keys and local/BYO endpoints (Ollama, a proxy) are the fully
-  supported paths. The one dated source of truth — including the canonical
-  statement of the disclosed-uncertainty rule — is `server/provider-policy.ts`
-  (R.4i 2026-07-10; re-verified with per-row citations + rule locked
-  2026-07-15, K.3). *(This corrects the earlier "the subscription can't drive
-  the SDK headlessly — API key is required" claim: R.4b proved it technically
-  can; the block is a LEGAL rule, not a technical limit.)*
+- **Auth:** personal API keys stay server-side. ChatGPT login is an ordinary
+  supported local option with no subscription warning (Kyle, 2026-09-09,
+  Phase PSC; official Codex app-server documentation). Anthropic subscriptions
+  remain blocked. Gemini CLI sign-in may be tried locally, with account and
+  plan availability disclosed and an explicit API-key alternative (Phase GSI).
+  Google retired personal Gemini CLI access on 2026-06-18. Google's OAuth-reuse restriction is not a blanket ban on interfaces
+  driving its official CLI. NO subscription of any kind is driven over the
+  paid relay — the existing bound remains. API keys and local/BYO endpoints
+  remain supported. `server/provider-policy.ts` is the canonical policy;
+  `docs/provider-subscriptions.md` records the current research and sources.
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
   Front end: React + Vite. Package manager: **yarn**.
 - **Distribution: local-first, installed like a terminal agent.** Ships as a
@@ -392,7 +383,7 @@ and K.6's site pass. Detail in the K.2 / K.4 / K.5 / K.7 notes below.
     re-verification cycle, not a rebuild), swap the entity name into ToS / site
     footer / both LICENSE lines, and file the trademark (K.10) under the LLC.
 
-- [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15; every row pinned to a dated primary source: the Anthropic ban verbatim, Gemini individual-account service ended 2026-06-18 (API keys continue; Antigravity succession check → R.6), and the codex row settled as allowed-locally under the standing **disclosed-uncertainty rule** (no written permission exists, posture visibly permissive; canonical statement in `server/provider-policy.ts`). All four tiers green, twice. → PLAN-ARCHIVE.md.
+- [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15; every row pinned to a dated primary source: the Anthropic ban verbatim, Gemini individual-account service ended 2026-06-18 (API keys continue; Antigravity succession check → R.6), and the codex row settled as allowed-locally under the standing **disclosed-uncertainty rule** (July assessment; superseded by Phase PSC, 2026-09-09). All four tiers green, twice. → PLAN-ARCHIVE.md.
 
 - [x] **Step K.4 — Merchant-of-record billing** — vendor: **PADDLE**
   (investigation 2026-07-15; every hard requirement from BUSINESS §7 + R.5
@@ -633,11 +624,11 @@ with it. Both sequence BEFORE R.5.**
 
 - [x] **Step R.4e — Prove the artifact sandbox fails closed** — done 2026-07-08; Tier-1 unit tests on `parseBridgeAction`/`wrap()` + a Tier-3 hostile-artifact suite, with a flip-each-defense proof (each containment property has a test that fails when the defense is removed). → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: Claude/Gemini subscription blocked, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. Verified all three tiers. → PLAN-ARCHIVE.md.
+- [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: the then-current Claude/Gemini subscription blocks, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. The Gemini block was superseded by Phase GSI on 2026-09-09; Anthropic and the relay boundary remain. Verified all three tiers. → PLAN-ARCHIVE.md.
 
 - [x] **Step R.4j — Reconcile docs & business to the provider policy** — done 2026-07-10 (prose-only); PLAN Auth decision, BUSINESS.md §2/§7/§8.5, both CLAUDE.md files, `.env.example`, README, and the private `mirafold-relay/README` all cite `provider-policy.ts`. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure. Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
+- [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure (removed by Phase PSC, 2026-09-09). Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
 
 - [ ] **Step R.4l — Pre-release polish + fidelity intake** *(opened
   2026-07-13, the day of the first real-phone pass through the deployed
@@ -2411,7 +2402,7 @@ fourth adapter. The feasibility spike is **`server/adapters/opencode/opencode.sp
   - **Zen OPENED by Kyle 2026-08-13** under the disclosed-uncertainty rule:
     `gateway` CredentialKind, local-only, NEVER relay-eligible, uncertainty +
     training-data disclosure shown (canonical row in provider-policy.ts).
-  - The ChatGPT gray runs locally under its TRUE classified kind
+  - ChatGPT login runs locally under its TRUE classified kind
     (`onBackendKind` → registry; `kindPending` refuses remote actions until
     verified).
 
@@ -4694,6 +4685,118 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
   pinned-dark code surface) and `status-list` (verdict pills, glyph↔enum
   Tier-1-pinned) the same sitting, same seam, display-only. →
   PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+
+---
+
+## Phase PSC — Provider subscription copy (✅ COMPLETE 2026-09-09; Kyle-directed)
+
+- [x] **PSC.1–PSC.3:** removed ChatGPT subscription warnings from setup,
+  credential selection, and OpenCode notices; documented Gemini's supported
+  integration mechanisms and retired personal access in
+  `docs/provider-subscriptions.md`. Anthropic, Zen, auth, and paid-relay
+  enforcement retain their prior behavior. Typecheck, builds, 1,201
+  dotenv-safe unit tests, seven focused Chrome checks, three managed-browser
+  interactions, and eight visual checks pass (picker baseline updated).
+  [PR #118](https://github.com/mirafold/mirafold/pull/118) targets `next`;
+  GitHub CI/review pending; unmerged. → PLAN-ARCHIVE.md.
+
+---
+
+## Phase GSI — Native Gemini CLI sign-in (IN REVIEW; Kyle-directed 2026-09-09)
+
+Kyle approved adding the actual sign-in option and its account-availability
+copy on PR #118. This continues the provider work on the existing branch.
+
+- [x] **GSI.1–GSI.2:** native sign-in detection, credential selection/restore,
+  per-child auth for prompts and ACP catalogs, non-interactive auth failure,
+  approved picker copy, and current research are implemented. The CLI owns
+  its tokens; API fallback requires an explicit choice. → PLAN-ARCHIVE.md.
+- [ ] **GSI.3 — Verify and review.** Test both credentials in the same
+  workspace, sign-in-only detection, restore, unavailable accounts, and the
+  real browser picker. Run typecheck, proportionate unit/integration/browser
+  checks and visual verification with dotenv access disabled. Update PR #118
+  and read automated review; leave it open for Kyle's merge decision.
+
+  **2026-09-09 status:** local verification passes: typecheck, web/server
+  builds, 1,206 dotenv-safe unit cases plus the added first-action catalog
+  regression (49 focused cases rechecked), six server integration cases,
+  eight focused browser cases (including both Gemini credential layouts and
+  real-daemon failure/fallback), three managed-browser interactions, and
+  eight visual checks. Picker baseline updated after inspection. System
+  Chrome needs an elevated launch. Kyle explicitly approved it after noting
+  that the earlier permission prompt was not seen; the execution tool still
+  returned "rejected by user" on the retry before Chrome started. This is
+  not recorded as Kyle declining permission or as a test failure. The passing
+  E2E run used the harness's existing CHROME_BIN override with managed
+  Chromium inside the sandbox. No live
+  provider calls were made. Installed Gemini CLI **0.58.0** source and its
+  settings-expansion function were checked offline.
+
+  PR #118's first automated review covered `b39f334`, before native Gemini
+  sign-in was added. Its dormant Codex blocked-hint suggestion is addressed
+  with neutral API-key guidance that does not display for supported login.
+  Two other review comments report stale provider wording in the dotenv
+  setup template. Kyle's global instructions forbid inspecting any dotenv
+  file, examples included, so that report is not independently verified and
+  the template remains untouched. Kyle must update its provider comments to
+  match `docs/provider-subscriptions.md`; this remains open before merge.
+  The Gemini implementation is pushed to PR #118 (`df2e58c`); current-head
+  GitHub checks/review must be checked before merge. No merge authorized.
+
+  **2026-09-14 closeout:** Kyle reports the setup-template comments updated
+  and explicitly authorized committing his edit. Commit `4f48a6b` records
+  that owner edit without the implementation agent inspecting its contents.
+  The older Codex blocked-hint finding remains fixed (source inspection and
+  direct probe); typecheck and 65 focused provider/Gemini tests passed before
+  the owner edit. Repeat the existing dotenv-safe validation, request review
+  of the new head with all dotenv files excluded, resolve the stale-copy
+  threads on the owner's confirmation, and obtain merge approval when ready.
+
+  **2026-09-14 review follow-up:** CI passed on `2777bb1`; its Codex review
+  identified two runtime gaps and remaining current-policy copy. An early
+  Gemini ACP authentication exit lost stderr, hiding Google's error and the
+  API-key next step; native sign-in catalog requests now retain a 4,000-byte
+  stderr tail through process close. Older clients received no availability
+  guidance; the existing agent/backend `detail` fields now carry it, with
+  duplicate guidance suppressed in the current picker. The cited BUSINESS,
+  PLAN, and protocol comments are reconciled. Direct probes verify the full
+  `/model` error/fallback, bounded diagnostic retention, and the previous
+  client's detail rendering. Typecheck, builds, 1,207 dotenv-safe unit cases,
+  and four affected browser cases pass. Repository tests remain unchanged
+  under the closeout spec's restriction; regression extensions require
+  Kyle's explicit exception. The required fresh read-only review found no
+  actionable defects; current-head GitHub CI and Codex review remain owed.
+
+---
+
+## Phase OIC — Open-item closeout (Kyle-directed 2026-09-14)
+
+Scope is only PR #118, PR #116, and issue #99. Follow the existing one-branch
+workflow in `docs/RELEASING.md`: finish and merge each PR before starting the
+next work branch from fresh `next`. Stop after these changes reach `next`;
+further staging work will follow separately. No release branch, version bump,
+production merge, or publication belongs to this phase.
+
+- [ ] **OIC.1 — Finish PR #118.** Complete GSI.3 with the owner-edited template,
+  existing dotenv-safe validation, current-head CI and Codex review, resolved
+  review findings, and explicit merge approval. Do not inspect or test any
+  dotenv file, including the template; no new tests unless the edit breaks
+  an existing test.
+- [ ] **OIC.2 — Finish PR #116.** Retarget from `main` to `next`, retain only
+  the `yarn.lock` update from `hono` 4.13.0 to 4.13.7, run CI against `next`,
+  check automated review, and merge after explicit approval.
+- [ ] **OIC.3 — Implement issue #99 in a separate PR.** Add opaque, stateful
+  continuation to `fs_listdir`/`fs_dir` and append pages behind one **Load
+  more** row. Keep the 10,000-entry raw scan cap, one bounded raw page per
+  request, and existing reply count/name-byte caps. Scope each listing to
+  its connection, session, and directory; close it on completion, error,
+  expiry, session change, or disconnect. Preserve jail, skipped directories,
+  symlinks, Git filtering/status decoration, throttling, wire caps, and
+  incomplete/error UI. Prove that a files-only first raw page can be followed
+  by reachable directories while every request stays bounded. Run focused
+  protocol/server/UI tests and normal CI, review and merge to `next`, then
+  close #99. Stop and report if this requires broader protocol/tree redesign,
+  dependency changes, or unrelated cleanup.
 
 ---
 

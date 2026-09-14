@@ -441,8 +441,8 @@ ineligible one, any already-attached relay viewport is also actively evicted
 (`SessionRegistry.evictRemoteViewports`), matching the posture the attach gate
 already takes for a fresh remote attach: a remote viewport is never even
 present on a subscription/gateway session. Local (same-machine) use of those
-credentials stays allowed — that is the disclosed-uncertainty gray area for
-ChatGPT and the disclosed free-gateway path for Zen; only the paid relay fails
+credentials stays allowed — the supported ChatGPT path and the separately
+disclosed free-gateway path for Zen; the paid relay continues to fail
 closed. The window this closes was a real bypass: before the fix, only the
 attach gate ran, so a phone that legitimately attached to an API-key session
 kept driving after a `/model` flip.
