@@ -14,6 +14,7 @@ import { codexRenderMcpConfig } from "./codex-binding";
 import { MIRAFOLD_CONTEXT } from "../../render-guidance";
 import { OUTPUT_CAP_BYTES } from "../types";
 import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
+import { CODEX_CHILD_THREAD_SEQUENCE } from "../../testing/fixtures/codex-child-thread-fixture";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -889,6 +890,35 @@ test("PR #120 round 4: one collab result's child reports share one budget and on
   const reportBytes = completed.reduce((n, m) => n + Buffer.byteLength(m.report ?? "", "utf8") + Buffer.byteLength(m.reportTail ?? "", "utf8"), 0);
   assert.ok(reportBytes <= OUTPUT_CAP_BYTES, `one result's reports share one budget (${reportBytes})`);
   assert.ok(completed.some((m) => m.report), "the first children still carry their reports");
+  s.close();
+});
+
+test("LIVE 2026-09-15 capture: a child thread's items ride the subagent lane under the anchor its spawn announced", async () => {
+  // The fake app-server's own thread id stands in for ROOT.
+  const events = CODEX_CHILD_THREAD_SEQUENCE.map(([method, params]) => {
+    const p = { ...params, threadId: params["threadId"] === "ROOT" ? "codex-thread-new" : "CHILD" };
+    return [method, p] as Notification;
+  });
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const anchor = "codex-agent:CHILD";
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.map((m) => [m.id, m.state, m.label]), [[anchor, "running", "/root/list_files"], [anchor, "completed", "/root/list_files"]]);
+  assert.equal(tasks[1]!.report, "The files are alpha.txt and beta.md.", "the child's final answer is its report");
+  const childCall = msgs.find((m) => m.type === "tool_use" && m.parentId === anchor)!;
+  assert.deepEqual([childCall.name, childCall.detail, childCall.actions], ["Shell", "/usr/bin/zsh -lc ls", [{ kind: "list" }]]);
+  const childResult = msgs.find((m) => m.type === "tool_result" && m.id === childCall.id)!;
+  assert.deepEqual([childResult.parentId, childResult.exitCode, childResult.output], [anchor, 0, "alpha.txt\nbeta.md\n"]);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && /list the files/.test(m.text)), "the child's commentary rides the lane");
+  // No reasoning text in this capture (the live run had reasoning
+  // summaries off — no `item/reasoning/*Delta` arrived); the lane for it is
+  // exercised by the mapper's reasoning path, not asserted here.
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool" && m.label === "Shell" && msgs.indexOf(m) < msgs.indexOf(childCall) + 1 && msgs.indexOf(m) > msgs.indexOf(childCall) - 2), "a child's tool churn never steers the root activity line");
+  const root = msgs.filter((m) => m.type === "tool_use" && !m.parentId).map((m) => m.name);
+  assert.deepEqual(root, ["wait", "Shell"], "the parent's own rows");
+  assert.equal(turnEnds(), 1, "the child's turn/completed did not end the parent's turn");
+  assert.ok(!msgs.some((m) => m.type === "notice"), "nothing reported as unknown");
   s.close();
 });
 
@@ -2066,16 +2096,19 @@ test("subagent collab calls are rows, child activity narrates under its spawn; s
     ["sl1", "(done)", undefined],
     ["dt1", "2 accounts", false],
   ]);
-  // The child's lifecycle groups under the spawn row; a thread no call named
-  // is narrated in the transcript instead of dropped.
+  // The child's lifecycle groups under the spawn row; a thread no call
+  // named is a child the engine ANNOUNCED (live 2026-09-15: that is how a
+  // spawn surfaces in 0.153.4), so it gets its own task anchor and its
+  // narration rides that lane — never dropped, never loose commentary.
   assert.deepEqual(
     msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.parentId, m.phase]),
     [
       ["worker started\n", "cb1", undefined],
       ["worker completed\n", "cb1", undefined],
-      ["Subagent stray started.\n", undefined, "commentary"],
+      ["stray started\n", "codex-agent:t-unknown", undefined],
     ],
   );
+  assert.ok(msgs.some((m) => m.type === "task_update" && m.id === "codex-agent:t-unknown" && m.state === "running" && m.label === "stray"));
   assert.equal(msgs.filter((m) => m.type === "notice").length, 0, "nothing was reported as unmapped");
   s.close();
 });

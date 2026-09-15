@@ -511,8 +511,15 @@ export class CodexSession implements AgentSession {
       if (typeof id === "string") this.adoptThread(id);
       return;
     }
-    // Only this session's thread; the process is ours alone, but be exact.
-    if (typeof p["threadId"] === "string" && this.threadId && p["threadId"] !== this.threadId) return;
+    // Only this session's thread — plus the CHILD threads the engine spawned
+    // for it: their items arrive on this same connection (verified live
+    // 2026-09-15, app-server 0.153.4) and ride the subagent lane under the
+    // anchor the parent's subAgentActivity announced. Any other thread
+    // stays dropped, and a child's turn/completed never ends OUR turn.
+    if (typeof p["threadId"] === "string" && this.threadId && p["threadId"] !== this.threadId) {
+      if (this.activeTurn && this.eventMapper.isChildThread(p["threadId"])) this.eventMapper.handleChild(p["threadId"], method, params);
+      return;
+    }
     if (method === "turn/completed") {
       const turn = (p["turn"] ?? {}) as { id?: unknown; status?: unknown; error?: unknown };
       const active = this.activeTurn;

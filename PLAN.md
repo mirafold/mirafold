@@ -4991,8 +4991,8 @@ the `evicted` replay flag. Committed as one coherent checkpoint.
 - Defects found by the scenarios and fixed: the client ingress discarded
   `replay_complete` after delivering held history (the projection never
   saw `evicted`); the inferred-state word failed contrast (SA.1).
-- **TF5.2** live provider comparison NOT performed (would spend Kyle's
-  accounts; needs his explicit go). Unverified, not absent.
+- **TF5.2** live provider comparison: run later the same day on Kyle's go —
+  see the TF5.2 section below.
 - **TF5.3** independent read-only reviewer (subagent) over
   `git diff d3ec718 -- server web/src` against R1–R8.
 
@@ -5023,6 +5023,24 @@ the `evicted` replay flag. Committed as one coherent checkpoint.
   accounting and `historyEvicted`, additive compatibility and the decoder,
   turn_end/task handling, grouping rule, trust boundary (every engine
   string is a text node), capabilities vs. actual emissions.
+
+### TF5.2 — Live provider comparison (✅ run 2026-09-15 on Kyle's go; Codex + Claude)
+
+One bounded turn per provider through the real adapter (raw engine events
+teed) and the same prompt through the native CLI, in a throwaway workspace
+with a throwaway trust file; the probe script was deleted after the run,
+the captures are kept as fixtures where they prove a shape. Prompt: spawn
+one subagent that runs `ls` and reports one line, wait for it, run
+`echo done`, answer in a sentence.
+
+| Provider · backend · model | Native shows | Mirafold shows | Fixture match | Finding |
+| --- | --- | --- | --- | --- |
+| Codex 0.153.4 · ChatGPT login · gpt-6-astra (xhigh) | `collab: Wait`, the quoted answer, `exec … succeeded in 0ms: done`; the child's own `ls` is not shown | before the fix: narration lines "…/root/list_files started/completed", a `wait` row, the `echo done` row (exit 0, `unknown` action); the child's `ls` was DROPPED (other thread id) and no deck formed | **Mismatch, fixed:** a spawn surfaces as `subAgentActivity started` with no collab spawn item, and the child thread's 35 notifications (reasoning, commentary, `commandExecution ls` with `commandActions: [listFiles]`, final answer) arrive on the parent connection | Child lane implemented from the capture: synthetic anchor per announced child, parented rows/prose, the child's final answer as report, `capabilities.childActivity: true`. Fixture: `server/testing/fixtures/codex-child-thread-fixture.ts` + Tier-1 test |
+| Claude Code · API key · SDK 0.3.201 (`claude` 2.1.272) | `stream-json`: assistant/user frames, `task_started/progress/updated` | Agent row → `task_update running` (task_started, tool_use_id = the Agent id) → child `Bash ls` nested (`parent_tool_use_id` = the Agent id) → `task_progress` (last_tool_name Bash) → `task_updated completed` (no tool_use_id; landed on the same anchor) → `task_notification completed` with the summary as report → the Agent result → root `Bash echo done` | **Match**: every identity claim the fixtures made holds; the round-1 fix for the late `task_updated` was exercised for real | none |
+| Gemini CLI, OpenCode | not run (no unverified claims for them; both have exact-name fixtures) | — | — | — |
+
+Spend: one Codex turn on the ChatGPT plan, one Claude API turn; nothing
+created or published; workspaces deleted.
 
 ### TF6 — Verify and hand off (✅ local candidate 2026-09-15; push/PR await Kyle)
 
@@ -5154,13 +5172,11 @@ push was gated locally first (typecheck, dotenv-safe unit, Tier-2, the
 affected browser suites on the built bundle). The PR stays open for Kyle's
 merge decision.
 
-**Residuals (recorded, not hidden):** Codex child-thread inner activity —
-unverified whether app-server 0.153.4 delivers other-thread notifications
-on the parent connection (no live spawning run); declared absent in
-`capabilities` and said so in the deck. Claude `task_started` /
-`parent_tool_use_id` identity is contracted by the SDK types, not observed
-live. Live per-provider comparison (TF5.2) not performed. Reasoning titles:
-no engine exposes one on these surfaces, so the label is "Thinking".
+**Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
+Codex delivers a child thread's items on the parent connection (lane
+implemented) and Claude's task identity holds live. Remaining: reasoning
+titles — no engine exposes one on these surfaces, so the label is
+"Thinking"; Gemini/OpenCode not compared live (no unverified claims).
 
 ---
 
