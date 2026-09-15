@@ -1052,6 +1052,21 @@ test("TF2.1: TaskOutput and TaskStop are ordinary calls with inspectable results
   s.close();
 });
 
+test("PR #120 round 5: task identity strings are clamped before they ride every update", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    { type: "system", subtype: "task_started", task_id: "T-big", description: "d".repeat(5_000), subagent_type: "t‮".repeat(100) },
+    { type: "system", subtype: "task_progress", task_id: "T-big", description: "d".repeat(5_000), usage: { total_tokens: 1, tool_uses: 1, duration_ms: 1 } },
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  for (const m of msgs.filter((m) => m.type === "task_update")) {
+    assert.ok((m.label ?? "").length <= 200 && (m.agentType ?? "").length <= 64 * 9, "clamped");
+    assert.ok(!(m.agentType ?? "").includes("‮"), "controls made visible");
+  }
+  s.close();
+});
+
 test("PR #120 review: hidden tasks stay hidden after their notification; a failed task_updated keeps its capped error tail", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     { type: "system", subtype: "task_started", task_id: "T-h", description: "memory tidy", skip_transcript: true },

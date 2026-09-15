@@ -5135,6 +5135,14 @@ live thinking deltas lost their `seq` in the browser batch so a row's
 disclosure key differed from its replay (the merged delta keeps the first
 seq; live and replayed rows now derive one key).
 
+**PR #120 round 5 (`fbe0470`, CI green).** Four findings, all verified
+and fixed with a regression check each: an orphaned child outcome whose
+parent deck was evicted too was hidden by the nested-row rule (now shown
+at the root); a completion note on screen was carried into a fallback
+session (cleared with the ledgers); the ring kept a call's last snapshot
+beside its final result (the result now retires it); Claude/OpenCode task
+identity strings were unclamped (200/64 code points, control-visible).
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in

@@ -349,6 +349,9 @@ export function Shell() {
             ledgerSession.current = m.sessionId;
             notedTaskStates.current.clear();
             completedPlans.current.clear();
+            // A note still on screen belongs to the previous session (round 5).
+            window.clearTimeout(taskNoteTimer.current);
+            setTaskNote(null);
           }
           setNotices((n) => ({
             ...n,

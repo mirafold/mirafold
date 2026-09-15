@@ -148,6 +148,10 @@ test("TF1.3c: only the newest tool_output_snapshot and task_update per id are re
   const replayed = r.replayAfter().filter((m) => m.type === "tool_output_snapshot" && m.id === "c1");
   assert.equal(replayed.length, 1);
   assert.equal((replayed[0] as Extract<WireMsg, { type: "tool_output_snapshot" }>).revision, 50);
+  // PR #120 round 5: the final result retires the call's last snapshot.
+  r.offer({ type: "tool_result", id: "c1", output: "final" });
+  assert.equal(r.buffer.filter((m) => m.type === "tool_output_snapshot" && m.id === "c1").length, 0);
+  assert.equal(r.bytes, r.buffer.reduce((n, m) => n + Buffer.byteLength(JSON.stringify(m)), 0));
   // PR #120 review: durable fields survive a partial superseding update;
   // the transient action does not.
   r.offer({ type: "task_update", id: "t2", state: "completed", label: "job", report: "R", reportTail: "T", reportOmittedBytes: 3, elapsedMs: 9, action: "Grep" });

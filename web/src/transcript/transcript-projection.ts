@@ -392,11 +392,16 @@ function buildSnapshot(
   // task lifecycle for — a spawn whose child never called a tool is still a
   // task with a state and a report.
   const isDeck = (entry: ToolEntry) => cardItemsByParent.has(entry.toolId) || tasks.has(entry.toolId);
+  // A child row nests only under a parent that EXISTS; an orphaned outcome
+  // whose parent anchor was evicted too has no deck to live in and shows at
+  // the root instead of nowhere (PR #120 round 5).
+  const anchorIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
+  const nested = (entry: ToolEntry) => Boolean(entry.parentId) && !entry.isError && anchorIds.has(entry.parentId!);
 
   const compactedTools = groupToolActivity(
     entries.flatMap((entry): Array<ActivityItem<ToolEntry, ThinkingRow>> =>
       entry.kind === "tool"
-        ? entry.parentId && !entry.isError
+        ? nested(entry)
           ? []
           : isDeck(entry)
             ? [null]
@@ -445,7 +450,7 @@ function buildSnapshot(
         continue;
       }
       if (compactedTools.hidden.has(entry.id)) continue;
-      if (entry.parentId && !entry.isError) continue;
+      if (nested(entry)) continue;
       const items = cardItemsByParent.get(entry.toolId);
       const lifecycle = tasks.get(entry.toolId);
       if (items?.length || lifecycle) {

@@ -1,7 +1,7 @@
 import type { SessionMsg, ToolAction } from "../../protocol";
 import { capOutput, outputFields, toolDetail, SubagentProseBudget, type TodoItem } from "../types";
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "../render-mcp-cmd";
-import { ChecklistPainter, UnknownKindReporter, displayPath } from "../wire-helpers";
+import { ChecklistPainter, UnknownKindReporter, displayPath, inertToken } from "../wire-helpers";
 import { LiveOutput } from "../live-output";
 import { routineActions } from "../routine-actions";
 import type { OpenCodeEvent } from "./opencode-client";
@@ -516,8 +516,8 @@ export class OpenCodeEventMapper {
     input?: Record<string, unknown>,
   ) {
     if (input && !this.taskIdentity.has(id) && this.taskIdentity.size < MAX_PARTS_PER_TURN) {
-      const label = typeof input["description"] === "string" && input["description"] ? input["description"] : undefined;
-      const agentType = typeof input["subagent_type"] === "string" && input["subagent_type"] ? input["subagent_type"] : undefined;
+      const label = typeof input["description"] === "string" && input["description"] ? inertToken(input["description"], 200) : undefined;
+      const agentType = typeof input["subagent_type"] === "string" && input["subagent_type"] ? inertToken(input["subagent_type"], 64) : undefined;
       if (label || agentType) this.taskIdentity.set(id, { label, agentType });
     }
     const identity = this.taskIdentity.get(id);

@@ -602,6 +602,19 @@ test("PR #120 review: an outcome replayed before its task anchor settles the pla
   assert.equal(rowsOf(snapshot, "tool").filter((t) => t.orphaned).length, 0, "nothing is left over as an orphan");
 });
 
+test("PR #120 round 5: an orphaned child outcome whose parent deck was evicted too shows at the root", () => {
+  const snapshot = apply(
+    createTranscriptProjection(),
+    { type: "zone_reset" },
+    { type: "tool_result", id: "kid", output: "child done", parentId: "gone-parent", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  const rows = rowsOf(snapshot, "tool");
+  assert.deepEqual(rows.map((r) => [r.toolId, r.orphaned, r.output]), [["kid", true, "child done"]], "visible, not hidden under an absent deck");
+  assert.equal(rowsOf(snapshot, "subagent-deck").length, 0);
+});
+
 test("PR #120 round 4: a live reasoning row and its replayed twin share one disclosure key", () => {
   const live = apply(createTranscriptProjection(), { type: "user_prompt", text: "go", seq: 1 }, { type: "thinking_delta", text: "hmm", seq: 2 }, { type: "thinking_delta", text: " more", seq: 3 });
   const replayed = apply(createTranscriptProjection(), { type: "user_prompt", text: "go", seq: 1, replay: true }, { type: "thinking_delta", text: "hmm more", seq: 2, replay: true });

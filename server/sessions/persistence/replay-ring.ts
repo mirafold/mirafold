@@ -152,7 +152,10 @@ export class ReplayRing {
     // outright (Phase TF): a running command publishing four snapshots a
     // second must not consume a replay slot each — the newest is the whole
     // truth, so the stale one leaves and its bytes go with it.
-    if (msg.type === "tool_output_snapshot") {
+    // The authoritative result also retires the call's last snapshot: a
+    // completed command must not hold a cap-sized snapshot beside a
+    // cap-sized result in every ring and checkpoint (round 5).
+    if (msg.type === "tool_output_snapshot" || msg.type === "tool_result") {
       const id = msg.id;
       const stale = this.buffer.findIndex((m) => m.type === "tool_output_snapshot" && m.id === id);
       if (stale >= 0) {

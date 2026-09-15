@@ -887,8 +887,10 @@ export class ClaudeCodeSession implements AgentSession {
       known = { id: toolUseId ?? `task:${taskId}` };
       this.tasks_.set(taskId, known);
     }
-    if (typeof m["description"] === "string" && m["description"]) known.label = m["description"];
-    if (typeof m["subagent_type"] === "string" && m["subagent_type"]) known.agentType = m["subagent_type"];
+    // Engine-chosen identity strings ride every later update: clamped and
+    // control-visible like the other shell metadata (round 5).
+    if (typeof m["description"] === "string" && m["description"]) known.label = inertToken(m["description"], 200);
+    if (typeof m["subagent_type"] === "string" && m["subagent_type"]) known.agentType = inertToken(m["subagent_type"], 64);
     const identity = {
       ...(known.label ? { label: known.label } : {}),
       ...(known.agentType ? { agentType: known.agentType } : {}),
@@ -933,7 +935,7 @@ export class ClaudeCodeSession implements AgentSession {
       known.done = true;
     } else {
       const patch = (m["patch"] ?? {}) as Record<string, unknown>;
-      if (typeof patch["description"] === "string" && patch["description"]) known.label = patch["description"];
+      if (typeof patch["description"] === "string" && patch["description"]) known.label = inertToken(patch["description"], 200);
       const status = patch["status"];
       const state =
         status === "completed"
