@@ -3854,6 +3854,17 @@ rode `tool_update` with no parentage and re-marked the fleet row working
 detached the client before the exit handler's identity guard, so a
 background child dying with the process kept its deck running (the
 detaching path gives the child its terminal word). Mutation-checked.
+**Round 7 (`1320206`, CI green):** three new findings, all legitimate,
+fixed with a regression each — the checkpoint schema lacked
+`tool_update.parentId`, so the admission gate dropped every parented
+update before buffering or fan-out (the round-6 fix was inert on the wire;
+schema widened; the registry-admission regression is the one that fails
+without it — the store's loader tolerates the field either way); a child's
+open ask outlived the app-server's death for up to its timeout (process
+teardown denies subagent-attributed asks along with abandoning the
+children); an adopted grandchild spoken to again after settling was never
+marked running, so a root turn end forgot it (a `started`/`interacted`
+for an already-adopted thread marks it running again). Mutation-checked.
 
 **Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
 Codex delivers a child thread's items on the parent connection (lane

@@ -594,6 +594,19 @@ test("M.1 each pending permission lives until ITS OWN resolution — never wiped
   reg.end(entry.id);
 });
 
+// PR #122 review: the wire type gained `tool_update.parentId` before the
+// checkpoint schema did, and the admission gate — judged by that schema —
+// silently dropped every parented update before buffering or fan-out.
+test("a subagent's tool_update (parentId set) is admitted, buffered, and fanned out", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "tool_use", name: "apply_patch", id: "cf1", parentId: "codex-agent:c" });
+  reg.broadcast(entry, { type: "tool_update", id: "cf1", detail: "Updated a.ts", input: { changes: [] }, parentId: "codex-agent:c" });
+  const kept = entry.ring.buffer.find((m) => m.type === "tool_update" && m.id === "cf1");
+  assert.ok(kept, "the parented update reached the replay ring");
+  assert.equal((kept as { parentId?: string }).parentId, "codex-agent:c");
+  reg.end(entry.id);
+});
+
 test("2026-07-28 a permission_resolved broadcast drops exactly its ask; the hold lifts only when none pend", () => {
   const { reg, entry } = freshSession();
   // The asks belong to a running model turn, as every real ask does (PR

@@ -1387,6 +1387,56 @@ test("PR #122 review round 6: a background child's late patch snapshot carries i
   s.close();
 });
 
+test("PR #122 review round 7: a background child's open ask is denied when the app-server dies", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: Promise<unknown> | undefined;
+  const { s, msgs, server, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    // The fake rejects a server request its process dies on; that rejection
+    // is the expected outcome here, not an unhandled one.
+    decision = ctx.serverRequest("item/commandExecution/requestApproval", { threadId: "CHILD", itemId: "cc1", command: "git push" }).catch(() => "rejected");
+    ctx.complete("completed"); // the parent did not wait
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  assert.equal(ask.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "permission_resolved"), "still pending after the root turn");
+  server.clients[0]!.exit();
+  const resolved = msgs.find((m) => m.type === "permission_resolved" && m.id === ask.id);
+  assert.deepEqual(resolved?.allow, false, "the ask dies with the process, denied, not left for the timeout");
+  assert.equal(msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!.state, "interrupted");
+  // `decision` never settles: the fake's request died with its process, and
+  // the session correctly answers nothing to an exited client.
+  void decision;
+  s.close();
+});
+
+test("PR #122 review round 7: a settled grandchild spoken to again is running again — the root turn's end does not forget it", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    // Reactivated: the child speaks to it again and it runs a command.
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa3", kind: "interacted", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g2", command: "sleep 2", status: "inProgress" }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g2", delta: "back\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g2", command: "sleep 2", aggregatedOutput: "back\n", exitCode: 0, status: "completed" }));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = await waitFor(msgs, (m) => m.type === "tool_result" && m.id === "g2");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g2").length, 1, "one announcement, no duplicate");
+  assert.deepEqual([result.parentId, result.output], [anchor, "back\n"]);
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g2" && m.parentId === anchor), "its late output still rides the deck");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

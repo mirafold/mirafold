@@ -964,7 +964,15 @@ export class CodexEventMapper {
    *  the nearest visible ancestor — so its items ride the same lane. It gets
    *  no deck or task row of its own: the child's lifecycle is the deck's. */
   private adoptGrandchild(thread: string, parentId: string) {
-    if (thread && !this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS) {
+    if (!thread) return;
+    if (this.subagentAnchor.get(thread) === parentId) {
+      // Already riding this deck — spoken to again (a `send`, an
+      // `interacted`) after it had settled: running again until its next
+      // terminal word.
+      this.runningChildren.add(thread);
+      return;
+    }
+    if (!this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS) {
       this.subagentAnchor.set(thread, parentId);
       this.adoptedThreads.add(thread);
       // Running from its spawn: its bookkeeping outlives the root turn until
@@ -998,7 +1006,7 @@ export class CodexEventMapper {
     const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
     const kind = typeof item.kind === "string" && item.kind ? inertToken(item.kind, 48) : "activity";
     const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
-    if (item.kind === "started") this.adoptGrandchild(thread, parentId);
+    if (item.kind === "started" || item.kind === "interacted") this.adoptGrandchild(thread, parentId);
     if (thread && (item.kind === "completed" || item.kind === "interrupted") && this.subagentAnchor.get(thread) === parentId) {
       this.forgetChildThread(thread);
     }

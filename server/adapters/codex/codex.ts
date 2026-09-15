@@ -350,9 +350,17 @@ export class CodexSession implements AgentSession {
       // Detaching first means the exit handler's identity guard will not
       // run: a background child dying with this process gets its terminal
       // word here instead (PR #122 review).
-      if (!this.closed) this.eventMapper.abandonChildren();
+      if (!this.closed) this.abandonChildren();
     }
     client.kill();
+  }
+
+  /** The engine process is going or gone: every background child's deck
+   *  gets its terminal word, and a child's open ask is denied — the process
+   *  that could consume the answer no longer exists (PR #122 review). */
+  private abandonChildren() {
+    this.eventMapper.abandonChildren();
+    this.permissions.denyAll("teardown", (ask) => !ask.parentId);
   }
 
   private awaitStartup<T>(turn: ActiveTurn, pending: Promise<T>) {
@@ -461,8 +469,9 @@ export class CodexSession implements AgentSession {
       if (this.client !== client) return;
       this.threadReady = undefined;
       // A child that outlived the root turn died with the process: its deck
-      // gets a terminal word now, or it would read "running" forever.
-      if (!this.closed) this.eventMapper.abandonChildren();
+      // gets a terminal word now, or it would read "running" forever — and
+      // its open ask is denied, since nothing is left to consume an answer.
+      if (!this.closed) this.abandonChildren();
       this.activeTurn?.finish({ exited: true });
     });
     this.threadReady = (async () => {
