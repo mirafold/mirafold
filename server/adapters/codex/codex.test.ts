@@ -1265,6 +1265,62 @@ test("PR #122 review round 3: a child's terminal word flushes its streaming rows
   s.close();
 });
 
+test("PR #122 review round 4: a child preserved past the root turn gets a terminal word when the app-server exits", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, server, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 9", status: "inProgress" }, "started"));
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "tick\n" });
+    complete("completed");
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.state !== "running"), "still running when the process dies");
+  server.clients[0]!.exit();
+  const terminal = msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!;
+  assert.equal(terminal.state, "interrupted", "the deck no longer reads running");
+  const terminalAt = msgs.indexOf(terminal);
+  assert.ok(msgs.some((m, i) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "cc1" && i < terminalAt), "its streaming row flushed first");
+  s.close();
+});
+
+test("PR #122 review round 4: an approval for a child item the flood cap refused is still attributed to the child's deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: unknown;
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions({ childItemCap: 1 }, async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm1", text: "one", phase: "commentary" })); // fills the cap
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc2", command: "git push", status: "inProgress" }, "started")); // refused
+    decision = await ctx.serverRequest("item/commandExecution/requestApproval", { threadId: "CHILD", itemId: "cc2", command: "git push" });
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  const ask = await answerAsk(s, msgs, 1, false);
+  await awaitTurnEnd();
+  assert.equal(ask.parentId, anchor, "attributed by thread when the item is untracked");
+  assert.deepEqual(decision, { decision: "decline" });
+  s.close();
+});
+
+test("PR #122 review round 4: a child whose turn failed is a failed task with the engine's diagnostic — the activity item's 'completed' does not undo it", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm1", text: "trying", phase: "commentary" }));
+    ctx.notify("turn/completed", { threadId: "CHILD", turn: { id: "ct1", status: "failed", error: { message: "quota exceeded" } } });
+    ctx.notify(...settled("CHILD")); // the engine's activity item still says completed
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update" && m.id === anchor);
+  assert.deepEqual(tasks.map((m) => m.state), ["running", "failed", "failed"]);
+  assert.equal(tasks[1]!.report, "quota exceeded");
+  assert.ok(!msgs.some((m) => m.type === "error"), "the child's failure is not the parent's turn error");
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

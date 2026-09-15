@@ -724,6 +724,9 @@ export class CodexEventMapper {
   // Threads a CHILD spawned: they share their parent's deck, so their own
   // lifecycle words must never restate that deck's task row.
   private adoptedThreads = new Set<string>();
+  // Direct children whose own turn failed: the activity item that follows
+  // says "completed", and the failure is the word that stands.
+  private failedChildren = new Set<string>();
   private childReports = new Map<string, ReturnType<typeof capOutput>>();
   private static readonly MAX_CHILD_ITEMS = 5_000;
   private readonly maxChildItems: number;
@@ -737,6 +740,22 @@ export class CodexEventMapper {
   /** The deck a child's item belongs to, for attributing its approval ask. */
   parentOf(itemId: string): string | undefined {
     return this.childItems.get(itemId);
+  }
+
+  /** The deck a child THREAD belongs to — the attribution fallback when the
+   *  ask names an item the flood cap refused to track. */
+  anchorOf(thread: string): string | undefined {
+    return this.subagentAnchor.get(thread);
+  }
+
+  /** The engine process is gone: every child it was running is not running
+   *  any more. Each preserved direct child gets the terminal word its deck
+   *  would otherwise never receive, and every thread's bookkeeping goes. */
+  abandonChildren() {
+    for (const thread of [...this.runningChildren]) {
+      if (this.adoptedThreads.has(thread)) this.forgetChildThread(thread);
+      else this.emitTask(thread, "interrupted");
+    }
   }
 
   /** One notification from a CHILD thread — its own items, prose, and
@@ -794,9 +813,35 @@ export class CodexEventMapper {
         if (forwarded) this.options.emit({ type: "thinking_delta", text: forwarded, parentId });
         break;
       }
+      case "turn/completed": {
+        // The child's own turn is not the parent's — but its FAILURE is the
+        // only detailed word on why a child came back empty (a provider or
+        // model error), and the activity item that follows says "completed".
+        const turn = (p["turn"] ?? {}) as { status?: unknown; error?: unknown };
+        if (turn.status === "failed") this.failChild(thread, parentId, turn.error);
+        break;
+      }
       default:
-        break; // turn/*, thread/status/*, token usage: the child's own bookkeeping
+        break; // turn/started, thread/status/*, token usage: the child's own bookkeeping
     }
+  }
+
+  /** A child's turn failed: its deck says so, with the engine's capped
+   *  diagnostic as the report, and the activity item's later "completed"
+   *  keeps reading as failed. A grandchild's failure is narrated in the lane
+   *  it rides (no deck of its own). */
+  private failChild(thread: string, parentId: string, error: unknown) {
+    // The engine's own message, scrubbed of a configured endpoint like the
+    // root turn's diagnostic; it rides the wire as the deck's report.
+    const diagnostic = capOutput(this.options.providerDiagnostic(turnErrorMessage(error) ?? error) || "the subagent's turn failed");
+    if (this.adoptedThreads.has(thread)) {
+      const forwarded = this.subagentProse.take(parentId, `subagent failed: ${firstLine(diagnostic.text, 200)}\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
+      this.forgetChildThread(thread);
+      return;
+    }
+    this.failedChildren.add(thread); // bounded: the thread is anchored
+    this.emitTask(thread, "failed", diagnostic);
   }
 
   private onChildItem(thread: string, parentId: string, item: CodexItem | undefined, phase: ItemPhase) {
@@ -987,7 +1032,9 @@ export class CodexEventMapper {
       item.kind === "started" || item.kind === "interacted"
         ? "running"
         : item.kind === "completed"
-          ? "completed"
+          ? this.failedChildren.delete(thread)
+            ? "failed" // its turn failed; the activity item closing it is not a success
+            : "completed"
           : item.kind === "interrupted"
             ? "interrupted"
             : undefined;

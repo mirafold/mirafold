@@ -456,6 +456,9 @@ export class CodexSession implements AgentSession {
     client.onExit(() => {
       if (this.client !== client) return;
       this.threadReady = undefined;
+      // A child that outlived the root turn died with the process: its deck
+      // gets a terminal word now, or it would read "running" forever.
+      if (!this.closed) this.eventMapper.abandonChildren();
       this.activeTurn?.finish({ exited: true });
     });
     this.threadReady = (async () => {
@@ -565,8 +568,13 @@ export class CodexSession implements AgentSession {
     const p = (params ?? {}) as Record<string, unknown>;
     const reason = typeof p["reason"] === "string" ? p["reason"] : undefined;
     // An ask raised by a CHILD's item is attributed to its deck — the bar
-    // shows which subagent wants the escalation (PR #122 review).
-    const parentId = typeof p["itemId"] === "string" ? this.eventMapper.parentOf(p["itemId"]) : undefined;
+    // shows which subagent wants the escalation (PR #122 review). The
+    // request names its thread too, which still attributes an item the
+    // flood cap refused to track.
+    const threadId = typeof p["threadId"] === "string" && p["threadId"] !== this.threadId ? p["threadId"] : undefined;
+    const parentId =
+      (typeof p["itemId"] === "string" ? this.eventMapper.parentOf(p["itemId"]) : undefined) ??
+      (threadId ? this.eventMapper.anchorOf(threadId) : undefined);
     const respond = (result: unknown) => {
       if (this.client === client && !client.exited) client.respond(id, result);
     };
