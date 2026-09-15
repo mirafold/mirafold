@@ -955,9 +955,23 @@ export class CodexEventMapper {
 
   /** A thread's still-streaming rows flush now — before its terminal word
    *  goes out — so no snapshot timer fires after the task is over and no
-   *  orphaned track lingers in the live-output table (PR #122 review). */
-  private settleChildOutput(thread: string) {
-    for (const id of this.childThreadItems.get(thread) ?? []) this.live.settle(id);
+   *  orphaned track lingers in the live-output table; a row the child never
+   *  finished gets an honest result, since no turn_end will settle it once
+   *  the root turn is already over (PR #122 review). */
+  private settleChildOutput(thread: string, state: TaskState = "interrupted") {
+    for (const id of this.childThreadItems.get(thread) ?? []) {
+      if (this.announced.has(id)) {
+        this.finishTool(id, { output: state === "completed" ? "(no result reported)" : "(interrupted)", isError: state !== "completed" });
+      } else {
+        this.live.settle(id);
+      }
+    }
+  }
+
+  /** Session close: every live-output timer dies without emitting — a
+   *  throttled child snapshot must not become a record after close. */
+  discard() {
+    this.live.discard();
   }
 
   /** A thread a CHILD spawned or messaged anchors on that child's own deck —
@@ -1021,7 +1035,7 @@ export class CodexEventMapper {
     if (!id || this.adoptedThreads.has(thread)) return;
     const label = this.taskLabels.get(thread);
     const terminal = state !== "running" && state !== "unknown";
-    if (terminal) this.settleChildOutput(thread); // the last evidence precedes the terminal word
+    if (terminal) this.settleChildOutput(thread, state); // the last evidence precedes the terminal word
     this.options.emit({
       type: "task_update",
       id,
@@ -1057,6 +1071,9 @@ export class CodexEventMapper {
           : item.kind === "interrupted"
             ? "interrupted"
             : undefined;
+    // A restarted child (spoken to again after a failed turn) starts clean:
+    // its earlier failure must not be pinned on the retry's completion.
+    if (lifecycle === "running") this.failedChildren.delete(thread);
     // In app-server 0.153.4 a spawn surfaces as THIS event, not as a collab
     // item (verified live 2026-09-15): the announcement itself anchors the
     // child, with an opaque task-scoped handle the projection turns into a

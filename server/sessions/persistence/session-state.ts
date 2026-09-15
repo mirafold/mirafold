@@ -169,7 +169,10 @@ export function reduceSessionState(
     // root turn ended — a background child that outlived it — must not
     // re-mark the session working either: no turn_end would ever idle it
     // again, and the fleet would read "working" forever (PR #122 review).
-    const subagentTraffic = msg.type === "task_update" || ("parentId" in msg && Boolean(msg.parentId));
+    // A `notice` is the shell's or the engine's word about something, never
+    // proof a turn is running (a child-flood notice can arrive after the
+    // root turn ended).
+    const subagentTraffic = msg.type === "task_update" || msg.type === "notice" || ("parentId" in msg && Boolean(msg.parentId));
     if (!subagentTraffic || next.modelTurnsPending > 0 || next.bangActive) next.status = "working";
   }
 

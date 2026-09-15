@@ -1437,6 +1437,60 @@ test("PR #122 review round 7: a settled grandchild spoken to again is running ag
   s.close();
 });
 
+test("PR #122 review round 8: a child's throttled snapshot timer dies with close() — nothing emits after close", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "tail -f log", status: "inProgress" }, "started"));
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 1\n" });
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 2\n" }); // within the throttle: a timer is pending
+    complete("completed");
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  s.close();
+  const before = msgs.length;
+  await new Promise((r) => setTimeout(r, 400)); // past the snapshot interval
+  assert.equal(msgs.length, before, "the pending snapshot never became a record after close");
+});
+
+test("PR #122 review round 8: a child restarted after a failed turn completes clean — the old failure is not pinned on the retry", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify("turn/completed", { threadId: "CHILD", turn: { id: "ct1", status: "failed", error: { message: "quota exceeded" } } });
+    // No activity item closes the failed attempt: the parent speaks to the
+    // same thread again straight away, and this time it succeeds.
+    ctx.notify(...settled("CHILD", "interacted", "sa-2"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm2", text: "second time lucky", phase: "final_answer" }));
+    ctx.notify(...settled("CHILD", "completed", "sa-3"));
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === anchor).map((m) => [m.state, m.report]);
+  assert.deepEqual(states, [["running", undefined], ["failed", "quota exceeded"], ["running", undefined], ["completed", "second time lucky"]]);
+  s.close();
+});
+
+test("PR #122 review round 8: a child interrupted mid-call leaves no row running inside a terminal deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 99", status: "inProgress" }, "started"),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "partial\n" }],
+    settled("CHILD", "interrupted"), // no item/completed ever comes for cc1
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "cc1")!;
+  assert.ok(result, "the unfinished row got a result");
+  assert.deepEqual([result.parentId, result.output, result.isError], [anchor, "(interrupted)", true]);
+  const terminalAt = msgs.findIndex((m) => m.type === "task_update" && m.state === "interrupted");
+  assert.ok(msgs.indexOf(result) < terminalAt, "settled before the terminal word");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

@@ -33,6 +33,7 @@ test("a subagent's traffic after the root turn ended never re-marks the session 
     { type: "tool_output_snapshot", id: "c1", revision: 1, head: "…", parentId: "codex-agent:c" },
     { type: "tool_result", output: "ok", id: "c1", parentId: "codex-agent:c" },
     { type: "task_update", id: "codex-agent:c", state: "completed", report: "done" },
+    { type: "notice", text: "Codex subagent activity past Mirafold's per-session limit is not shown.", kind: "info" },
   ];
   for (const msg of late) {
     s = run([msg], s);
@@ -57,8 +58,11 @@ test("a subagent's ask survives the root turn's end in the mirror and holds the 
   ], s);
   assert.deepEqual(s.permissions.map((p) => p.id), ["child-ask"], "the child's ask is still pending");
   assert.equal(s.status, "permission", "the row shows the hold, not idle");
-  // A late patch snapshot from that child (no root turn) changes nothing.
+  // A late patch snapshot from that child (no root turn) changes nothing;
+  // nor does a shell-voiced notice (the child-flood cap says so once).
   s = run([{ type: "tool_update", id: "cf1", detail: "Updated a.ts", parentId: "codex-agent:c" }], s);
+  assert.equal(s.status, "permission");
+  s = run([{ type: "notice", text: "Codex subagent activity past Mirafold's per-session limit is not shown.", kind: "info" }], s);
   assert.equal(s.status, "permission");
   s = run([{ type: "permission_resolved", id: "child-ask", allow: true }], s);
   assert.deepEqual(s.permissions, []);

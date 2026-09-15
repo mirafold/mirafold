@@ -3865,6 +3865,16 @@ teardown denies subagent-attributed asks along with abandoning the
 children); an adopted grandchild spoken to again after settling was never
 marked running, so a root turn end forgot it (a `started`/`interacted`
 for an already-adopted thread marks it running again). Mutation-checked.
+**Round 8 (`73711c3`, CI green):** four new findings, all legitimate,
+fixed with a regression each — a background child's throttled snapshot
+timer could fire after `close()` (`LiveOutput.discard()`: every timer
+dies unemitted); a child restarted after a failed turn had the old failure
+pinned on its retry's completion (a running lifecycle clears the marker);
+the child-flood notice after the root turn re-marked the fleet row working
+(a `notice` never re-marks an idle session working — the daemon reducer);
+a child interrupted mid-call left its row running inside a terminal deck
+(every unfinished child row gets an honest `(interrupted)` result before
+the terminal word). Mutation-checked.
 
 **Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
 Codex delivers a child thread's items on the parent connection (lane

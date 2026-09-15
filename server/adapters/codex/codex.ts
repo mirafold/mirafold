@@ -378,6 +378,9 @@ export class CodexSession implements AgentSession {
     this.closed = true;
     this.interrupt();
     this.permissions.denyAll(); // an unanswered ask must not pin a turn open
+    // A background child's throttled snapshot timer would call the emitter
+    // directly after close; every live-output track dies here, unemitted.
+    this.eventMapper.discard();
     this.queue.push(CLOSE);
     this.client?.kill();
   }
