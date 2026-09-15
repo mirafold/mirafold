@@ -596,6 +596,9 @@ test("M.1 each pending permission lives until ITS OWN resolution — never wiped
 
 test("2026-07-28 a permission_resolved broadcast drops exactly its ask; the hold lifts only when none pend", () => {
   const { reg, entry } = freshSession();
+  // The asks belong to a running model turn, as every real ask does (PR
+  // #122: a lifted hold with nothing underneath reads idle, not working).
+  entry.modelTurnsPending = 1;
   reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf x", id: "p1" });
   reg.broadcast(entry, { type: "permission_request", tool: "Write", detail: "f.txt", id: "p2" });
   // The adapter announced p1's resolution (timeout path: answerPermission

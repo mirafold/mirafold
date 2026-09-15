@@ -144,12 +144,16 @@ export type SessionMsgBody =
   // `elapsedMs` (optional/additive, Phase TF): the ENGINE's own running
   // clock for the call (Claude's tool_progress), so a replayed row can say
   // how long the engine reports it has run. It is not output.
+  // `parentId` (optional/additive, PR #122): set when the updated row is a
+  // subagent's, so a late patch snapshot from a background child is never
+  // read as root-turn activity.
   | {
       type: "tool_update";
       id: string;
       detail?: string;
       input?: Record<string, unknown>;
       elapsedMs?: number;
+      parentId?: string;
     }
   // `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting

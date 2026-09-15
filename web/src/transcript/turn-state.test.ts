@@ -148,6 +148,25 @@ test("a subagent's traffic after the root turn ended never re-opens busy; during
   assert.equal(reduceTurn(ended, { kind: "message", msg: { type: "text_delta", text: "root" } }).state.busy, true);
 });
 
+test("a subagent's ask survives the root turn's end on screen; a root ask does not", () => {
+  const s = play([
+    { type: "user_prompt", text: "spawn and don't wait" },
+    { type: "permission_request", tool: "Shell", detail: "git push", id: "child-ask", parentId: "codex-agent:c" },
+    { type: "permission_request", tool: "Shell", detail: "rm x", id: "root-ask" },
+    { type: "turn_end" },
+  ]).state;
+  assert.deepEqual(s.asks.map((a) => a.id), ["child-ask"], "the child's ask is still the user's to answer");
+  assert.equal(s.busy, false);
+  const answered = reduceTurn(s, { kind: "message", msg: { type: "permission_resolved", id: "child-ask", allow: true } }).state;
+  assert.deepEqual(answered.asks, []);
+  const errored = play([
+    { type: "user_prompt", text: "x" },
+    { type: "permission_request", tool: "Shell", detail: "git push", id: "child-ask", parentId: "codex-agent:c" },
+    { type: "error", message: "boom" },
+  ]).state;
+  assert.deepEqual(errored.asks.map((a) => a.id), ["child-ask"], "a terminal root error keeps it too");
+});
+
 // AUDIT 2026-08-26 (hardening): a message the reducer ignores — or one that
 // leaves every rendered field as it was — must return `prev` itself, or the
 // whole Shell re-renders per frame (the OutputZone's full row map included)

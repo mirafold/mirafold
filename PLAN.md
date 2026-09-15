@@ -3843,7 +3843,17 @@ turn reducer (subagent traffic proves busy only while a turn is open) and
 the daemon's session-state reducer (subagent traffic or a task lifecycle
 word never re-marks an idle session working), the second being the same
 class on the fleet row for any adapter with background children.
-Mutation-checked.
+Mutation-checked. **Round 6 (`9ce36fa`, CI green):** three new findings,
+all legitimate, fixed with a regression each — a background child's ask
+survived in the ledger but vanished from every UI at the root `turn_end`
+(both reducers now keep subagent-attributed asks: the browser's ask list
+and the daemon's fleet mirror, which holds the row at "permission" and
+lifts to idle when nothing is underneath); a child's late patch snapshot
+rode `tool_update` with no parentage and re-marked the fleet row working
+(`tool_update.parentId`, optional/additive); the interrupt-grace kill
+detached the client before the exit handler's identity guard, so a
+background child dying with the process kept its deck running (the
+detaching path gives the child its terminal word). Mutation-checked.
 
 **Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
 Codex delivers a child thread's items on the parent connection (lane

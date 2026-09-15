@@ -580,7 +580,8 @@ export class CodexEventMapper {
       this.announceTool(id, "apply_patch", summary, { changes });
     } else if (this.fileChangeSnapshots.get(id) !== signature) {
       this.fileChangeSnapshots.set(id, signature);
-      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes } });
+      const parentId = this.childItems.get(id);
+      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes }, ...(parentId ? { parentId } : {}) });
     }
     return summary;
   }

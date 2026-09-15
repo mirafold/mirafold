@@ -347,6 +347,10 @@ export class CodexSession implements AgentSession {
     if (this.client === client) {
       this.client = undefined;
       this.threadReady = undefined;
+      // Detaching first means the exit handler's identity guard will not
+      // run: a background child dying with this process gets its terminal
+      // word here instead (PR #122 review).
+      if (!this.closed) this.eventMapper.abandonChildren();
     }
     client.kill();
   }

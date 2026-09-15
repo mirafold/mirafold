@@ -46,11 +46,36 @@ test("a subagent's traffic after the root turn ended never re-marks the session 
   assert.equal(run([{ type: "text_delta", text: "root" }], s).status, "working");
 });
 
+// PR #122 review: a background child's ask is raised before the root turn
+// ends and must stay answerable after it — on the fleet row too.
+test("a subagent's ask survives the root turn's end in the mirror and holds the row; a root ask does not", () => {
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([
+    { type: "permission_request", tool: "Shell", detail: "git push", id: "child-ask", parentId: "codex-agent:c" },
+    { type: "permission_request", tool: "Shell", detail: "rm x", id: "root-ask" },
+    { type: "turn_end" },
+  ], s);
+  assert.deepEqual(s.permissions.map((p) => p.id), ["child-ask"], "the child's ask is still pending");
+  assert.equal(s.status, "permission", "the row shows the hold, not idle");
+  // A late patch snapshot from that child (no root turn) changes nothing.
+  s = run([{ type: "tool_update", id: "cf1", detail: "Updated a.ts", parentId: "codex-agent:c" }], s);
+  assert.equal(s.status, "permission");
+  s = run([{ type: "permission_resolved", id: "child-ask", allow: true }], s);
+  assert.deepEqual(s.permissions, []);
+  assert.equal(s.status, "idle", "nothing underneath once the child's ask is answered");
+  // A root ask alone is void at turn_end, as before.
+  let t = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  t = run([{ type: "permission_request", tool: "Shell", detail: "rm x", id: "root-ask" }, { type: "turn_end" }], t);
+  assert.deepEqual([t.permissions, t.status], [[], "idle"]);
+});
+
 test("a permission hold sticks through bang traffic and lifts only when nothing pends", () => {
+  // The asks belong to a running turn (PR #122: with nothing underneath, a
+  // lifted hold reads idle rather than working).
   let s = run([
     { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" },
     { type: "permission_request", tool: "Bash", detail: "curl | sh", id: "p2" },
-  ]);
+  ], reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state);
   assert.equal(s.status, "permission");
   s = run([{ type: "bang_start", command: "git diff", id: "b1" }, { type: "bang_end", id: "b1", exitCode: 0 }], s);
   assert.equal(s.status, "permission");

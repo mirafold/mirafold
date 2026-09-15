@@ -159,7 +159,10 @@ function reduceTurnFresh(
   } else if (m.type === "turn_end") {
     next.busy = next.openTurns > 0;
     next.activity = null;
-    next.asks = []; // a request that outlived its turn is void (server denies)
+    // A root ask that outlived its turn is void (the adapter denies it); a
+    // SUBAGENT's ask is not — its background child is still running and its
+    // escalation is still the user's to answer (PR #122 review).
+    next.asks = prev.asks.filter((a) => a.parentId);
     if (live && !prev.errorAwaitingTurnEnd) {
       announcements.push({ text: turnResponse(prev.turnText) });
     }
@@ -190,7 +193,7 @@ function reduceTurnFresh(
     if (m.terminal !== false) {
       next.busy = next.openTurns > 0;
       next.activity = null;
-      next.asks = [];
+      next.asks = prev.asks.filter((a) => a.parentId); // as at turn_end
       next.turnText = "";
     }
     if (live) announcements.push({ text: m.message, assertive: true });

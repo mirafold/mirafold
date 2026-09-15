@@ -1341,6 +1341,52 @@ test("PR #122 review round 5: a child's written plan rides its lane as commentar
   s.close();
 });
 
+test("PR #122 review round 6: the interrupt-grace kill gives a background child its terminal word", async () => {
+  const anchor = "codex-agent:CHILD";
+  const server = fakeAppServer({ interruptCompletes: false });
+  server.turns.push(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    complete("completed"); // the parent did not wait; the child keeps running
+  });
+  server.turns.push(async (ctx) => {
+    ctx.notify("item/agentMessage/delta", { itemId: "m2", delta: "working" });
+    await new Promise<void>(() => {}); // wedged: Stop's grace fallback will kill the process
+  });
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer, interruptGraceMs: 20 });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("spawn");
+  await waitForTurnEnds(msgs, 1);
+  s.pushPrompt("hang after Stop");
+  await waitFor(msgs, (m) => m.type === "text_delta" && m.text === "working");
+  s.interrupt();
+  await waitForTurnEnds(msgs, 2);
+  assert.equal(server.clients[0]?.exited, true, "the grace fallback reaped the client");
+  const terminal = msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!;
+  assert.equal(terminal.state, "interrupted", "the child died with the process and its deck says so");
+  s.close();
+});
+
+test("PR #122 review round 6: a background child's late patch snapshot carries its parentage", async () => {
+  const anchor = "codex-agent:CHILD";
+  const patch = [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }];
+  const { s, msgs, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "fileChange", id: "cf1", status: "inProgress", changes: [] }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/fileChange/patchUpdated", { threadId: "CHILD", itemId: "cf1", changes: patch });
+    notify(...childItem("CHILD", { type: "fileChange", id: "cf1", status: "completed", changes: patch }));
+    notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  const update = msgs.find((m) => m.type === "tool_update" && m.id === "cf1")!;
+  assert.equal(update.parentId, anchor, "the late snapshot is the child's, on the wire");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);
