@@ -5022,6 +5022,52 @@ the `evicted` replay flag. Committed as one coherent checkpoint.
   turn_end/task handling, grouping rule, trust boundary (every engine
   string is a text node), capabilities vs. actual emissions.
 
+### TF6 — Verify and hand off (✅ local candidate 2026-09-15; push/PR await Kyle)
+
+- **TF6.1 docs:** `docs/ADAPTERS.md` (I4 rewritten; capability table rows
+  for tool records, live output, task lifecycle, subagent lane; TS.8 and
+  TS.11 revised; new "Bounded, honest evidence" and "Declared
+  capabilities" sections), `README.md` (the compact transcript and
+  `show details`), this Phase TF section. No doc promises full logs, calls
+  every nonzero exit a success, or says commentary folds or subagent prose
+  is dropped.
+- **TF6.2 final gates on `bd520ca`** (source == the built `dist` /
+  `dist-server`; every browser gate ran through the isolated daemon harness
+  on the BUILT bundle, Chrome 152 via playwright-core 1.61.1, managed
+  chromium/firefox/webkit for the matrix):
+  - `yarn typecheck` — clean.
+  - Unit gate — 1,288/1,288 across 128 files (five dotenv-fixture files
+    excluded: `server/project-env.test.ts`,
+    `server/project-env-safety.test.ts`, `server/render-image.test.ts`,
+    `server/sessions/workspace/git/git.test.ts`,
+    `server/sessions/workspace/filesystem/fs-folder-tree.test.ts`).
+  - Tier-2 (`yarn build:server` + `.itest.ts`, `--test-concurrency=1`,
+    `fs-folder-tree.itest.ts` excluded) — 185/185 on `2c2e85c`; server
+    sources are byte-identical on `bd520ca` (only web files and PNG
+    baselines changed after), so the result stands.
+  - Tier-3 (`yarn build` + every `.e2e.ts`) — 153/153 on `bd520ca`, one
+    contiguous run.
+  - UI matrix (`yarn test:ui:built`: managed browsers + Ubuntu visual
+    baselines) — 11/11 on `bd520ca`; five baselines regenerated after
+    inspecting each diff (status bar only).
+  - NOT run: `yarn test:live` (spends provider accounts), remote CI (needs
+    a push), `scripts/packaged-pass.mjs` (a release artifact, out of scope).
+- **TF6.3 delivery:** four signed commits on `feature/transcript-fidelity`
+  (`974930f`, `3c487f9`, `2c2e85c`, `bd520ca`) from `next` @ `d3ec718`.
+  NOT pushed, no PR — Kyle's git rule: a push and a PR are each his
+  explicit ask. Nothing touched `main`, no tag, version, or release.
+  Prerequisite to the PR: Kyle says "push" / "open the PR"; the branch then
+  needs the current-head CI and the automated review comments read and
+  answered before he decides on the merge.
+
+**Residuals (recorded, not hidden):** Codex child-thread inner activity —
+unverified whether app-server 0.153.4 delivers other-thread notifications
+on the parent connection (no live spawning run); declared absent in
+`capabilities` and said so in the deck. Claude `task_started` /
+`parent_tool_use_id` identity is contracted by the SDK types, not observed
+live. Live per-provider comparison (TF5.2) not performed. Reasoning titles:
+no engine exposes one on these surfaces, so the label is "Thinking".
+
 ---
 
 ## Post-release ideas (parked — organize after R.7)
