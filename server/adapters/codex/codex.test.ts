@@ -1093,6 +1093,112 @@ test("PR #122 review: a grandchild rides its parent's deck — the nearest visib
   s.close();
 });
 
+test("PR #122 review round 2: a child notification buffered after close() emits nothing", async () => {
+  // A real process exits some time after SIGTERM; the fake exits at once, so
+  // its kill is deferred here to open exactly that window.
+  const server = fakeAppServer();
+  let notifyLate: ((method: string, params: Record<string, unknown>) => void) | undefined;
+  server.turns.push(async ({ notify, complete }) => {
+    notifyLate = notify;
+    notify(...spawned("CHILD"));
+    complete("completed");
+  });
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    makeAppServer: (spec) => {
+      const client = server.makeAppServer(spec);
+      const realKill = client.kill.bind(client);
+      client.kill = () => void setTimeout(realKill, 20);
+      return client;
+    },
+  });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("go");
+  await waitForTurnEnds(msgs, 1);
+  s.close();
+  const before = msgs.length;
+  notifyLate!(...childItem("CHILD", { type: "agentMessage", id: "ghost", text: "boo", phase: "commentary" }));
+  notifyLate!(...settled("CHILD"));
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(msgs.length, before, "no ghost record after close");
+});
+
+test("PR #122 review round 2: a child's stdin, MCP progress, and patch snapshots ride its running rows", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "python", status: "inProgress" }, "started"),
+    ["item/commandExecution/terminalInteraction", { threadId: "CHILD", itemId: "cc1", processId: "p1", stdin: "print(1)\n" }],
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "python", aggregatedOutput: "1\n", exitCode: 0, status: "completed" }),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: "docs", tool: "search", arguments: { q: "x" }, status: "inProgress" }, "started"),
+    ["item/mcpToolCall/progress", { threadId: "CHILD", itemId: "cm1", message: "indexing 3/9" }],
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: "docs", tool: "search", arguments: { q: "x" }, status: "completed", result: { content: [{ type: "text", text: "hit" }] } }),
+    childItem("CHILD", { type: "fileChange", id: "cf1", status: "inProgress", changes: [] }, "started"),
+    ["item/fileChange/patchUpdated", { threadId: "CHILD", itemId: "cf1", changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }] }],
+    childItem("CHILD", { type: "fileChange", id: "cf1", status: "completed", changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }] }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const streamed = (id: string) =>
+    msgs
+      .filter((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === id)
+      .map((m) => [m.parentId, m.type === "tool_output_snapshot" ? `${m.output ?? ""}${m.tail ?? ""}` : m.text].join("|"))
+      .join("\n");
+  assert.ok(/codex-agent:CHILD\|.*‹stdin› print\(1\)/.test(streamed("cc1")), "the typed stdin shows in the child's running row");
+  assert.ok(/codex-agent:CHILD\|.*indexing 3\/9/.test(streamed("cm1")), "MCP progress shows in the child's running row");
+  const patch = msgs.find((m) => m.type === "tool_update" && m.id === "cf1");
+  assert.ok(patch, "the patch snapshot updates the child's announced row");
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "cf1")?.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool"), "none of it steers the root activity line");
+  s.close();
+});
+
+test("PR #122 review round 2: a child's approval ask is attributed to its deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: unknown;
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    decision = await ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "cc1", command: "git push", reason: "network" });
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", aggregatedOutput: "", exitCode: 0, status: "completed" }));
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  const ask = await answerAsk(s, msgs, 1, true);
+  await awaitTurnEnd();
+  assert.deepEqual([ask.tool, ask.parentId], ["Shell", anchor], "the bar knows which subagent is asking");
+  assert.deepEqual(decision, { decision: "accept" });
+  assert.equal(msgs.find((m) => m.type === "permission_request" && !m.parentId), undefined, "no root-attributed copy of the ask");
+  s.close();
+});
+
+test("PR #122 review round 2: a grandchild still running when the root turn ends keeps its parentage and never re-announces", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", status: "inProgress" }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g1", delta: "still here\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", aggregatedOutput: "still here\n", exitCode: 0, status: "completed" }));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g1").length, 1, "one announcement across the turn boundary");
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "g1")!;
+  assert.deepEqual([result.parentId, result.output], [anchor, "still here\n"], "the grandchild's result still rides the child's deck");
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g1" && m.parentId === anchor), "its late output too");
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.id !== anchor), "no deck for the grandchild");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

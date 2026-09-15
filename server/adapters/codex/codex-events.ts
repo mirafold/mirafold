@@ -250,21 +250,12 @@ export class CodexEventMapper {
       case "item/fileChange/patchUpdated":
         this.publishFileChange(String(p["itemId"] ?? ""), p["changes"]);
         break;
-      case "item/mcpToolCall/progress": {
-        // The call's own progress line, in the running row's live preview —
-        // what the TUI prints while an MCP tool works (Phase TF2.3).
-        const message = typeof p["message"] === "string" ? p["message"] : "";
-        if (message) this.streamToolOutput(String(p["itemId"] ?? ""), `${inertToken(message, 500)}\n`);
+      case "item/mcpToolCall/progress":
+        this.onMcpProgress(String(p["itemId"] ?? ""), p["message"]);
         break;
-      }
-      case "item/commandExecution/terminalInteraction": {
-        // Bytes the AGENT typed into its running command's PTY: shown in the
-        // output stream marked as input, the way an echoing terminal shows
-        // them (Phase TF2.3). `processId` ties it to the same running item.
-        const stdin = typeof p["stdin"] === "string" ? p["stdin"].replace(/\r?\n$/, "") : "";
-        if (stdin) this.streamToolOutput(String(p["itemId"] ?? ""), `‹stdin› ${inertToken(stdin, 500)}\n`);
+      case "item/commandExecution/terminalInteraction":
+        this.onTerminalInteraction(String(p["itemId"] ?? ""), p["stdin"]);
         break;
-      }
       case "item/plan/delta": {
         // The model's written plan streams like prose and is narration by
         // nature — never the answer.
@@ -601,10 +592,24 @@ export class CodexEventMapper {
     this.live.append(itemId, delta, this.childItems.get(itemId));
   }
 
+  /** The call's own progress line, in the running row's live preview — what
+   *  the TUI prints while an MCP tool works (Phase TF2.3). */
+  private onMcpProgress(itemId: string, message: unknown) {
+    if (typeof message === "string" && message) this.streamToolOutput(itemId, `${inertToken(message, 500)}\n`);
+  }
+
+  /** Bytes the AGENT typed into its running command's PTY: shown in the
+   *  output stream marked as input, the way an echoing terminal shows them
+   *  (Phase TF2.3). `processId` ties it to the same running item. */
+  private onTerminalInteraction(itemId: string, raw: unknown) {
+    const stdin = typeof raw === "string" ? raw.replace(/\r?\n$/, "") : "";
+    if (stdin) this.streamToolOutput(itemId, `‹stdin› ${inertToken(stdin, 500)}\n`);
+  }
+
   /** A collab call (spawn / wait / send…) is a tool row named by the engine's
    *  own tool name; the first call naming a child thread anchors that
-   *  thread's later activity (TS.9). Inner child content still needs
-   *  per-thread subscriptions the adapter does not open — recorded. */
+   *  thread's later activity (TS.9); the child's own items then arrive on
+   *  this connection and ride the lane (verified live 2026-09-15). */
   /** The parts of a collab call every reading shares: the row's name/detail/
    *  input and the per-thread states its result carries. */
   private collabShape(item: CodexItem) {
@@ -729,6 +734,11 @@ export class CodexEventMapper {
     return this.subagentAnchor.has(thread);
   }
 
+  /** The deck a child's item belongs to, for attributing its approval ask. */
+  parentOf(itemId: string): string | undefined {
+    return this.childItems.get(itemId);
+  }
+
   /** One notification from a CHILD thread — its own items, prose, and
    *  streamed output, nested under the anchor via parentId. Turn and status
    *  bookkeeping for the child is not the parent's turn and is ignored. */
@@ -751,9 +761,27 @@ export class CodexEventMapper {
         if (this.childItems.has(id)) this.onProseDelta(id, String(p["delta"] ?? ""));
         break;
       }
-      case "item/commandExecution/outputDelta": {
+      case "item/commandExecution/outputDelta":
+      case "item/fileChange/outputDelta": {
         const id = String(p["itemId"] ?? "");
         if (this.childItems.has(id)) this.streamToolOutput(id, String(p["delta"] ?? ""));
+        break;
+      }
+      // The same live-output and update paths the root's running rows get:
+      // the agent's typed stdin, an MCP call's progress, a patch snapshot.
+      case "item/commandExecution/terminalInteraction": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.onTerminalInteraction(id, p["stdin"]);
+        break;
+      }
+      case "item/mcpToolCall/progress": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.onMcpProgress(id, p["message"]);
+        break;
+      }
+      case "item/fileChange/patchUpdated": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.publishFileChange(id, p["changes"]);
         break;
       }
       case "item/reasoning/summaryTextDelta":
@@ -853,7 +881,7 @@ export class CodexEventMapper {
   /** The engine's terminal word on a thread: its items, streaming state, and
    *  retained report are done with. The anchor itself stays (bounded, and a
    *  late update still needs its row). */
-  private forgetChildThread(thread: string) {
+  private forgetChildThread(thread: string, cascade = true) {
     for (const id of this.childThreadItems.get(thread) ?? []) {
       this.childItems.delete(id);
       this.prose.delete(id);
@@ -864,6 +892,11 @@ export class CodexEventMapper {
     this.childThreadItems.delete(thread);
     this.childReports.delete(thread);
     this.runningChildren.delete(thread);
+    // A settled child takes the grandchildren riding its deck with it.
+    if (cascade && !this.adoptedThreads.has(thread)) {
+      const anchor = this.subagentAnchor.get(thread);
+      if (anchor) for (const t of this.adoptedThreads) if (this.subagentAnchor.get(t) === anchor) this.forgetChildThread(t, false);
+    }
   }
 
   /** A thread a CHILD spawned or messaged anchors on that child's own deck —
@@ -873,6 +906,9 @@ export class CodexEventMapper {
     if (thread && !this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS) {
       this.subagentAnchor.set(thread, parentId);
       this.adoptedThreads.add(thread);
+      // Running from its spawn: its bookkeeping outlives the root turn until
+      // its own terminal word, like a direct child's (PR #122 review).
+      this.runningChildren.add(thread);
     }
   }
 
@@ -887,6 +923,11 @@ export class CodexEventMapper {
     }
     this.ensureAnnounced(item.id, name, detail, input);
     this.finishCollabCall(item, states);
+    // The child's own word on the threads it waited for releases them.
+    for (const [thread, st] of states) {
+      const state = collabState(st?.status);
+      if (state && state !== "running" && state !== "unknown" && this.adoptedThreads.has(thread)) this.forgetChildThread(thread, false);
+    }
   }
 
   /** A child narrating ITS child's lifecycle: the line rides the child's

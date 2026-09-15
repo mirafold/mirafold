@@ -507,7 +507,10 @@ export class CodexSession implements AgentSession {
   }
 
   private onNotification(client: AppServerClient, method: string, params: unknown) {
-    if (this.client !== client) return;
+    // After close() the process is being killed but stays attached until it
+    // exits; a notification buffered in that window must not become a ghost
+    // record (no emissions after close — PR #122 review).
+    if (this.client !== client || this.closed) return;
     const p = (params ?? {}) as Record<string, unknown>;
     if (method === "thread/started") {
       const id = (p["thread"] as { id?: unknown } | undefined)?.id;
@@ -553,8 +556,17 @@ export class CodexSession implements AgentSession {
    *  didn't approve runs outside the sandbox. */
   private answerServerRequest(client: AppServerClient, id: JsonRpcId, method: string, params: unknown) {
     if (this.client !== client) return;
+    if (this.closed) {
+      // Nothing is asked after close: the engine is being killed and every
+      // open ask was already denied.
+      client.respondError(id, -32000, "Mirafold session closed");
+      return;
+    }
     const p = (params ?? {}) as Record<string, unknown>;
     const reason = typeof p["reason"] === "string" ? p["reason"] : undefined;
+    // An ask raised by a CHILD's item is attributed to its deck — the bar
+    // shows which subagent wants the escalation (PR #122 review).
+    const parentId = typeof p["itemId"] === "string" ? this.eventMapper.parentOf(p["itemId"]) : undefined;
     const respond = (result: unknown) => {
       if (this.client === client && !client.exited) client.respond(id, result);
     };
@@ -564,13 +576,13 @@ export class CodexSession implements AgentSession {
         // The command is ours to state plainly; the reason is the engine's own
         // explanation of the escalation ("retry outside the sandbox?").
         this.ask("Shell", reason ? `${command} — ${reason}` : command, (allow) =>
-          respond({ decision: allow ? "accept" : "decline" }),
+          respond({ decision: allow ? "accept" : "decline" }), parentId,
         );
         break;
       }
       case "item/fileChange/requestApproval":
         this.ask("apply_patch", reason ?? "apply this change outside the sandbox?", (allow) =>
-          respond({ decision: allow ? "accept" : "decline" }),
+          respond({ decision: allow ? "accept" : "decline" }), parentId,
         );
         break;
       case "item/permissions/requestApproval": {
@@ -581,7 +593,7 @@ export class CodexSession implements AgentSession {
         // seen it (audit 2026-08-26).
         const grant = describePermissionProfile(permissions);
         this.ask("Codex", reason ? `${grant} — ${reason}` : grant, (allow) =>
-          respond({ permissions: allow ? permissions : {} }),
+          respond({ permissions: allow ? permissions : {} }), parentId,
         );
         break;
       }
@@ -592,8 +604,8 @@ export class CodexSession implements AgentSession {
 
   /** Raise one permission ask on the bar; `onAnswer` fires once, on any
    *  resolution path (answer, timeout, teardown — all deny but "answer"). */
-  private ask(tool: string, detail: string, onAnswer: (allow: boolean) => void) {
-    void this.permissions.ask({ tool, detail }, this.permissionTimeoutMs, (allow) => onAnswer(allow));
+  private ask(tool: string, detail: string, onAnswer: (allow: boolean) => void, parentId?: string) {
+    void this.permissions.ask({ tool, detail, ...(parentId ? { parentId } : {}) }, this.permissionTimeoutMs, (allow) => onAnswer(allow));
   }
 
   /**
