@@ -3,6 +3,41 @@
 Status: approved, implemented, and verified 2026-08-19. This is the canonical
 product and implementation specification for Phase LD in `PLAN.md`.
 
+> **Status note (2026-09-15, after Phase TF — transcript fidelity).** The
+> document layer this specification describes is intact: grouping still
+> operates on projected rows, `ResponseDocument` ancestry is still stable, and
+> no LD acceptance criterion was relaxed. Four statements below are now
+> narrower than the code, and the code wins:
+>
+> - **Tool folds** (§§ 7, 9) no longer absorb short assistant narration and
+>   no longer form from "any settled run". A fold now holds only completed,
+>   error-free, exit-0 calls the engine itself classified as reads, listings,
+>   or searches (`tool_use.actions`); every other call is its own row, and
+>   prose is never folded. Thinking that sits between two routine calls rides
+>   inside the fold; leading or trailing thinking is a collapsed top-level
+>   control, not always a full row.
+> - **Nested records** (§ 7.3): a subagent's record whose anchor was evicted
+>   from the replay ring, or never arrived, is projected top-level as
+>   commentary text, and a tool outcome whose opening row was evicted appears
+>   as an explicit "(earlier call)" row. The "cannot fragment documents"
+>   guarantee therefore holds whenever the anchor exists, which is every case
+>   except a reattach past evicted history — where the transcript states the
+>   eviction.
+> - **Subagent decks** (§ 6) now form for any call that carries a
+>   `task_update` lifecycle, childless ones included, and show the engine's
+>   stated state plus the retained report.
+> - **`OutputZone` ownership** (§ 5): it still calls the grouping helper, and
+>   it now also owns the disclosure layer (expand/collapse keyed by wire
+>   identity, kept per session in `sessionStorage`, and the status bar's
+>   `show details` mode).
+>
+> The "no projection or protocol change expected" statements were true of
+> Phase LD's own scope; Phase TF added wire types and rewrote the projection
+> deliberately. The "Today, an ordinary response is…" sketch in § 2 describes
+> the pre-LD state it replaced. The `yarn test:ui` timeout remarks in §§ 24–25
+> record a 2026-08-19 environment; the wrapper has passed since. Phase TF's
+> own record is in `PLAN.md` ("Phase TF") and `docs/ADAPTERS.md`.
+
 ## 1. Objective
 
 Change Mirafold's assistant-output presentation from a mostly flat stream of
