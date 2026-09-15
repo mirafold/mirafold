@@ -198,7 +198,8 @@ test("attach history publishes once at its boundary despite frames and timers be
     assert.deepEqual(batches, [], "partial history must not become visible");
   }
   ingress.accept({ type: "replay_complete" });
-  assert.deepEqual(batches, [history]);
+  // The marker rides at the end of its batch (Phase TF: the projection acts on it).
+  assert.deepEqual(batches, [[...history, { type: "replay_complete" }]]);
   ingress.accept({ type: "text_delta", text: " live continuation" });
   assert.equal(batches.length, 1);
   runtime.runFrame();

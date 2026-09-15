@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentName, PromptOption } from "@protocol";
+import type { AgentCapabilities, AgentName, PromptOption } from "@protocol";
+import { loadDetailsMode, saveDetailsMode } from "../transcript/disclosure-store";
 import { ActivityLine, activityLabel } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
@@ -108,7 +109,29 @@ export function Shell() {
     agent?: AgentName;
     model?: string;
     demo?: boolean;
+    capabilities?: AgentCapabilities;
   }>({});
+  // The transcript's detail mode (Phase TF R6): viewport-local, per
+  // session, restored from this tab's storage on attach and never sent
+  // anywhere. Compact until the reader asks for details.
+  const [detailsMode, setDetailsMode] = useState(false);
+  const toggleDetails = useCallback(() => {
+    setDetailsMode((on) => {
+      const next = !on;
+      if (meta.sessionId) saveDetailsMode(meta.sessionId, next);
+      return next;
+    });
+  }, [meta.sessionId]);
+  // A task the engine reported finished while the reader may be looking
+  // elsewhere: a compact note in the current-activity area for a moment,
+  // never a repaint of the deck above (Phase TF R5).
+  const [taskNote, setTaskNote] = useState<{ text: string; failed: boolean } | null>(null);
+  const taskNoteTimer = useRef<number | undefined>(undefined);
+  const noteCompletion = useCallback((text: string, failed: boolean) => {
+    setTaskNote({ text, failed });
+    window.clearTimeout(taskNoteTimer.current);
+    taskNoteTimer.current = window.setTimeout(() => setTaskNote(null), 12_000);
+  }, []);
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
   // Replaced whole whenever the adapter reports a changed catalog.
@@ -304,12 +327,23 @@ export function Shell() {
             agent: m.agent,
             model: m.model,
             demo: m.demo,
+            capabilities: m.capabilities,
           });
+          setDetailsMode(loadDetailsMode(m.sessionId));
           setNotices((n) => ({
             ...n,
             agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
+        } else if (m.type === "task_update" && live && m.state !== "running") {
+          const what = m.label ?? "a task";
+          const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
+          noteCompletion(`${what} ${word}`, m.state === "failed");
+        } else if (m.type === "render" && live && m.component === "todo-list" && planCompleted(m.props)) {
+          // A KNOWN completion signal — the shell's own checklist component
+          // with every item done — never an inference from agent-authored
+          // markup (Phase TF R5).
+          noteCompletion("plan complete", false);
         } else if (m.type === "shell_cwd") {
           setMeta((current) => ({ ...current, shellCwd: m.cwd }));
         } else if (m.type === "refused") {
@@ -560,9 +594,12 @@ export function Shell() {
                 sessionKey={meta.sessionId}
                 onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
+                details={detailsMode}
+                capabilities={meta.capabilities}
+                agent={meta.agent}
               />
             </div>
-            <ActivityLine busy={busy} label={activityLabel(activity)} />
+            <ActivityLine busy={busy} label={activityLabel(activity)} note={taskNote} />
             <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
@@ -643,6 +680,8 @@ export function Shell() {
               workspaceOpen={folderTreeOpen || diffPanelOpen}
               workspaceDisabled={!meta.sessionId}
               onToggleWorkspace={toggleWorkspace}
+              details={detailsMode}
+              onToggleDetails={meta.sessionId ? toggleDetails : undefined}
             />
           </div>
         </div>
@@ -758,4 +797,13 @@ function ActivityBar({
       </button>
     </div>
   );
+}
+
+/** The checklist painting's props say the plan is done: at least one item,
+ *  every one completed. Only this shell-known component carries that
+ *  signal; arbitrary paintings and artifacts never do. */
+export function planCompleted(props: Record<string, unknown>): boolean {
+  const todos = props["todos"];
+  if (!Array.isArray(todos) || todos.length === 0) return false;
+  return todos.every((t) => typeof t === "object" && t !== null && (t as { status?: unknown }).status === "completed");
 }

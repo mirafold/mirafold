@@ -4927,6 +4927,74 @@ and unswallowed TaskOutput/TaskStop, OpenCode snapshots/interruption/task
 lifecycle, Gemini exact-name classification, the hello's capabilities and
 the `evicted` replay flag. Committed as one coherent checkpoint.
 
+### TF3 — Transcript projection (✅ 2026-09-15)
+
+- **TF3.1** commentary/length absorption removed (`isShortNarration` and
+  the 2-line/160-char heuristic are gone); prose of any phase or length is a
+  boundary and its own readable row; phase still styles commentary.
+- **TF3.2** `groupToolActivity` groups only completed, error-free, exit-0
+  calls the engine classified (`actions`); commands, edits, failures, a
+  nonzero exit, a running call, a turn change, and every message end the
+  group; interior reasoning rides inside in order. The group's row reads
+  "Read 8 files · 3 searches" with a bounded target selection.
+- **TF3.3** task lifecycle: `task_update` drives the deck (newest wins); a
+  task with no announcing call gets a placeholder anchor the real
+  announcement fills in; `turn_end` never marks a reported-running task
+  done/interrupted, and a spawn with NO engine word at turn end reads
+  `unknown`; report-first data with head/tail retention.
+- **TF3.4** replay loss explicit: results/snapshots for evicted openings
+  become "(earlier call)" rows at turn end or replay end; a full replay past
+  eviction inserts one shell notice at the top.
+- Disclosure keys are wire identity (`tool:<id>`, `think:seq:<n>`,
+  `fold:<anchor>`, `deck:<id>`).
+
+### TF4 — Compact browser experience (✅ 2026-09-15; browser gates below)
+
+- **TF4.1** thinking collapses from its first delta to a "Thinking" control
+  (button, `aria-expanded`); commentary keeps normal contrast.
+- **TF4.2** `ToolBlock`: running/exit/duration facts on the row, a bounded
+  three-line preview for commands, head → omission notice → tail in the
+  expansion, edit change counts, orphan and zero-budget wording; "live
+  output unavailable for this agent" when the adapter declares none.
+- **TF4.3** decks: engine state word (running/done/failed/interrupted/no
+  result reported), inferred states marked, report first then activity,
+  "does not report a task's own calls" for Codex.
+- **TF4.4** `show details` / `hide details` in the status bar; viewport-local
+  (`sessionStorage`, per session); explicit choices win over the mode and
+  survive settlement, grouping, replay, and a switch away and back; a group
+  or deck opens to reveal an explicitly opened descendant.
+- **TF4.5** following unchanged (`use-follow-tail`); a task finishing shows
+  a compact note in the activity line for 12 s; a fully completed plan
+  (todo-list render, every item completed) does the same.
+- **TF4.6** `RENDER_GUIDANCE` and the Codex addendum no longer demand a
+  structured core in every answer; tool instructions, safety, charts, and
+  action semantics unchanged.
+- Found and fixed during the browser gate: the "inferred" state word's
+  reduced opacity failed axe's 4.5:1 contrast (SA.1) — now marked by style
+  and title, not contrast.
+
+### TF5 — Realistic runs (scenario matrix ✅ 2026-09-15; review below)
+
+- **TF5.1** six new mock scenarios (`exploration-flood`, `failure-recovery`,
+  `parallel-work`, `noisy-process`, `gemini-shaped`, `painting-permission`;
+  `tool-activity` reshaped to R2) and `server/testing/e2e/transcript-fidelity.e2e.ts`
+  covering all eight spec scenarios in headless Chrome against the built
+  daemon: 8/8 green. Scenario 6 (recovery) uses `SESSION_BUFFER_MAX_BYTES`
+  inside the measured window `[65,410, 65,520]` where the capped result
+  survives and its opening row evicts; the notice and the "(earlier call)"
+  record both render. Existing suites adjusted for the new contract:
+  `shell-effects.e2e.ts` (R2 group instead of the old fold; the remark is a
+  visible row) and `resilience.e2e.ts` (the deck comes back already open —
+  disclosure survives the replay).
+- Defects found by the scenarios and fixed: the client ingress discarded
+  `replay_complete` after delivering held history (the projection never
+  saw `evicted`); the inferred-state word failed contrast (SA.1).
+- **TF5.2** live provider comparison NOT performed (would spend Kyle's
+  accounts; needs his explicit go). Unverified, not absent.
+- **TF5.3** independent read-only reviewer (subagent) over
+  `git diff d3ec718 -- server web/src` against R1–R8 — findings and
+  dispositions recorded below when in.
+
 ---
 
 ## Post-release ideas (parked — organize after R.7)

@@ -18,7 +18,17 @@ export type Activity = { state: "thinking" | "tool"; label?: string } | null;
 export const activityLabel = (a: Activity): string =>
   a == null ? "working…" : a.state === "thinking" ? "thinking…" : `${a.label ?? "tool"}…`;
 
-export function ActivityLine({ busy, label }: { busy: boolean; label: string }) {
+export function ActivityLine({
+  busy,
+  label,
+  note,
+}: {
+  busy: boolean;
+  label: string;
+  /** A task the engine reported finished — a compact update in the
+   *  current-activity area, shown whether or not a turn is running. */
+  note?: { text: string; failed: boolean } | null;
+}) {
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
@@ -43,14 +53,24 @@ export function ActivityLine({ busy, label }: { busy: boolean; label: string }) 
     };
   }, [busy]);
 
-  if (!busy) return null;
+  if (!busy && !note) return null;
   return (
     // aria-hidden: Announcer speaks turn state once per transition;
     // a line whose text changes every second would drown a screen reader.
     <div className="activity-line" aria-hidden="true">
-      <span className="activity-glyph">{FRAMES[frame]}</span>
-      <span className="activity-label">{visibleControls(label)}</span>
-      <span className="activity-elapsed">({elapsed}s)</span>
+      {busy && (
+        <>
+          <span className="activity-glyph">{FRAMES[frame]}</span>
+          <span className="activity-label">{visibleControls(label)}</span>
+          <span className="activity-elapsed">({elapsed}s)</span>
+        </>
+      )}
+      {note && (
+        <span className={"activity-note" + (note.failed ? " activity-note-failed" : "")}>
+          {busy ? " · " : ""}
+          {visibleControls(note.text)}
+        </span>
+      )}
     </div>
   );
 }

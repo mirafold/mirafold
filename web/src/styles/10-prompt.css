@@ -492,3 +492,14 @@
 .permission-modal-detail {
   unicode-bidi: isolate;
 }
+
+/* Phase TF R5: a task the engine reported finished, noted compactly in the
+   current-activity area — the reader learns of it without the deck above
+   repainting under them. */
+.activity-note {
+  color: var(--fg-dim);
+}
+
+.activity-note-failed {
+  color: var(--error);
+}

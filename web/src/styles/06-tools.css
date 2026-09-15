@@ -416,3 +416,134 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* ---- Phase TF: outcomes on the row -------------------------------------
+   A call's state, exit status, and duration ride the head as facts; a
+   collapsed command carries a bounded preview of its last lines; the
+   expansion shows the retained head, an explicit note of what was omitted,
+   and the retained tail. */
+.tool-head {
+  flex-wrap: wrap;
+}
+
+.tool-state,
+.tool-duration,
+.tool-change {
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 0.8em;
+  color: var(--fg-faint);
+}
+
+.tool-exit {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 0.78em;
+  color: var(--warn-fg);
+  border: 1px solid var(--warn-fg);
+}
+
+.tool-block.is-error .tool-exit {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
+.tool-change-add {
+  color: var(--diff-add-fg);
+}
+
+.tool-change-del {
+  margin-left: 4px;
+  color: var(--diff-del-fg);
+}
+
+.tool-preview {
+  margin: 0 0 4px 22px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  line-height: 1.45;
+  color: var(--fg-dimmer);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 4.6em;
+  overflow: hidden;
+}
+
+.tool-preview-live {
+  border-left-style: dashed;
+}
+
+.tool-block.is-error .tool-preview {
+  border-left-color: var(--err-border);
+}
+
+.tool-silent {
+  margin: 4px 0 6px 22px;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
+.tool-block.is-orphaned .tool-name {
+  font-style: italic;
+  color: var(--fg-dimmer);
+}
+
+/* A group's row: the engine-classified summary plus the paths and queries
+   it named, dim and ellipsized. */
+.tool-activity-targets {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+}
+
+/* Task decks: every engine-reported state has its own look; an inferred
+   state (older daemon, no lifecycle lane) reads a touch dimmer. */
+.subagent-deck-interrupted .subagent-dot {
+  background: var(--warn-fg);
+}
+
+.subagent-deck-unknown .subagent-dot {
+  background: transparent;
+  border: 1px solid var(--fg-faint);
+}
+
+/* An inferred state (older daemon, no lifecycle lane) is marked by its
+   title and its deck class, never by lower contrast: the word stays as
+   readable as a reported one (axe 4.5:1). */
+.subagent-live.subagent-live-inferred {
+  font-style: italic;
+}
+
+/* The task's retained report — inert plain text, shown first in the
+   expansion, ahead of the child's activity. */
+.subagent-report {
+  margin: 6px 0 4px 6px;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  line-height: 1.5;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.subagent-report-label,
+.subagent-lane-note {
+  margin: 6px 0 2px 6px;
+  font-size: 0.9em;
+  font-style: italic;
+  color: var(--fg-faint);
+}

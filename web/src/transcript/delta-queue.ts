@@ -126,9 +126,12 @@ export function createTranscriptIngress(
       return;
     }
     if (message.type === "replay_complete") {
+      // The marker rides at the end of its batch: the projection needs it
+      // (it materializes evicted-history records and the eviction notice
+      // there), and an older daemon that sends none loses nothing.
       const pending = replay;
       replay = null;
-      if (pending) deliver(pending);
+      deliver([...(pending ?? []), message]);
       return;
     }
     if (replay) {

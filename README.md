@@ -86,6 +86,15 @@ Inside a session:
   until you close it.
 - Use the Files and Changes workspaces to inspect the current directory and
   its Git working-tree changes.
+- The transcript is compact by default: the agent's messages and every
+  command, edit, and failure stay visible with their outcomes (exit codes,
+  durations, a preview of the last lines), routine reads and searches group
+  into one line, reasoning collapses to a single "Thinking" control, and a
+  subagent or background task shows its state and its retained report.
+  `show details` in the status bar opens everything — reasoning, each
+  routine call, inputs, and the retained output — for this browser tab only.
+  Large outputs keep their beginning and end; the transcript says how much
+  fell between them rather than implying it kept it all.
 
 ## Development
 

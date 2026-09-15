@@ -439,31 +439,49 @@
      zone's flex column squash this row to zero height */
   flex: none;
   color: var(--fg-dimmer);
-  font-style: italic;
   font-size: 0.88em;
   line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
   max-width: 80ch;
   padding-left: 10px;
   border-left: 2px solid var(--border-2);
 }
 
-.thinking-done {
+/* Phase TF R1: reasoning is collapsed from its first delta — one quiet
+   "Thinking" line, a control the reader opens; the text never grows a
+   paragraph in the default view. */
+.thinking-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
   cursor: pointer;
+  text-align: left;
 }
 
-.thinking-done:hover {
+.thinking-head:hover {
   color: var(--fg-dim);
+}
+
+.thinking-streaming .thinking-glyph {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.thinking-text {
+  margin: 2px 0 4px;
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .thinking-folded {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: var(--font-mono);
-  font-size: 0.8em;
-  font-style: normal;
 }
 
 /* ---- Service-status line ------------------------------------------

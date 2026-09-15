@@ -123,8 +123,12 @@ test("subagent narration survives a mid-turn reconnect replay (bughunt 2026-08-1
   assert.equal(d.port, port, "restart re-bound a different port; test cannot proceed");
   await page.locator(".notice-line", { hasText: "turn was interrupted" }).waitFor({ timeout: 30_000 });
 
-  // The replayed deck still holds the subagent's words.
+  // The replayed deck still holds the subagent's words — and the reader's
+  // expand survived the replay (disclosure is keyed by wire identity, Phase
+  // TF R6), so the deck comes back already open; open it only if not.
   await page.waitForSelector(".subagent-deck", { timeout: 10_000 });
-  await page.locator(".subagent-deck-head").click();
+  if ((await page.locator(".subagent-deck-head[aria-expanded='true']").count()) === 0) {
+    await page.locator(".subagent-deck-head").click();
+  }
   await page.waitForSelector("text=Surveying the workspace layout", { timeout: 10_000 });
 });
