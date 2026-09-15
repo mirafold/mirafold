@@ -53,24 +53,23 @@ export function ActivityLine({
     };
   }, [busy]);
 
-  if (!busy && !note) return null;
+  const noteSpan = note ? (
+    <span className={"activity-note" + (note.failed ? " activity-note-failed" : "")}>
+      {busy ? " · " : ""}
+      {visibleControls(note.text)}
+    </span>
+  ) : null;
+  // `.activity-line` means "a turn is in flight" — nothing else may keep it
+  // mounted. A completion note outside a turn gets its own quiet line.
+  if (!busy) return noteSpan ? <div className="activity-note-line" aria-hidden="true">{noteSpan}</div> : null;
   return (
     // aria-hidden: Announcer speaks turn state once per transition;
     // a line whose text changes every second would drown a screen reader.
     <div className="activity-line" aria-hidden="true">
-      {busy && (
-        <>
-          <span className="activity-glyph">{FRAMES[frame]}</span>
-          <span className="activity-label">{visibleControls(label)}</span>
-          <span className="activity-elapsed">({elapsed}s)</span>
-        </>
-      )}
-      {note && (
-        <span className={"activity-note" + (note.failed ? " activity-note-failed" : "")}>
-          {busy ? " · " : ""}
-          {visibleControls(note.text)}
-        </span>
-      )}
+      <span className="activity-glyph">{FRAMES[frame]}</span>
+      <span className="activity-label">{visibleControls(label)}</span>
+      <span className="activity-elapsed">({elapsed}s)</span>
+      {noteSpan}
     </div>
   );
 }
