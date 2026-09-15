@@ -935,6 +935,176 @@ test("TF2.4: an errored or interrupted child marks its task failed/interrupted",
   s.close();
 });
 
+// The engine's own spawn announcement (app-server 0.153.4 shape, TF5.2 live
+// capture): anchors `thread` as a child of this session.
+const spawned = (thread: string, id = `sa-${thread}`): Notification => [
+  "item/completed",
+  { item: { type: "subAgentActivity", id, kind: "started", agentThreadId: thread, agentPath: `/root/${thread.toLowerCase()}` } },
+];
+const settled = (thread: string, kind = "completed", id = `sa-${thread}-${kind}`): Notification => [
+  "item/completed",
+  { item: { type: "subAgentActivity", id, kind, agentThreadId: thread, agentPath: `/root/${thread.toLowerCase()}` } },
+];
+/** One of the child's own items, arriving on the parent connection under its thread id. */
+const childItem = (thread: string, item: Record<string, unknown>, phase: "started" | "completed" = "completed"): Notification => [
+  `item/${phase}`,
+  { threadId: thread, item },
+];
+
+test("PR #122 review: a child's Mirafold render call, image view, dynamic tool, and sleep are parented rows — never a session-level painting", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: MIRAFOLD_MCP, tool: "render_card", arguments: { title: "T", body: "b" }, status: "inProgress" }, "started"),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: MIRAFOLD_MCP, tool: "render_card", arguments: { title: "T", body: "b" }, status: "completed", result: { content: [{ type: "text", text: "ok" }], structuredContent: { renderId: "rid-c" } } }),
+    childItem("CHILD", { type: "imageView", id: "ci1", path: `${tmp}/pic.png` }),
+    childItem("CHILD", { type: "imageGeneration", id: "cg1", savedPath: `${tmp}/gen.png`, revisedPrompt: "a cat", status: "completed" }),
+    childItem("CHILD", { type: "dynamicToolCall", id: "cd1", tool: "lookup", namespace: "app", arguments: { q: "x" }, status: "completed", success: true, contentItems: [{ type: "text", text: "found" }] }),
+    childItem("CHILD", { type: "sleep", id: "cs1", durationMs: 1500 }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "render"), "a subagent never paints session-level UI");
+  for (const id of ["cm1", "ci1", "cg1", "cd1", "cs1"]) {
+    assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === id)?.parentId, anchor, `${id} is announced in the child's deck`);
+    assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === id)?.parentId, anchor, `${id} settles in the child's deck`);
+  }
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "cm1")!.name, `${MIRAFOLD_MCP}.render_card`, "the render call is an honest tool record");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "cd1")!.output, "found");
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool"), "a child's tool churn never steers the root activity line");
+  s.close();
+});
+
+test("PR #122 review: a child still running when the parent's turn ends keeps riding the lane and settles its task", async () => {
+  const anchor = "codex-agent:CHILD";
+  // A function script: the parent's turn is COMPLETE (turn_end emitted,
+  // no active turn) before the child's own items arrive on the connection.
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    complete("completed"); // the parent did not wait
+    await waitForTurnEnds(msgs, 1);
+    for (const [method, params] of [
+      childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 1", status: "inProgress" }, "started"),
+      childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 1", aggregatedOutput: "", exitCode: 0, status: "completed" }),
+      childItem("CHILD", { type: "agentMessage", id: "cm2", text: "slept.", phase: "final_answer" }),
+      settled("CHILD"),
+    ]) notify(method, params);
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const done = await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  assert.equal(turnEnds(), 1, "the child's activity ended no second turn");
+  const end = msgs.findIndex((m) => m.type === "turn_end");
+  const call = msgs.find((m) => m.type === "tool_use" && m.id === "cc1")!;
+  assert.ok(msgs.indexOf(call) > end, "the child's call arrived after the parent's turn ended");
+  assert.deepEqual([call.parentId, call.name], [anchor, "Shell"]);
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "cc1")!.parentId, anchor);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && m.text === "slept."), "the child's answer rides the lane");
+  assert.deepEqual([done.id, done.report], [anchor, "slept."], "the engine's completion settles the task with its report");
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "cc1").length, 1, "no re-announcement across the turn boundary");
+  s.close();
+});
+
+test("PR #122 review: past the child prose budget nothing rides the wire — no empty deltas", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "x".repeat(70_000), phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm2", text: "more", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "and more", phase: "commentary" }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lane = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor);
+  assert.equal(lane.length, 2, "the spawn narration, the capped head with its elision marker, then silence");
+  assert.ok(/elided/.test(lane[1]!.text));
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && m.text === ""), "no empty delta reached the wire");
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && !m.parentId && /more/.test(m.text)), "nothing escaped to the root transcript");
+  s.close();
+});
+
+test("PR #122 review: a child's report is retained capped and released at its terminal word", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "r".repeat(70_000), phase: "final_answer" }),
+    settled("CHILD"),
+    settled("CHILD", "completed", "sa-again"), // a late duplicate: the retained report is gone
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update" && m.id === anchor && m.state === "completed");
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks[0]!.reportOmittedBytes > 0 && Buffer.byteLength(tasks[0]!.report, "utf8") + Buffer.byteLength(tasks[0]!.reportTail, "utf8") <= 64_000, "the report is the capped shape");
+  assert.equal(tasks[1]!.report, undefined, "nothing engine-sized is kept past the terminal update");
+  s.close();
+});
+
+test("PR #122 review: past the child-item flood cap further child items are dropped whole, never shown as root output", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions({ childItemCap: 2 }, [
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "one", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm2", text: "two", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "", phase: "commentary" }, "started"),
+    ["item/agentMessage/delta", { threadId: "CHILD", itemId: "cm3", delta: "three" }],
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "three", phase: "commentary" }),
+    childItem("CHILD", { type: "commandExecution", id: "cc3", command: "rm -rf x", aggregatedOutput: "", exitCode: 0, status: "completed" }),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc3", delta: "gone" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor).map((m) => m.text), ["/root/child started\n", "one", "two"]);
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && /three/.test(m.text)), "the untracked item and its deltas are dropped, not promoted to the root");
+  assert.ok(!msgs.some((m) => (m.type === "tool_output_delta" || m.type === "tool_output_snapshot") && m.id === "cc3"), "nor its streamed output");
+  assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "cc3"), "an untracked child call never becomes a root row");
+  assert.equal(msgs.filter((m) => m.type === "notice" && /subagent activity/.test(m.text)).length, 1, "said once, in the shell's voice");
+  s.close();
+});
+
+test("PR #122 review: a grandchild rides its parent's deck — the nearest visible ancestor — with no deck of its own", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    // The child spawns one agent by activity announcement and messages another by collab call.
+    childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }),
+    childItem("CHILD", { type: "collabAgentToolCall", id: "ccb1", tool: "spawnAgent", prompt: "dig deeper", receiverThreadIds: ["GRAND2"], senderThreadId: "CHILD", status: "inProgress", agentsStates: {} }, "started"),
+    childItem("CHILD", { type: "collabAgentToolCall", id: "ccb1", tool: "spawnAgent", prompt: "dig deeper", receiverThreadIds: ["GRAND2"], senderThreadId: "CHILD", status: "completed", agentsStates: { GRAND2: { status: "completed", message: "dug" } } }),
+    childItem("GRAND", { type: "commandExecution", id: "g1", command: "ls", aggregatedOutput: "a\n", exitCode: 0, status: "completed" }),
+    childItem("GRAND2", { type: "agentMessage", id: "g2", text: "dug", phase: "final_answer" }),
+    childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }),
+    // Should the ROOT thread also narrate the grandchild's lifecycle, that
+    // word must not restate the CHILD's task row.
+    settled("GRAND", "completed", "sa-grand-root"),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "g1")?.parentId, anchor, "the grandchild's call sits in the child's deck");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && m.text === "dug"), "the collab-spawned grandchild's answer too");
+  const spawnRow = msgs.find((m) => m.type === "tool_use" && m.id === "ccb1")!;
+  assert.deepEqual([spawnRow.parentId, spawnRow.name], [anchor, "spawnAgent"], "the child's own spawn call is a row in its deck");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && /grand started/.test(m.text)), "the child narrates its child's lifecycle in its lane");
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.id !== anchor), "no deck or task row is minted for a grandchild");
+  s.close();
+});
+
+test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
+  const thread = "t".repeat(3_000);
+  const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks.every((m) => m.id.startsWith("codex-agent:") && m.id.length <= 1_024), "bounded, so a restored session validates");
+  assert.equal(tasks[0]!.id, tasks[1]!.id, "one stable anchor for the thread");
+  s.close();
+});
+
 test("a command that could NOT run (failed with no exit code) is a real error, shown expanded", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/completed", { item: { type: "commandExecution", id: "c9", command: "no-such-binary", aggregatedOutput: "spawn error", status: "failed" } }],

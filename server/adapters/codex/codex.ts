@@ -234,6 +234,8 @@ export class CodexSession implements AgentSession {
     localTurnTimeoutMs?: number;
     /** Unit-test seam; production uses MIRAFOLD_CODEX_INTERRUPT_GRACE_MS. */
     interruptGraceMs?: number;
+    /** Unit-test seam for the child-item flood cap. */
+    childItemCap?: number;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -268,6 +270,7 @@ export class CodexSession implements AgentSession {
       workspaceDir,
       modelName: () => this.modelName,
       providerDiagnostic: (value) => codexProviderDiagnostic(value, this.endpointForRedaction),
+      ...(opts.childItemCap !== undefined ? { maxChildItems: opts.childItemCap } : {}),
     });
     this.listModels = runtime.listModels;
     this.listEngineModels = runtime.listEngineModels;
@@ -516,8 +519,12 @@ export class CodexSession implements AgentSession {
     // 2026-09-15, app-server 0.153.4) and ride the subagent lane under the
     // anchor the parent's subAgentActivity announced. Any other thread
     // stays dropped, and a child's turn/completed never ends OUR turn.
+    // A known child rides the lane whether or not OUR turn is still running:
+    // a spawn without a wait outlives the parent's turn, and its later
+    // calls, answer, and completion must still reach its deck (PR #122
+    // review) — the anchor persists across turns for exactly this reason.
     if (typeof p["threadId"] === "string" && this.threadId && p["threadId"] !== this.threadId) {
-      if (this.activeTurn && this.eventMapper.isChildThread(p["threadId"])) this.eventMapper.handleChild(p["threadId"], method, params);
+      if (this.eventMapper.isChildThread(p["threadId"])) this.eventMapper.handleChild(p["threadId"], method, params);
       return;
     }
     if (method === "turn/completed") {
@@ -528,7 +535,14 @@ export class CodexSession implements AgentSession {
       active.finish({ status: typeof turn.status === "string" ? turn.status : "completed", error: turn.error });
       return;
     }
-    if (!this.activeTurn) return;
+    if (!this.activeTurn) {
+      // Between turns the only thing of ours that may still arrive is the
+      // engine's lifecycle word on a child that outlived the turn: it
+      // settles that task's row and nothing else.
+      const item = p["item"] as { type?: unknown } | undefined;
+      if (method === "item/completed" && item?.type === "subAgentActivity") this.eventMapper.handle(method, params);
+      return;
+    }
     this.eventMapper.handle(method, params);
   }
 
