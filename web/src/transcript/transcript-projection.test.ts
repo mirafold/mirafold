@@ -602,6 +602,37 @@ test("PR #120 review: an outcome replayed before its task anchor settles the pla
   assert.equal(rowsOf(snapshot, "tool").filter((t) => t.orphaned).length, 0, "nothing is left over as an orphan");
 });
 
+test("PR #120 round 3: a running task's child call survives the root turn end; a live-only orphan keeps running past replay end", () => {
+  const projection = createTranscriptProjection();
+  const snapshot = apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "sp", name: "task", input: { description: "bg" } },
+    { type: "task_update", id: "sp", state: "running", label: "bg" },
+    { type: "tool_use", id: "c1", name: "bash", detail: "make", parentId: "sp" },
+    { type: "tool_output_snapshot", id: "c1", revision: 1, head: "one\n", parentId: "sp" },
+    { type: "turn_end" },
+    { type: "tool_output_snapshot", id: "c1", revision: 2, head: "one\ntwo\n", parentId: "sp" },
+  );
+  const deck = rowsOf(snapshot, "subagent-deck")[0]!;
+  const child = deck.items.find((i): i is ToolRow => i.kind === "tool" && i.toolId === "c1")!;
+  assert.deepEqual([child.output, child.live?.head, deck.summary.currentAction], [undefined, "one\ntwo\n", "bash make"]);
+
+  const late = createTranscriptProjection();
+  const replayed = apply(
+    late,
+    { type: "zone_reset" },
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_output_snapshot", id: "gone", revision: 5, head: "partial", replay: true },
+    { type: "replay_complete", evicted: true },
+    { type: "tool_output_snapshot", id: "gone", revision: 6, head: "partial more" },
+  );
+  const orphan = rowsOf(replayed, "tool").find((t) => t.toolId === "gone")!;
+  assert.deepEqual([orphan.orphaned, orphan.output, orphan.live?.revision], [true, undefined, 6], "replay end is not the call's end");
+  const ended = apply(late, { type: "tool_result", id: "gone", output: "done", exitCode: 0 });
+  assert.deepEqual([rowsOf(ended, "tool")[0]!.output, rowsOf(ended, "tool")[0]!.live], ["done", undefined]);
+});
+
 test("R7: head/tail results, snapshot revisions, and an interruption keep the observed evidence", () => {
   const projection = createTranscriptProjection();
   const live = apply(

@@ -5109,6 +5109,23 @@ with reason; six new, all legitimate, fixed:
 - Shell: task/plan note ledgers reset per session; plan completion noted
   on the transition only.
 
+**PR #120 round 3 (`fac10a0`, CI green).** Seven new findings, all
+verified and fixed with a regression check per class:
+- `LiveOutput` kept the whole output as comparison state on the append
+  path; now only replacement streams keep bounded metadata (length + a
+  4 KB tail).
+- OpenCode's turn-end clear reset a running background child's snapshot
+  revisions (later snapshots read as stale); root turn end now keeps
+  parented tracks.
+- The projection interrupted a still-running task's child calls at the
+  parent's `turn_end`; they now stay running.
+- A live-only orphan was settled as interrupted at `replay_complete`; it
+  now stays running until a real terminal boundary.
+- A failed OpenCode background child's late idle overwrote the failure with
+  `completed`; terminal tasks leave the background set.
+- `formatDuration` could print "1m 60s"; `Write` counted the trailing
+  newline as a line.
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in

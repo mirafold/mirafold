@@ -148,7 +148,8 @@ export class OpenCodeEventMapper {
   endTurn() {
     this.checklist.reset();
     this.lastStatus = undefined;
-    this.live.clear();
+    // A background child's running call outlives the root turn (round 3).
+    this.live.clear({ keepChildren: true });
   }
 
   handle(event: OpenCodeEvent) {
@@ -220,7 +221,12 @@ export class OpenCodeEventMapper {
         // result on the parent stream, and as that task failing (TF2.5).
         if (p["sessionID"] !== undefined && !this.options.isOurs(p["sessionID"])) {
           const lane = this.laneOf(p["sessionID"]);
-          if (lane && lane !== "root") this.emitTask(lane, "failed", capOutput(sessionErrorText(p)));
+          if (lane && lane !== "root") {
+            // Terminal: a later idle must not read the failure as success
+            // (round 3).
+            this.backgroundTasks.delete(lane);
+            this.emitTask(lane, "failed", capOutput(sessionErrorText(p)));
+          }
           break;
         }
         this.options.emit({ type: "error", message: `OpenCode error: ${sessionErrorText(p)}` });
@@ -233,7 +239,10 @@ export class OpenCodeEventMapper {
           // own idle is the engine's word that its work finished (PR #120
           // review round 2).
           const lane = this.laneOf(p["sessionID"]);
-          if (lane && lane !== "root" && this.backgroundTasks.has(lane)) this.emitTask(lane, "completed");
+          if (lane && lane !== "root" && this.backgroundTasks.has(lane)) {
+            this.backgroundTasks.delete(lane);
+            this.emitTask(lane, "completed");
+          }
           break;
         }
         // The session decides whether THIS idle ends the active turn — a
@@ -490,7 +499,10 @@ export class OpenCodeEventMapper {
         ...(parentId ? { parentId } : {}),
       });
       // A task the user stopped is interrupted, not failed (PR #120 review).
-      if (isTask) this.emitTask(partID, interrupted ? "interrupted" : "failed", capped, input);
+      if (isTask) {
+        this.backgroundTasks.delete(partID);
+        this.emitTask(partID, interrupted ? "interrupted" : "failed", capped, input);
+      }
     }
   }
 

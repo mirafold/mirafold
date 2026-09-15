@@ -331,6 +331,32 @@ test("PR #120 review round 2: a background launcher's settlement is not the chil
   session.close();
 });
 
+test("PR #120 round 3: a failed background child stays failed through a later idle; its running call keeps streaming across the root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "bg", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    // The child's own command streams while the root turn ends.
+    { type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\n" } } } } },
+    idle(),
+  );
+  await awaitTurnEnd();
+  feed({ type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\ntwo\n" } } } } });
+  // Snapshots are throttled (250 ms): wait for the second one.
+  await waitFor(() => msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").length >= 2, "second child snapshot", 3_000);
+  const revisions = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").map((m) => m.revision);
+  assert.deepEqual(revisions, [1, 2], "the child's snapshot revisions continue across the root turn end");
+  feed({ type: "session.error", properties: { sessionID: "ses_bg", error: { data: { message: "child exploded" } } } });
+  feed(idle("ses_bg"));
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "sp1").map((m) => m.state);
+  assert.equal(states.at(-1), "failed", "a late idle cannot turn the failure into success");
+  session.close();
+});
+
 test("PR #120 review: a task part stopped by the user reads interrupted, not failed", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

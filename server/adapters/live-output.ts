@@ -35,10 +35,14 @@ type Track = {
   // whether the ceiling marker went out.
   legacySent: number;
   legacyMarked: boolean;
-  // For replacement-fed engines (OpenCode): the last full text observed,
-  // so the next full text yields only its new suffix.
-  seen: string;
+  // For replacement-fed engines (OpenCode): how much text has been seen and
+  // its last SEEN_TAIL_CHARS, so the next republished whole yields only its
+  // new suffix — bounded, never the whole output again (PR #120 round 3).
+  seenLength: number;
+  seenTail: string;
 };
+
+const SEEN_TAIL_CHARS = 4_096;
 
 /**
  * The bounded live-output accumulator every streaming adapter shares (Phase
@@ -82,7 +86,6 @@ export class LiveOutput {
     if (!track) return;
     this.legacyDelta(id, track, text);
     this.absorb(track, Buffer.from(text, "utf8"));
-    track.seen += text;
     this.schedule(id, track);
   }
 
@@ -92,10 +95,12 @@ export class LiveOutput {
   replace(id: string, full: string, parentId?: string): void {
     const track = this.track(id, parentId);
     if (!track) return;
-    if (full === track.seen) return;
-    if (full.startsWith(track.seen)) {
-      const suffix = full.slice(track.seen.length);
-      track.seen = full;
+    const extended =
+      full.length >= track.seenLength &&
+      full.slice(track.seenLength - track.seenTail.length, track.seenLength) === track.seenTail;
+    if (extended) {
+      const suffix = full.slice(track.seenLength);
+      this.remember(track, full);
       if (!suffix) return;
       this.legacyDelta(id, track, suffix);
       this.absorb(track, Buffer.from(suffix, "utf8"));
@@ -104,11 +109,16 @@ export class LiveOutput {
     }
     // Reset: the engine started over (its own buffer rolled to a file).
     // The head already observed stays; the tail follows the new text.
-    track.seen = full;
+    this.remember(track, full);
     if (!full) return;
     this.legacyDelta(id, track, full);
     this.absorb(track, Buffer.from(full, "utf8"));
     this.schedule(id, track);
+  }
+
+  private remember(track: Track, full: string): void {
+    track.seenLength = full.length;
+    track.seenTail = full.slice(-SEEN_TAIL_CHARS);
   }
 
   /** The call settled (or was interrupted): flush the final snapshot now
@@ -121,9 +131,15 @@ export class LiveOutput {
     this.tracks.delete(id);
   }
 
-  /** Teardown: every running call flushes and is forgotten. */
-  clear(): void {
-    for (const id of [...this.tracks.keys()]) this.settle(id);
+  /** Teardown: every running call flushes and is forgotten — or, with
+   *  `keepChildren`, only the root's calls: a background child's call
+   *  outlives the root turn and must keep its revision counter, or its next
+   *  snapshot would restart at 1 and be rejected as stale (round 3). */
+  clear(options: { keepChildren?: boolean } = {}): void {
+    for (const [id, track] of [...this.tracks]) {
+      if (options.keepChildren && track.parentId) continue;
+      this.settle(id);
+    }
   }
 
   private track(id: string, parentId?: string): Track | undefined {
@@ -142,7 +158,8 @@ export class LiveOutput {
         lastEmitAt: -Infinity,
         legacySent: 0,
         legacyMarked: false,
-        seen: "",
+        seenLength: 0,
+        seenTail: "",
       };
       this.tracks.set(id, track);
     }

@@ -202,9 +202,18 @@ export function formatBytes(n: number): string {
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
-  const minutes = Math.floor(ms / 60_000);
-  const seconds = Math.round((ms % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
+  // Round the whole duration to seconds first so a remainder never carries
+  // into "1m 60s" (round 3).
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
+/** Logical lines of a text: a trailing newline terminates the last line
+ *  rather than opening an empty one (round 3). */
+function lineCount(text: string): number {
+  if (!text) return 0;
+  const lines = text.split("\n");
+  return text.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
 // Inputs above this many characters IN TOTAL — or with more edits than this
@@ -245,7 +254,7 @@ export function changeCounts(name: string, input?: Record<string, unknown>): { a
   }
   if (name === "Write" && typeof input["content"] === "string") {
     if (!within(input["content"])) return undefined;
-    return { added: input["content"] ? input["content"].split("\n").length : 0, removed: 0 };
+    return { added: lineCount(input["content"]), removed: 0 };
   }
   if (name === "apply_patch" && Array.isArray(input["changes"])) {
     const changes = (input["changes"] as unknown[]).map((raw) =>

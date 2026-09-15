@@ -146,6 +146,33 @@ test("TF1.3b: replace() forwards only the new suffix of a republished whole; a n
   assert.equal(last(h.snapshots()).head, "line1\nline2\nfresh\n");
 });
 
+test("PR #120 round 3: the comparison state is bounded, and clear(keepChildren) keeps a child's revision counter", () => {
+  const h = harness({ capBytes: 100_000, intervalMs: 0 });
+  // A whole far larger than the tail window still extends by suffix only.
+  let full = "";
+  for (let i = 0; i < 40; i++) {
+    full += `line ${i} ${"x".repeat(200)}\n`;
+    h.live.replace("t", full);
+  }
+  const suffixes = h.deltas().filter((m) => m.id === "t").map((m) => m.text);
+  assert.equal(suffixes.join("").length > 0, true);
+  assert.ok(suffixes.every((s) => s.length <= 220), "each republish yields only its new suffix");
+  // A reset that changes earlier text is detected through the tail window.
+  h.live.replace("t", "fresh start\n");
+  assert.equal(last(h.deltas().filter((m) => m.id === "t")).text, "fresh start\n");
+  // Root clear keeps a parented track's revisions advancing.
+  const c = harness({ capBytes: 64, intervalMs: 0 });
+  c.live.append("root", "r1\n");
+  c.live.append("child", "c1\n", "spawn");
+  c.live.clear({ keepChildren: true });
+  c.live.append("child", "c2\n", "spawn");
+  const childSnaps = c.snapshots().filter((m) => m.id === "child");
+  assert.deepEqual(childSnaps.map((m) => m.revision), [1, 2], "the child's counter continued");
+  assert.equal(c.live.has("root"), false);
+  c.live.clear();
+  assert.equal(c.live.has("child"), false);
+});
+
 test("parentId rides every snapshot and delta of a child's call", () => {
   const h = harness({ capBytes: 100, intervalMs: 0 });
   h.live.append("c", "child out", "spawn-1");

@@ -284,4 +284,7 @@ test("lastLines keeps the newest non-empty lines, each capped", () => {
   assert.equal(lastLines(long, 1).length, 200);
   assert.equal(formatDuration(999), "999 ms");
   assert.equal(formatDuration(65_500), "1m 6s");
+  assert.equal(formatDuration(119_600), "2m 0s", "a remainder that rounds to 60 carries (round 3)");
+  assert.deepEqual(changeCounts("Write", { content: "x\ny\n" }), { added: 2, removed: 0 }, "a trailing newline is not an extra line");
+  assert.deepEqual(changeCounts("Write", { content: "" }), { added: 0, removed: 0 });
 });

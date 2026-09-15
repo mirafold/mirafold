@@ -541,7 +541,7 @@ export function createTranscriptProjection(): TranscriptProjection {
    *  after any eviction notice: an outcome whose opening is missing is
    *  older than everything retained, so placing it below the newest turn
    *  would reorder the transcript (review 2026-09-15). */
-  const materializeOrphans = (readNow: () => number): boolean => {
+  const materializeOrphans = (readNow: () => number, terminal: boolean): boolean => {
     if (!orphans.size) return false;
     const batchId = orphanToolBatch;
     const rows: ToolEntry[] = [];
@@ -579,7 +579,7 @@ export function createTranscriptProjection(): TranscriptProjection {
           detail: ORPHAN_CALL_DETAIL,
           parentId: pending.parentId,
           batchId,
-          settled: true,
+          settled: terminal || pending.output !== undefined,
           startedAt: readNow(),
           orphaned: true,
           ...(pending.replayed ? { replayed: true } : {}),
@@ -593,9 +593,14 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
                 ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
               }
-            : pending.live
-              ? { ...interruptedOutcome({ live: pending.live } as ToolEntry), isError: true }
-              : { output: "(no result was retained)", isError: true }),
+            : pending.live && !terminal
+              ? // Replay end is a delivery boundary, not the call's end: a
+                // live-only orphan keeps RUNNING so later snapshots and the
+                // real result still land on it (round 3).
+                { live: pending.live }
+              : pending.live
+                ? { ...interruptedOutcome({ live: pending.live } as ToolEntry), isError: true }
+                : { output: "(no result was retained)", isError: true }),
         },
       );
     }
@@ -995,6 +1000,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         entries = orphanAnchorless(entries).map((entry) => {
           if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
           if (entry.kind === "tool" && entry.batchId === batchId) {
+            // A child call of a task the engine still reports running is
+            // cross-turn activity: the root's turn end says nothing about
+            // it (round 3).
+            if (entry.parentId && entry.output === undefined && tasks.get(entry.parentId)?.state === "running") return entry;
             const isTask = tasks.has(entry.toolId) || childParents.has(entry.toolId);
             if (isTask && entry.output === undefined) {
               // A task outlives its call's turn by design (a background job,
@@ -1023,7 +1032,7 @@ export function createTranscriptProjection(): TranscriptProjection {
           }
           return entry;
         });
-        materializeOrphans(readNow);
+        materializeOrphans(readNow, true);
         return true;
       }
       case "error": {
@@ -1112,7 +1121,7 @@ export function createTranscriptProjection(): TranscriptProjection {
         // History is delivered: outcomes whose openings were evicted get
         // their explicit rows now, and evicted older history is said once,
         // at the top, in the shell's own voice.
-        let touched = materializeOrphans(readNow);
+        let touched = materializeOrphans(readNow, false);
         if (msg.evicted && !entries.some((entry) => entry.kind === "notice" && entry.text === EVICTED_HISTORY_NOTICE)) {
           entries = [{ kind: "notice", id: nextTranscriptId++, text: EVICTED_HISTORY_NOTICE, noticeKind: "info" }, ...entries];
           touched = true;
