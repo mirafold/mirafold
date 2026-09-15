@@ -26,7 +26,12 @@ message. PRs with unsigned commits can't be merged.
   `yarn test:ui` (managed Chromium, Firefox, and WebKit plus the Ubuntu visual
   baselines). Tiers 1–3 never reach a model or the network; `yarn test:live`
   (Tier 4, opt-in, never CI) may drive installed agent binaries and a local
-  model server.
+  model server. The file suffix picks the tier: `*.test.ts` (unit),
+  `*.itest.ts` (real daemon), `*.e2e.ts` (headless Chrome), `*.uitest.ts`
+  (browser matrix and visual baselines), `*.ltest.ts` (live). The committed
+  visual baselines are Ubuntu renders — the visual suite skips elsewhere — and
+  `yarn test:ui:update-snapshots` regenerates them after you have inspected
+  the diff.
 - Comments only for non-obvious constraints — the code says what it does.
 - The non-negotiables in [CLAUDE.md](CLAUDE.md) bind every change: the wire
   protocol only ever *adds* message types; agent output never touches

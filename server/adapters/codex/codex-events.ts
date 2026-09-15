@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SessionMsg, ToolAction } from "../../protocol";
 import { type TodoItem, capOutput, joinTextBlocks, outputFields, OUTPUT_CAP_BYTES, SubagentProseBudget } from "../types";
 import { LiveOutput } from "../live-output";
@@ -157,11 +157,14 @@ export class CodexEventMapper {
       providerDiagnostic: (value: unknown) => string;
       /** Live-output ceiling per running item; tests set it, production inherits the env cap. */
       outputCapBytes?: number;
+      /** Unit-test seam for the child-item flood cap; production uses MAX_CHILD_ITEMS. */
+      maxChildItems?: number;
     },
   ) {
     this.checklist = new ChecklistPainter(options.emit);
     this.unknown = new UnknownKindReporter(options.emit, "Codex", (message) => log.warn(message));
     this.live = new LiveOutput({ emit: options.emit, capBytes: options.outputCapBytes });
+    this.maxChildItems = Math.max(0, options.maxChildItems ?? CodexEventMapper.MAX_CHILD_ITEMS);
   }
 
   private readonly unknown: UnknownKindReporter;
@@ -191,13 +194,19 @@ export class CodexEventMapper {
     this.turnBaseline = this.totals;
     this.turnLast = undefined;
     this.checklist.reset();
-    this.prose.clear();
-    this.phaseOf.clear();
-    this.live.clear();
     this.fileChangeSnapshots.clear();
     this.subagentProse.clear();
-    this.thinkingStreamed.clear();
-    this.announced.clear();
+    // A child announced this turn may outlive it (a spawn with no wait): its
+    // bookkeeping survives until the engine's terminal word on that thread,
+    // so its later items still ride the lane instead of surfacing as root
+    // output or re-announcing themselves (PR #122 review). Everything of a
+    // thread that already settled goes now; root-level state resets as before.
+    for (const thread of [...this.childThreadItems.keys()]) if (!this.runningChildren.has(thread)) this.forgetChildThread(thread);
+    for (const id of [...this.prose.keys()]) if (!this.childItems.has(id)) this.prose.delete(id);
+    for (const id of [...this.phaseOf.keys()]) if (!this.childItems.has(id)) this.phaseOf.delete(id);
+    for (const id of [...this.thinkingStreamed]) if (!this.childItems.has(id)) this.thinkingStreamed.delete(id);
+    for (const id of [...this.announced]) if (!this.childItems.has(id)) this.announced.delete(id);
+    this.live.clear({ keepChildren: true });
   }
 
   /** The fallback when the engine sends no per-response `last`: this turn's
@@ -241,21 +250,12 @@ export class CodexEventMapper {
       case "item/fileChange/patchUpdated":
         this.publishFileChange(String(p["itemId"] ?? ""), p["changes"]);
         break;
-      case "item/mcpToolCall/progress": {
-        // The call's own progress line, in the running row's live preview —
-        // what the TUI prints while an MCP tool works (Phase TF2.3).
-        const message = typeof p["message"] === "string" ? p["message"] : "";
-        if (message) this.streamToolOutput(String(p["itemId"] ?? ""), `${inertToken(message, 500)}\n`);
+      case "item/mcpToolCall/progress":
+        this.onMcpProgress(String(p["itemId"] ?? ""), p["message"]);
         break;
-      }
-      case "item/commandExecution/terminalInteraction": {
-        // Bytes the AGENT typed into its running command's PTY: shown in the
-        // output stream marked as input, the way an echoing terminal shows
-        // them (Phase TF2.3). `processId` ties it to the same running item.
-        const stdin = typeof p["stdin"] === "string" ? p["stdin"].replace(/\r?\n$/, "") : "";
-        if (stdin) this.streamToolOutput(String(p["itemId"] ?? ""), `‹stdin› ${inertToken(stdin, 500)}\n`);
+      case "item/commandExecution/terminalInteraction":
+        this.onTerminalInteraction(String(p["itemId"] ?? ""), p["stdin"]);
         break;
-      }
       case "item/plan/delta": {
         // The model's written plan streams like prose and is narration by
         // nature — never the answer.
@@ -382,7 +382,7 @@ export class CodexEventMapper {
       const prefix = combined.slice(0, fenceAt);
       if (prefix) {
         state.streamed += prefix.length;
-        this.options.emit(this.proseMsg(itemId, prefix));
+        this.emitProse(itemId, prefix);
       }
       state.holding = true;
       return;
@@ -392,7 +392,7 @@ export class CodexEventMapper {
     state.pending = pendingLength ? combined.slice(-pendingLength) : "";
     if (!ready) return;
     state.streamed += ready.length;
-    this.options.emit(this.proseMsg(itemId, ready));
+    this.emitProse(itemId, ready);
   }
 
   /** Normalize one thread item. `phase` distinguishes start vs. finish. */
@@ -455,8 +455,22 @@ export class CodexEventMapper {
     }
   }
 
-  private proseMsg(itemId: string, text: string): SessionMsg {
+  private emitProse(itemId: string, text: string) {
+    const message = this.proseMsg(itemId, text);
+    if (message) this.options.emit(message);
+  }
+
+  private proseMsg(itemId: string, text: string): SessionMsg | null {
     const phase = this.phaseOf.get(itemId);
+    const parentId = this.childItems.get(itemId);
+    if (parentId) {
+      // A child's prose rides its deck's lane, budget-capped like every
+      // other engine's subagent lane; past the budget nothing rides the wire
+      // (an empty delta would still be a wire and replay record).
+      const forwarded = this.subagentProse.take(parentId, text);
+      if (!forwarded) return null;
+      return { type: "text_delta", text: forwarded, parentId, ...(phase ? { phase } : {}) };
+    }
     return phase ? { type: "text_delta", text, phase } : { type: "text_delta", text };
   }
 
@@ -473,7 +487,7 @@ export class CodexEventMapper {
     // component; all other text passes through verbatim.
     for (const segment of convertMermaidCharts(rest)) {
       if ("text" in segment) {
-        this.options.emit(this.proseMsg(item.id, segment.text));
+        this.emitProse(item.id, segment.text);
       } else {
         this.options.emit({
           type: "render",
@@ -486,16 +500,22 @@ export class CodexEventMapper {
   }
 
   private onReasoning(item: CodexItem, phase: ItemPhase) {
+    const parentId = this.childItems.get(item.id);
     if (phase === "started") {
-      this.announceThinking();
+      if (!parentId) this.announceThinking(); // a child's reasoning never steers the root activity line
     } else if (!this.thinkingStreamed.has(item.id)) {
       // No deltas came for this item: the summary arrives whole.
       const summary = Array.isArray(item.summary)
         ? item.summary.filter((s): s is string => typeof s === "string").join("\n")
         : "";
       if (summary) {
-        this.announceThinking();
-        this.options.emit({ type: "thinking_delta", text: summary });
+        if (parentId) {
+          const forwarded = this.subagentProse.take(parentId, summary);
+          if (forwarded) this.options.emit({ type: "thinking_delta", text: forwarded, parentId });
+        } else {
+          this.announceThinking();
+          this.options.emit({ type: "thinking_delta", text: summary });
+        }
       }
     }
     if (phase === "completed") this.thinkingStreamed.delete(item.id);
@@ -560,7 +580,8 @@ export class CodexEventMapper {
       this.announceTool(id, "apply_patch", summary, { changes });
     } else if (this.fileChangeSnapshots.get(id) !== signature) {
       this.fileChangeSnapshots.set(id, signature);
-      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes } });
+      const parentId = this.childItems.get(id);
+      this.options.emit({ type: "tool_update", id, detail: summary, input: { changes }, ...(parentId ? { parentId } : {}) });
     }
     return summary;
   }
@@ -569,14 +590,30 @@ export class CodexEventMapper {
    *  for a row already announced, through the shared bounded accumulator. */
   private streamToolOutput(itemId: string, delta: string) {
     if (!delta || !this.announced.has(itemId)) return;
-    this.live.append(itemId, delta);
+    this.live.append(itemId, delta, this.childItems.get(itemId));
+  }
+
+  /** The call's own progress line, in the running row's live preview — what
+   *  the TUI prints while an MCP tool works (Phase TF2.3). */
+  private onMcpProgress(itemId: string, message: unknown) {
+    if (typeof message === "string" && message) this.streamToolOutput(itemId, `${inertToken(message, 500)}\n`);
+  }
+
+  /** Bytes the AGENT typed into its running command's PTY: shown in the
+   *  output stream marked as input, the way an echoing terminal shows them
+   *  (Phase TF2.3). `processId` ties it to the same running item. */
+  private onTerminalInteraction(itemId: string, raw: unknown) {
+    const stdin = typeof raw === "string" ? raw.replace(/\r?\n$/, "") : "";
+    if (stdin) this.streamToolOutput(itemId, `‹stdin› ${inertToken(stdin, 500)}\n`);
   }
 
   /** A collab call (spawn / wait / send…) is a tool row named by the engine's
    *  own tool name; the first call naming a child thread anchors that
-   *  thread's later activity (TS.9). Inner child content still needs
-   *  per-thread subscriptions the adapter does not open — recorded. */
-  private onCollabCall(item: CodexItem, phase: ItemPhase) {
+   *  thread's later activity (TS.9); the child's own items then arrive on
+   *  this connection and ride the lane (verified live 2026-09-15). */
+  /** The parts of a collab call every reading shares: the row's name/detail/
+   *  input and the per-thread states its result carries. */
+  private collabShape(item: CodexItem) {
     const name = typeof item.tool === "string" && item.tool ? inertToken(item.tool, 64) : "collab";
     const receivers = Array.isArray(item.receiverThreadIds)
       ? item.receiverThreadIds.filter((t): t is string => typeof t === "string")
@@ -588,6 +625,40 @@ export class CodexEventMapper {
       ...(receivers.length ? { receiverThreadIds: receivers } : {}),
       ...(typeof item.model === "string" ? { model: item.model } : {}),
     };
+    const states =
+      typeof item.agentsStates === "object" && item.agentsStates !== null
+        ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
+        : [];
+    return { name, receivers, prompt, detail, input, states };
+  }
+
+  /** The collab row's result: engine-sized fan-out, built only up to the
+   *  output ceiling and saying how many lines were left, instead of
+   *  materializing every state first (release review 2026-09-01). */
+  private finishCollabCall(item: CodexItem, states: Array<[string, { status?: unknown; message?: unknown }]>) {
+    const lines: string[] = [];
+    let budget = OUTPUT_CAP_BYTES - 32; // room for the "… N more" line
+    for (const [thread, st] of states) {
+      const status = typeof st?.status === "string" ? st.status : "?";
+      const message = typeof st?.message === "string" && st.message ? ` — ${firstLine(st.message, 160)}` : "";
+      const line = `${thread}: ${status}${message}`;
+      budget -= Buffer.byteLength(line, "utf8") + 1;
+      if (budget < 0) break;
+      lines.push(line);
+    }
+    if (lines.length < states.length) lines.push(`… ${states.length - lines.length} more`);
+    const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
+    // The state fan-out is engine-sized: capped like every other result.
+    const capped = capOutput(lines.join("\n"));
+    this.finishTool(item.id, {
+      ...outputFields(capped),
+      output: item.status === "declined" ? "(declined)" : capped.text || "(done)",
+      isError: item.status === "failed" || item.status === "declined" || failed,
+    });
+  }
+
+  private onCollabCall(item: CodexItem, phase: ItemPhase) {
+    const { name, receivers, prompt, detail, input, states } = this.collabShape(item);
     for (const thread of receivers) {
       if (!this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS)
         this.subagentAnchor.set(thread, item.id);
@@ -607,10 +678,6 @@ export class CodexEventMapper {
       return;
     }
     this.ensureAnnounced(item.id, name, detail, input);
-    const states =
-      typeof item.agentsStates === "object" && item.agentsStates !== null
-        ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
-        : [];
     // Each child's lifecycle is the engine's word on THAT thread, carried
     // separately from this call's own settlement; the full message is the
     // child's report, retained through the bounded report contract — the
@@ -640,41 +707,335 @@ export class CodexEventMapper {
       this.emitTask(thread, state, message);
     }
     if (omittedUpdates) log.warn(`collab result ${item.id}: ${omittedUpdates} child state update(s) past the per-result cap were not forwarded`);
-    // Engine-sized fan-out: build lines only up to the output ceiling and
-    // say how many were left, instead of materializing every state first
-    // (release review 2026-09-01).
-    const lines: string[] = [];
-    let budget = OUTPUT_CAP_BYTES - 32; // room for the "… N more" line
-    for (const [thread, st] of states) {
-      const status = typeof st?.status === "string" ? st.status : "?";
-      const message = typeof st?.message === "string" && st.message ? ` — ${firstLine(st.message, 160)}` : "";
-      const line = `${thread}: ${status}${message}`;
-      budget -= Buffer.byteLength(line, "utf8") + 1;
-      if (budget < 0) break;
-      lines.push(line);
-    }
-    if (lines.length < states.length) lines.push(`… ${states.length - lines.length} more`);
-    const failed = states.some(([, st]) => st?.status === "errored" || st?.status === "notFound");
-    // The state fan-out is engine-sized: capped like every other result.
-    const capped = capOutput(lines.join("\n"));
-    this.finishTool(item.id, {
-      ...outputFields(capped),
-      output: item.status === "declined" ? "(declined)" : capped.text || "(done)",
-      isError: item.status === "failed" || item.status === "declined" || failed,
-    });
+    this.finishCollabCall(item, states);
   }
 
   // The engine's own name for each child thread (the spawn prompt's first
   // line), repeated on every task_update so the retained newest update
   // still names the task after replay compaction.
   private taskLabels = new Map<string, string>();
+  // Child-lane bookkeeping (verified live 2026-09-15): the child's item ids
+  // → its anchor (so deltas, streamed output, and results ride the lane),
+  // the ids each thread owns (forgotten together when the thread settles),
+  // which threads the engine currently calls running, and the child's
+  // latest final answer per thread — its report, retained already capped.
+  private childItems = new Map<string, string>();
+  private childThreadItems = new Map<string, Set<string>>();
+  private runningChildren = new Set<string>();
+  // Threads a CHILD spawned: they share their parent's deck, so their own
+  // lifecycle words must never restate that deck's task row.
+  private adoptedThreads = new Set<string>();
+  // Direct children whose own turn failed: the activity item that follows
+  // says "completed", and the failure is the word that stands.
+  private failedChildren = new Set<string>();
+  private childReports = new Map<string, ReturnType<typeof capOutput>>();
+  private static readonly MAX_CHILD_ITEMS = 5_000;
+  private readonly maxChildItems: number;
+  private childFloodReported = false;
+
+  /** Is this thread one the parent announced as its child? */
+  isChildThread(thread: string): boolean {
+    return this.subagentAnchor.has(thread);
+  }
+
+  /** The deck a child's item belongs to, for attributing its approval ask. */
+  parentOf(itemId: string): string | undefined {
+    return this.childItems.get(itemId);
+  }
+
+  /** The deck a child THREAD belongs to — the attribution fallback when the
+   *  ask names an item the flood cap refused to track. */
+  anchorOf(thread: string): string | undefined {
+    return this.subagentAnchor.get(thread);
+  }
+
+  /** The engine process is gone: every child it was running is not running
+   *  any more. Each preserved direct child gets the terminal word its deck
+   *  would otherwise never receive, and every thread's bookkeeping goes. */
+  abandonChildren() {
+    for (const thread of [...this.runningChildren]) {
+      if (this.adoptedThreads.has(thread)) this.forgetChildThread(thread);
+      else this.emitTask(thread, "interrupted");
+    }
+  }
+
+  /** One notification from a CHILD thread — its own items, prose, and
+   *  streamed output, nested under the anchor via parentId. Turn and status
+   *  bookkeeping for the child is not the parent's turn and is ignored. */
+  handleChild(thread: string, method: string, params: unknown) {
+    const parentId = this.subagentAnchor.get(thread);
+    if (!parentId) return;
+    const p = (params ?? {}) as Record<string, unknown>;
+    switch (method) {
+      case "item/started":
+        this.onChildItem(thread, parentId, p["item"] as CodexItem | undefined, "started");
+        break;
+      case "item/completed":
+        this.onChildItem(thread, parentId, p["item"] as CodexItem | undefined, "completed");
+        break;
+      // A delta belongs to an item this lane tracks; one for an item the
+      // flood cap refused (or that never started) is dropped here rather
+      // than read by the shared delta paths as root output.
+      case "item/agentMessage/delta": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.onProseDelta(id, String(p["delta"] ?? ""));
+        break;
+      }
+      case "item/plan/delta": {
+        // A child's written plan is narration in its lane, like the root's.
+        const id = String(p["itemId"] ?? "");
+        if (!this.childItems.has(id)) break;
+        this.phaseOf.set(id, "commentary");
+        this.onProseDelta(id, String(p["delta"] ?? ""));
+        break;
+      }
+      case "item/commandExecution/outputDelta":
+      case "item/fileChange/outputDelta": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.streamToolOutput(id, String(p["delta"] ?? ""));
+        break;
+      }
+      // The same live-output and update paths the root's running rows get:
+      // the agent's typed stdin, an MCP call's progress, a patch snapshot.
+      case "item/commandExecution/terminalInteraction": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.onTerminalInteraction(id, p["stdin"]);
+        break;
+      }
+      case "item/mcpToolCall/progress": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.onMcpProgress(id, p["message"]);
+        break;
+      }
+      case "item/fileChange/patchUpdated": {
+        const id = String(p["itemId"] ?? "");
+        if (this.childItems.has(id)) this.publishFileChange(id, p["changes"]);
+        break;
+      }
+      case "item/reasoning/summaryTextDelta":
+      case "item/reasoning/textDelta": {
+        const delta = String(p["delta"] ?? "");
+        const id = String(p["itemId"] ?? "");
+        if (!delta || !this.childItems.has(id)) break;
+        this.thinkingStreamed.add(id);
+        const forwarded = this.subagentProse.take(parentId, delta);
+        if (forwarded) this.options.emit({ type: "thinking_delta", text: forwarded, parentId });
+        break;
+      }
+      case "turn/completed": {
+        // The child's own turn is not the parent's — but its FAILURE is the
+        // only detailed word on why a child came back empty (a provider or
+        // model error), and the activity item that follows says "completed".
+        const turn = (p["turn"] ?? {}) as { status?: unknown; error?: unknown };
+        if (turn.status === "failed") this.failChild(thread, parentId, turn.error);
+        break;
+      }
+      default:
+        break; // turn/started, thread/status/*, token usage: the child's own bookkeeping
+    }
+  }
+
+  /** A child's turn failed: its deck says so, with the engine's capped
+   *  diagnostic as the report, and the activity item's later "completed"
+   *  keeps reading as failed. A grandchild's failure is narrated in the lane
+   *  it rides (no deck of its own). */
+  private failChild(thread: string, parentId: string, error: unknown) {
+    // The engine's own message, scrubbed of a configured endpoint like the
+    // root turn's diagnostic; it rides the wire as the deck's report.
+    const diagnostic = capOutput(this.options.providerDiagnostic(turnErrorMessage(error) ?? error) || "the subagent's turn failed");
+    if (this.adoptedThreads.has(thread)) {
+      const forwarded = this.subagentProse.take(parentId, `subagent failed: ${firstLine(diagnostic.text, 200)}\n`);
+      if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
+      this.forgetChildThread(thread);
+      return;
+    }
+    this.failedChildren.add(thread); // bounded: the thread is anchored
+    this.emitTask(thread, "failed", diagnostic);
+  }
+
+  private onChildItem(thread: string, parentId: string, item: CodexItem | undefined, phase: ItemPhase) {
+    if (!item || typeof item.type !== "string" || typeof item.id !== "string") return;
+    if (!this.trackChildItem(thread, item.id, parentId)) return;
+    switch (item.type) {
+      case "plan": // the child's written plan: commentary in its lane, never its report
+      case "agentMessage": {
+        const declared =
+          item.type === "plan" || item.phase === "commentary" ? "commentary" : item.phase === "final_answer" ? "final" : undefined;
+        if (declared) this.phaseOf.set(item.id, declared);
+        if (phase !== "completed") return;
+        const text = typeof item.text === "string" ? item.text : "";
+        // The child's final answer is its report — retained already capped,
+        // the shape the task_update will carry, never the engine-sized text.
+        if (declared === "final" && text) this.childReports.set(thread, capOutput(text));
+        const streamed = this.prose.get(item.id)?.streamed ?? 0;
+        this.prose.delete(item.id);
+        const rest = text.slice(streamed);
+        if (rest) this.emitProse(item.id, rest);
+        return;
+      }
+      case "reasoning":
+        this.onReasoning(item, phase);
+        return;
+      case "commandExecution":
+        this.onCommandExecution(item, phase);
+        return;
+      case "fileChange":
+        this.onFileChange(item, phase);
+        return;
+      case "mcpToolCall":
+        this.onMcpToolCall(item, phase);
+        return;
+      case "webSearch":
+        this.onWebSearch(item, phase);
+        return;
+      // The same honest tool records the root gets — parented through the
+      // item table; the image handlers withhold their painting for a child.
+      case "dynamicToolCall":
+        this.onDynamicToolCall(item, phase);
+        return;
+      case "imageView":
+        if (phase === "completed") this.onImageView(item);
+        return;
+      case "imageGeneration":
+        if (phase === "completed") this.onImageGeneration(item);
+        return;
+      case "sleep":
+        if (phase === "completed") this.onSleep(item);
+        return;
+      case "collabAgentToolCall":
+        this.onChildCollabCall(parentId, item, phase);
+        return;
+      case "subAgentActivity":
+        if (phase === "completed") this.onChildSubagentActivity(parentId, item);
+        return;
+      default:
+        return; // a child's own housekeeping items (its user message echo, plans…) are not the lane
+    }
+  }
+
+  /** Parentage for one child item, remembered until its thread settles.
+   *  False when the flood cap refuses it: an untracked item is dropped
+   *  whole — never processed as root output, which is exactly what a noisy
+   *  child would gain from filling the table (PR #122 review). */
+  private trackChildItem(thread: string, id: string, parentId: string): boolean {
+    if (this.childItems.has(id)) return true;
+    if (this.childItems.size >= this.maxChildItems) {
+      if (!this.childFloodReported) {
+        this.childFloodReported = true;
+        log.warn(`codex child lane: past ${this.maxChildItems} tracked child items this session; further child items are not shown`);
+        this.options.emit({ type: "notice", text: "Codex subagent activity past Mirafold's per-session limit is not shown.", kind: "info" });
+      }
+      return false;
+    }
+    this.childItems.set(id, parentId);
+    let ids = this.childThreadItems.get(thread);
+    if (!ids) this.childThreadItems.set(thread, (ids = new Set()));
+    ids.add(id);
+    return true;
+  }
+
+  /** The engine's terminal word on a thread: its items, streaming state, and
+   *  retained report are done with. The anchor itself stays (bounded, and a
+   *  late update still needs its row). */
+  private forgetChildThread(thread: string) {
+    this.settleChildOutput(thread);
+    for (const id of this.childThreadItems.get(thread) ?? []) {
+      this.childItems.delete(id);
+      this.prose.delete(id);
+      this.phaseOf.delete(id);
+      this.announced.delete(id);
+      this.thinkingStreamed.delete(id);
+    }
+    this.childThreadItems.delete(thread);
+    this.childReports.delete(thread);
+    this.runningChildren.delete(thread);
+    // A grandchild riding this deck is NOT taken along: it may still be
+    // running (a spawn with no wait) and settles on its own terminal word.
+  }
+
+  /** A thread's still-streaming rows flush now — before its terminal word
+   *  goes out — so no snapshot timer fires after the task is over and no
+   *  orphaned track lingers in the live-output table; a row the child never
+   *  finished gets an honest result, since no turn_end will settle it once
+   *  the root turn is already over (PR #122 review). */
+  private settleChildOutput(thread: string, state: TaskState = "interrupted") {
+    for (const id of this.childThreadItems.get(thread) ?? []) {
+      if (this.announced.has(id)) {
+        this.finishTool(id, { output: state === "completed" ? "(no result reported)" : "(interrupted)", isError: state !== "completed" });
+      } else {
+        this.live.settle(id);
+      }
+    }
+  }
+
+  /** Session close: every live-output timer dies without emitting — a
+   *  throttled child snapshot must not become a record after close. */
+  discard() {
+    this.live.discard();
+  }
+
+  /** A thread a CHILD spawned or messaged anchors on that child's own deck —
+   *  the nearest visible ancestor — so its items ride the same lane. It gets
+   *  no deck or task row of its own: the child's lifecycle is the deck's. */
+  private adoptGrandchild(thread: string, parentId: string) {
+    if (!thread) return;
+    if (this.subagentAnchor.get(thread) === parentId) {
+      // Already riding this deck — spoken to again (a `send`, an
+      // `interacted`) after it had settled: running again until its next
+      // terminal word.
+      this.runningChildren.add(thread);
+      return;
+    }
+    if (!this.subagentAnchor.has(thread) && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS) {
+      this.subagentAnchor.set(thread, parentId);
+      this.adoptedThreads.add(thread);
+      // Running from its spawn: its bookkeeping outlives the root turn until
+      // its own terminal word, like a direct child's (PR #122 review).
+      this.runningChildren.add(thread);
+    }
+  }
+
+  /** A child's own collab call: an ordinary row in its deck, its receivers
+   *  adopted under the same deck; no task lifecycle is minted for them. */
+  private onChildCollabCall(parentId: string, item: CodexItem, phase: ItemPhase) {
+    const { name, receivers, detail, input, states } = this.collabShape(item);
+    for (const thread of receivers) this.adoptGrandchild(thread, parentId);
+    if (phase === "started") {
+      this.announceTool(item.id, name, detail, input);
+      return;
+    }
+    this.ensureAnnounced(item.id, name, detail, input);
+    this.finishCollabCall(item, states);
+    // The child's own word on the threads it waited for releases them.
+    for (const [thread, st] of states) {
+      const state = collabState(st?.status);
+      if (state && state !== "running" && state !== "unknown" && this.adoptedThreads.has(thread)) this.forgetChildThread(thread);
+    }
+  }
+
+  /** A child narrating ITS child's lifecycle: the line rides the child's
+   *  lane; a `started` adopts the grandchild thread, a terminal word releases
+   *  what the grandchild owned. */
+  private onChildSubagentActivity(parentId: string, item: CodexItem) {
+    const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
+    const kind = typeof item.kind === "string" && item.kind ? inertToken(item.kind, 48) : "activity";
+    const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
+    if (item.kind === "started" || item.kind === "interacted") this.adoptGrandchild(thread, parentId);
+    if (thread && (item.kind === "completed" || item.kind === "interrupted") && this.subagentAnchor.get(thread) === parentId) {
+      this.forgetChildThread(thread);
+    }
+    const forwarded = this.subagentProse.take(parentId, `${who} ${kind}\n`);
+    if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
+  }
 
   /** One child thread's lifecycle on the wire, anchored on the collab call
    *  that first named it. A thread no call anchored has no row to update. */
   private emitTask(thread: string, state: TaskState, report?: ReturnType<typeof capOutput>) {
     const id = this.subagentAnchor.get(thread);
-    if (!id) return;
+    if (!id || this.adoptedThreads.has(thread)) return;
     const label = this.taskLabels.get(thread);
+    const terminal = state !== "running" && state !== "unknown";
+    if (terminal) this.settleChildOutput(thread, state); // the last evidence precedes the terminal word
     this.options.emit({
       type: "task_update",
       id,
@@ -684,6 +1045,9 @@ export class CodexEventMapper {
       ...(report?.tail !== undefined ? { reportTail: report.tail } : {}),
       ...(report?.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
     });
+    // The engine's word decides how long the thread's bookkeeping lives.
+    if (state === "running") this.runningChildren.add(thread);
+    else if (terminal) this.forgetChildThread(thread);
   }
 
   /** A child agent's lifecycle, narrated under its spawn row when the anchor
@@ -695,19 +1059,33 @@ export class CodexEventMapper {
     // controls visible — never raw engine bytes at engine-chosen length.
     const kind = typeof item.kind === "string" && item.kind ? inertToken(item.kind, 48) : "activity";
     const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
-    const parentId = this.subagentAnchor.get(thread);
+    let parentId = this.subagentAnchor.get(thread);
     const text = `${who} ${kind}`;
     const lifecycle =
       item.kind === "started" || item.kind === "interacted"
         ? "running"
         : item.kind === "completed"
-          ? "completed"
+          ? this.failedChildren.delete(thread)
+            ? "failed" // its turn failed; the activity item closing it is not a success
+            : "completed"
           : item.kind === "interrupted"
             ? "interrupted"
             : undefined;
+    // A restarted child (spoken to again after a failed turn) starts clean:
+    // its earlier failure must not be pinned on the retry's completion.
+    if (lifecycle === "running") this.failedChildren.delete(thread);
+    // In app-server 0.153.4 a spawn surfaces as THIS event, not as a collab
+    // item (verified live 2026-09-15): the announcement itself anchors the
+    // child, with an opaque task-scoped handle the projection turns into a
+    // placeholder deck. A collab-anchored thread keeps its collab anchor.
+    if (item.kind === "started" && thread && !parentId && this.subagentAnchor.size < CodexEventMapper.MAX_SUBAGENT_ANCHORS) {
+      parentId = `codex-agent:${childHandle(thread)}`;
+      this.subagentAnchor.set(thread, parentId);
+    }
     if (lifecycle && parentId) {
       if (!this.taskLabels.has(thread)) this.taskLabels.set(thread, who); // anchored: parentId exists
-      this.emitTask(thread, lifecycle);
+      const report = lifecycle === "completed" ? this.childReports.get(thread) : undefined;
+      this.emitTask(thread, lifecycle, report);
     }
     if (parentId) {
       const forwarded = this.subagentProse.take(parentId, `${text}\n`);
@@ -727,7 +1105,8 @@ export class CodexEventMapper {
     const shown = path ? displayPath(path, this.options.workspaceDir) : "";
     this.announceTool(item.id, "view_image", shown, { path: shown });
     this.finishTool(item.id, { output: shown ? "(viewed)" : "(no path)" });
-    if (shown) this.paintWorkspaceImage(shown, "viewed by the agent");
+    // A subagent never paints (SECURITY.md): its row stands alone.
+    if (shown && !this.childItems.has(item.id)) this.paintWorkspaceImage(shown, "viewed by the agent");
   }
 
   private onImageGeneration(item: CodexItem) {
@@ -740,7 +1119,7 @@ export class CodexEventMapper {
       ...(failed ? outputFields(failure) : { output: saved || "(no file saved)" }),
       isError: failed,
     });
-    if (saved && !failed) this.paintWorkspaceImage(saved, prompt || "generated image");
+    if (saved && !failed && !this.childItems.has(item.id)) this.paintWorkspaceImage(saved, prompt || "generated image");
   }
 
   private paintWorkspaceImage(path: string, alt: string) {
@@ -780,8 +1159,10 @@ export class CodexEventMapper {
     const tool = typeof item.tool === "string" ? item.tool : "";
     // Mirafold's generative-UI server becomes the render/artifact message
     // represented by the call rather than a raw tool row. If it did not
-    // produce a painting, fall back to the honest call/result record.
-    if (server === MIRAFOLD_MCP) {
+    // produce a painting, fall back to the honest call/result record. A
+    // SUBAGENT's call never becomes a painting: it is always the honest,
+    // parented record (SECURITY.md — subagents cannot paint session-level UI).
+    if (server === MIRAFOLD_MCP && !this.childItems.has(item.id)) {
       if (phase === "completed" && item.status !== "failed" && !item.error) {
         const message = this.generativeUIMessage(tool, item);
         if (message) {
@@ -831,7 +1212,9 @@ export class CodexEventMapper {
 
   private announceTool(id: string, name: string, detail: string, input: unknown, actions?: ToolAction[]) {
     this.announced.add(id);
-    this.options.emit({ type: "status", state: "tool", label: name });
+    const parentId = this.childItems.get(id);
+    // A child's tool churn never steers the root activity line.
+    if (!parentId) this.options.emit({ type: "status", state: "tool", label: name });
     this.options.emit({
       type: "tool_use",
       name,
@@ -839,6 +1222,7 @@ export class CodexEventMapper {
       id,
       input: typeof input === "object" && input !== null ? (input as Record<string, unknown>) : undefined,
       ...(actions?.length ? { actions } : {}),
+      ...(parentId ? { parentId } : {}),
     });
   }
 
@@ -859,7 +1243,8 @@ export class CodexEventMapper {
     // The final snapshot goes out before the authoritative result, so a
     // pre-result viewport never holds a stale tail.
     this.live.settle(id);
-    this.options.emit({ type: "tool_result", ...result, id });
+    const parentId = this.childItems.get(id);
+    this.options.emit({ type: "tool_result", ...result, id, ...(parentId ? { parentId } : {}) });
   }
 
   private generativeUIMessage(tool: string, item: CodexItem): SessionMsg | null {
@@ -885,6 +1270,13 @@ export class CodexEventMapper {
 type TaskState = Extract<SessionMsg, { type: "task_update" }>["state"];
 
 /** A collab call's per-thread `CollabAgentStatus` → the wire's task state. */
+/** A bounded handle for an engine thread id inside a synthetic anchor: the
+ *  id itself while it fits the checkpoint id budget with room for the prefix,
+ *  else its digest — a live and a restored session must agree on the row. */
+function childHandle(thread: string): string {
+  return thread.length <= 200 ? thread : createHash("sha256").update(thread).digest("base64url");
+}
+
 function collabState(status: unknown): TaskState | undefined {
   switch (status) {
     case "pendingInit":

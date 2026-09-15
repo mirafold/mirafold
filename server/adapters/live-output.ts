@@ -142,6 +142,14 @@ export class LiveOutput {
     }
   }
 
+  /** Session close: every timer dies and every track is forgotten WITHOUT a
+   *  final snapshot — nothing may reach the emitter after close, and a
+   *  background child's throttled timer would otherwise (PR #122 review). */
+  discard(): void {
+    for (const track of this.tracks.values()) clearTimeout(track.timer);
+    this.tracks.clear();
+  }
+
   private track(id: string, parentId?: string): Track | undefined {
     let track = this.tracks.get(id);
     if (!track) {

@@ -32,9 +32,10 @@ Subagent decks (Phase SA, 2026-08-14) put a subagent's own narration and
 reasoning inside shell chrome: it renders as inert plain text only, never
 markdown or HTML, and a subagent cannot paint generative-UI components — on
 OpenCode the adapter's lane refuses it, and in the Claude Agent integration the
-SDK withholds the MCP render tools from subagent contexts (verified against the
-real adapter — a live-tier fact no Tier 1–3 test can hold, so an SDK upgrade
-re-verifies it under `yarn test:live`; 2026-08-26 test-audit). Per-subagent narration is byte-capped with an explicit elision
+SDK withholds the MCP render tools from subagent contexts (observed against the
+real adapter in the 2026-08-14 live probe — a live-tier fact no Tier 1–3 test
+can hold, and no Claude live test exists under `yarn test:live` either, so an
+SDK upgrade re-checks it by hand; 2026-08-26 test-audit, restated 2026-09-15). Per-subagent narration is byte-capped with an explicit elision
 marker, and the cap's ledger bounds distinct subagents per turn, so a
 hostile or looping engine cannot grow it — or the wire — without bound.
 
@@ -71,11 +72,29 @@ things follow, and they are the whole list:
   agent lookup. This prevents executable shadowing, but does not make the
   checkout trusted: inspect or temporarily rename its `.env` before first
   launch because supported settings can still select the AGENT's endpoints,
-  credentials, models, and resource limits — never the daemon's own: the auth
+  credentials, models, and resource limits, plus the listen port and debug
+  logging (`PORT`, `MIRAFOLD_DEBUG`) — never the daemon's own: the auth
   token, the relay address, the pairing code, the license key, the
   entitlement exchange, and extra discovery targets are read from the parent
   environment only (2026-08-26 audit: three `.env` lines once redirected the
   license-key exchange and the relay to a hostile host and pinned the code).
+- **A Desktop-hosted launch receives the Pro key over a pipe, never the
+  environment.** When the launcher is started with the fixed internal flag
+  `--mirafold-desktop`, the daemon reads at most 43 bytes from standard input,
+  requires end-of-file within two seconds, closes the descriptor before any
+  session or agent can start, and holds the key only in an in-memory
+  configuration object (`server/desktop-credential.ts`). It is never written
+  to `process.env`, argv, a log, a checkpoint, or the wire; a stale ambient
+  `MIRAFOLD_LICENSE_KEY` is ignored with one credential-free warning. Terminal
+  and npm launches keep reading the environment variable exactly as before.
+- **The native folder picker is a daemon child outside the workspace jail.**
+  An explicit agent-picker click asks the LOCAL daemon to open the operating
+  system's own directory dialog (`server/folder-picker.ts`), because a browser
+  cannot turn a directory handle into the absolute path an agent needs as its
+  working directory. The dialog program is located through the trusted
+  executable lookup, every path travels as an argv/env value (never shell
+  text), and the chosen directory is validated the same way a typed one is.
+  Remote viewports never receive the affordance.
 - **Keys and configured endpoint URLs stay server-side.** Credentials come
   from the environment or a `.env` in the launch directory and are never
   serialized to the browser. Configured URLs are sensitive too: userinfo or a
@@ -83,7 +102,8 @@ things follow, and they are the whole list:
   tenant/network identity. A configured Claude row therefore receives only a
   random daemon-scoped identifier; a Codex row uses its declared provider name
   while its base URL remains internal. Raw logs name only “configured endpoint.” Mirafold
-  parses that file through an explicit allowlist of documented data settings;
+  parses that file through an explicit allowlist of documented data settings
+  (`server/project-env.ts`);
   parent-process values win, and executable overrides, `PATH`/shell controls,
   runtime loader hooks, and arbitrary project variables are ignored. The file
   remains active application configuration, so review it before launching an
@@ -140,7 +160,7 @@ command exits — that's terminal parity: the agent sees what you saw. It
 also means untrusted text a command fetches (a curl'd web page, a piped
 log) can try to steer the agent. The permission prompts are the backstop
 for anything consequential, and the fence escaping in
-`server/sessions/connection.ts` keeps command output from faking its way
+`server/sessions/bang-handlers.ts` keeps command output from faking its way
 out of its transcript block.
 
 **The pairing QR on screen IS the remote credential.** The connect-a-device
@@ -159,8 +179,9 @@ random 128-bit value — nobody guesses it. A power user may instead pin one via
 `MIRAFOLD_RELAY_CODE`, and that value is refused only if it is shorter than 16
 characters or carries characters the pairing link can't encode. It is NOT
 scored for entropy, so a long-but-guessable code (`passwordpassword`) is
-accepted. Because the relay identifies a pair by `SHA-256(code)` — a value the
-relay operator logs by design — a low-entropy pinned code is offline-crackable
+accepted. Because the relay identifies a pair by the first 16 bytes of
+`SHA-256(code)`, base64url-encoded (`server/relay/relay-crypto.ts`) — a value
+the relay operator logs by design — a low-entropy pinned code is offline-crackable
 by whoever holds those logs, and a crack is full remote drive of the session.
 Accepted rather than fixed: any automated entropy gate on a user-chosen string
 either false-rejects legitimate strong passphrases or is trivially gamed, and
@@ -184,8 +205,13 @@ over plaintext on a trusted network stays possible, just noisy. Loopback is
 exempt (the dev stub and same-box self-host carry nothing off-machine).
 
 **The `.env` guard is path-based; symlinks and hardlinks are the accepted
-residual.** The daemon denies its auto-allowed read-only tools (Read,
-NotebookRead, Grep, Glob) access to its own `.env`/`.env.local` by resolved
+residual.** The tools the daemon auto-allows without a prompt are the
+terminal's: Read, NotebookRead, Grep, Glob, plus the two bookkeeping tools
+`TodoWrite` and `Task` (the subagent spawn — a subagent's own consequential
+calls still prompt); no network tool is on that list (`READ_ONLY_TOOLS` in
+`server/security/permissions.ts`). The daemon denies the path-taking readers
+among them (Read, NotebookRead, Grep, Glob) access to its own
+`.env`/`.env.local` by resolved
 path — direct paths, `../` traversals, cross-cwd routes, AND case-variant
 spellings (`.Env`/`.ENV`) on a case-insensitive filesystem are all denied and
 pinned by tests. The case-variant route was a real zero-click gap on
@@ -223,7 +249,9 @@ not missed: only the user can create the state (nothing on the wire can
 open, close, or restyle the layer), the muted controls remain visible
 through the dim, escape is a single gesture, and the phone's full-screen
 folder tree (E.4) already covers the same controls completely opaquely. The
-permission *modal* (z-60) still ranks above the lightbox (z-54/55). The
+permission *modal* (`--z-modal`, 60) still ranks above the lightbox
+(`--z-layer-dim` / `--z-layer`, 54/55; the tokens live in
+`web/src/styles/01-frame.css`). The
 trusted-shell rule this brushes against — nothing may intercept the
 permission or stop affordances — is about the AGENT; it is intact. Do not
 "fix" this by making the permission bar punch through the layer: whether a
@@ -393,8 +421,12 @@ the ring — single messages are bounded at their source (the image resolver
 refuses past 2 MB). What this costs: a session that renders many large images
 keeps a shorter replay history, so a viewport reconnecting after a long
 absence may see a truncated head — the same degradation the count cap has
-always had. Pinned by `server/sessions/registry.test.ts`, verified to fail
-when the byte cap is removed.
+always had. Since Phase TF (2026-09-15) the truncation is stated rather than
+silent: the replay ends with `replay_complete { evicted: true }`, the
+transcript shows a notice, and a tool outcome whose opening row was evicted
+appears as an explicit "(earlier call)" row instead of vanishing. Pinned by
+`server/sessions/registry.test.ts`, verified to fail when the byte cap is
+removed.
 
 Related, same audit: the workspace directory is a **required** argument on
 both render paths (`makeRenderServer`, `generativeUIMsg`). It is what jails

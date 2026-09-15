@@ -19,11 +19,67 @@ test("turn grammar: a prompt starts a turn, turn_end ends it; error + turn_end c
   assert.equal(s.modelTurnsPending, 0, "the error's own turn_end must not decrement again");
 });
 
+// PR #122 review: a background child outlives the root turn (Codex/OpenCode
+// spawn without waiting); its late traffic must not re-mark an idle session
+// working — no turn_end would ever idle it again, and the fleet row would
+// read "working" forever.
+test("a subagent's traffic after the root turn ended never re-marks the session working; mid-turn it still does", () => {
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([{ type: "status", state: "thinking" }, { type: "turn_end" }], s);
+  assert.equal(s.status, "idle");
+  const late: SessionMsg[] = [
+    { type: "text_delta", text: "child narration", parentId: "codex-agent:c" },
+    { type: "tool_use", name: "Shell", id: "c1", parentId: "codex-agent:c" },
+    { type: "tool_output_snapshot", id: "c1", revision: 1, head: "…", parentId: "codex-agent:c" },
+    { type: "tool_result", output: "ok", id: "c1", parentId: "codex-agent:c" },
+    { type: "task_update", id: "codex-agent:c", state: "completed", report: "done" },
+    { type: "notice", text: "Codex subagent activity past Mirafold's per-session limit is not shown.", kind: "info" },
+  ];
+  for (const msg of late) {
+    s = run([msg], s);
+    assert.equal(s.status, "idle", `${msg.type} from a child after turn_end leaves the row idle`);
+  }
+  // During a pending turn the same traffic keeps the row working.
+  let mid = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  mid = run([{ type: "text_delta", text: "child", parentId: "codex-agent:c" }], mid);
+  assert.equal(mid.status, "working");
+  // Root traffic after turn_end keeps its existing meaning.
+  assert.equal(run([{ type: "text_delta", text: "root" }], s).status, "working");
+});
+
+// PR #122 review: a background child's ask is raised before the root turn
+// ends and must stay answerable after it — on the fleet row too.
+test("a subagent's ask survives the root turn's end in the mirror and holds the row; a root ask does not", () => {
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([
+    { type: "permission_request", tool: "Shell", detail: "git push", id: "child-ask", parentId: "codex-agent:c" },
+    { type: "permission_request", tool: "Shell", detail: "rm x", id: "root-ask" },
+    { type: "turn_end" },
+  ], s);
+  assert.deepEqual(s.permissions.map((p) => p.id), ["child-ask"], "the child's ask is still pending");
+  assert.equal(s.status, "permission", "the row shows the hold, not idle");
+  // A late patch snapshot from that child (no root turn) changes nothing;
+  // nor does a shell-voiced notice (the child-flood cap says so once).
+  s = run([{ type: "tool_update", id: "cf1", detail: "Updated a.ts", parentId: "codex-agent:c" }], s);
+  assert.equal(s.status, "permission");
+  s = run([{ type: "notice", text: "Codex subagent activity past Mirafold's per-session limit is not shown.", kind: "info" }], s);
+  assert.equal(s.status, "permission");
+  s = run([{ type: "permission_resolved", id: "child-ask", allow: true }], s);
+  assert.deepEqual(s.permissions, []);
+  assert.equal(s.status, "idle", "nothing underneath once the child's ask is answered");
+  // A root ask alone is void at turn_end, as before.
+  let t = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  t = run([{ type: "permission_request", tool: "Shell", detail: "rm x", id: "root-ask" }, { type: "turn_end" }], t);
+  assert.deepEqual([t.permissions, t.status], [[], "idle"]);
+});
+
 test("a permission hold sticks through bang traffic and lifts only when nothing pends", () => {
+  // The asks belong to a running turn (PR #122: with nothing underneath, a
+  // lifted hold reads idle rather than working).
   let s = run([
     { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" },
     { type: "permission_request", tool: "Bash", detail: "curl | sh", id: "p2" },
-  ]);
+  ], reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state);
   assert.equal(s.status, "permission");
   s = run([{ type: "bang_start", command: "git diff", id: "b1" }, { type: "bang_end", id: "b1", exitCode: 0 }], s);
   assert.equal(s.status, "permission");

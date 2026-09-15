@@ -198,6 +198,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       detail: z.string().optional(),
       input: jsonRecordSchema.optional(),
       elapsedMs: nonnegativeIntSchema.optional(),
+      parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),

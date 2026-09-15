@@ -11,9 +11,10 @@ import type { AgentCapabilities, AgentName } from "../protocol";
  *   absent; reasoning streams; subagent/background task lifecycle rides
  *   task_started/progress/notification with child calls and prose.
  * - Codex (app-server, 0.153.4): command output streams
- *   (`item/commandExecution/outputDelta`); reasoning streams; collab tasks
- *   report lifecycle, but a child thread's own calls and prose are not
- *   delivered on the parent connection (no subscribe request exists).
+ *   (`item/commandExecution/outputDelta`); reasoning streams; a spawned
+ *   child is announced by `subAgentActivity` and its own items (reasoning,
+ *   prose, commands) arrive on the parent connection under the child's
+ *   thread id — verified live 2026-09-15 — so the deck carries them.
  * - Gemini CLI (0.58 headless stream-json): `init | message | tool_use |
  *   tool_result | error | result` only — no live output, no thinking, no
  *   task lane.
@@ -22,7 +23,7 @@ import type { AgentCapabilities, AgentName } from "../protocol";
  */
 export const AGENT_CAPABILITIES: Record<AgentName, Required<AgentCapabilities>> = {
   "claude-code": { liveOutput: false, thinking: true, tasks: true, childActivity: true },
-  codex: { liveOutput: true, thinking: true, tasks: true, childActivity: false },
+  codex: { liveOutput: true, thinking: true, tasks: true, childActivity: true },
   "gemini-cli": { liveOutput: false, thinking: false, tasks: false, childActivity: false },
   opencode: { liveOutput: true, thinking: true, tasks: true, childActivity: true },
 };
