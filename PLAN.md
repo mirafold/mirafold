@@ -4791,7 +4791,7 @@ production merge, or publication belongs to this phase.
   the original signed-off Dependabot commit was retained. Fresh CI run
   `34887920434` used `next` at `91d2391`; all checks and Codex review passed.
   Kyle approved the merge; PR #116 merged into `next` as `35597ef`.
-- [ ] **OIC.3 — Implement issue #99 in a separate PR.** Add opaque, stateful
+- [x] **OIC.3 — Implement issue #99 in a separate PR.** Add opaque, stateful
   continuation to `fs_listdir`/`fs_dir` and append pages behind one **Load
   more** row. Keep the 10,000-entry raw scan cap, one bounded raw page per
   request, and existing reply count/name-byte caps. Scope each listing to
@@ -4830,8 +4830,10 @@ production merge, or publication belongs to this phase.
   both real-socket tests, all four pagination browser tests, four existing
   browser setup/folder-tree regressions, typecheck, and server/web builds.
   The independent reviewer confirmed both fixes with no remaining findings.
-  Current-head CI and automated review, explicit merge approval, merge, and
-  issue closure remain open.
+  **Done 2026-09-14:** current-head CI and the Codex review ran on PR #119;
+  Kyle approved; merged into `next` as `d3ec718` (21:22 UTC); issue #99
+  closed (21:23 UTC). Phase OIC is complete. (Recorded 2026-09-15 after
+  the entry was found stale — verified on GitHub, not from memory.)
 
 ---
 
