@@ -3874,7 +3874,14 @@ the child-flood notice after the root turn re-marked the fleet row working
 (a `notice` never re-marks an idle session working — the daemon reducer);
 a child interrupted mid-call left its row running inside a terminal deck
 (every unfinished child row gets an honest `(interrupted)` result before
-the terminal word). Mutation-checked.
+the terminal word). Mutation-checked. **Round 9 (`1f98ef5`):** the Codex
+re-review completed with NO new findings. Tally over the PR: 30 findings
+across eight rounds, 30 fixed with a regression each (the reducer and
+schema ones mutation-checked), none dismissed; all 33 review threads
+resolved. Rounds 5–8 were one new state — a background child outliving
+the root turn — worked seam by seam into both busy reducers, the ask
+ledger and mirrors, the checkpoint schema, and the live-output timers.
+The PR awaits Kyle's merge decision.
 
 **Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
 Codex delivers a child thread's items on the parent connection (lane
