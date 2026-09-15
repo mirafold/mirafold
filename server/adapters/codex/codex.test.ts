@@ -874,6 +874,24 @@ test("TF2.4: a spawn returns while its child runs; later state updates the same 
   s.close();
 });
 
+test("PR #120 round 4: one collab result's child reports share one budget and one update count", async () => {
+  const threads = Array.from({ length: 600 }, (_, i) => `t-${i}`);
+  const states = Object.fromEntries(threads.map((t) => [t, { status: "completed", message: "m".repeat(50_000) }]));
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: threads, senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: threads, senderThreadId: "t-root", status: "completed", agentsStates: states } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const completed = msgs.filter((m) => m.type === "task_update" && m.state === "completed");
+  assert.ok(completed.length <= CodexEventMapper.MAX_TASK_UPDATES_PER_RESULT, `updates bounded (${completed.length})`);
+  const reportBytes = completed.reduce((n, m) => n + Buffer.byteLength(m.report ?? "", "utf8") + Buffer.byteLength(m.reportTail ?? "", "utf8"), 0);
+  assert.ok(reportBytes <= OUTPUT_CAP_BYTES, `one result's reports share one budget (${reportBytes})`);
+  assert.ok(completed.some((m) => m.report), "the first children still carry their reports");
+  s.close();
+});
+
 test("TF2.4: an errored or interrupted child marks its task failed/interrupted", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: ["t-a", "t-b"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],

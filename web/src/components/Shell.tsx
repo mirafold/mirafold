@@ -134,6 +134,9 @@ export function Shell() {
   // Checklist paintings that were already complete, by render id, so a
   // republished complete plan does not re-announce (round 2).
   const completedPlans = useRef(new Set<string>());
+  // The session the ledgers belong to: a same-session resume keeps them
+  // (replayed frames are not live and never repopulate them — round 4).
+  const ledgerSession = useRef<string | undefined>(undefined);
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
   // Replaced whole whenever the adapter reports a changed catalog.
@@ -340,10 +343,13 @@ export function Shell() {
             capabilities: m.capabilities,
           });
           setDetailsMode(loadDetailsMode(m.sessionId));
-          // Task and plan ids are session-scoped: a new session starts a
-          // fresh ledger (round 2).
-          notedTaskStates.current.clear();
-          completedPlans.current.clear();
+          // Task and plan ids are session-scoped: a DIFFERENT session starts
+          // a fresh ledger (round 2); a resume of the same one keeps it.
+          if (ledgerSession.current !== m.sessionId) {
+            ledgerSession.current = m.sessionId;
+            notedTaskStates.current.clear();
+            completedPlans.current.clear();
+          }
           setNotices((n) => ({
             ...n,
             agentPicker: null,

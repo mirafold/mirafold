@@ -18,13 +18,19 @@ function sameDeltaLane(left: QueuedDelta, right: QueuedDelta): boolean {
   return true;
 }
 
+// The merged entry keeps the FIRST delta's seq: the projection keys a
+// reasoning row's disclosure on the seq of its first delta, and a full
+// replay (which bypasses this queue) sees that same seq — so live and
+// replayed rows derive one key (PR #120 round 4).
 function copyDelta(msg: QueuedDelta): QueuedDelta {
+  const seq = msg.seq !== undefined ? { seq: msg.seq } : {};
   if (msg.type === "text_delta") {
     return {
       type: msg.type,
       text: msg.text,
       ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
       ...(msg.phase !== undefined ? { phase: msg.phase } : {}),
+      ...seq,
     };
   }
   if (msg.type === "tool_output_delta") {
@@ -33,12 +39,14 @@ function copyDelta(msg: QueuedDelta): QueuedDelta {
       id: msg.id,
       text: msg.text,
       ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+      ...seq,
     };
   }
   return {
     type: msg.type,
     text: msg.text,
     ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+    ...seq,
   };
 }
 

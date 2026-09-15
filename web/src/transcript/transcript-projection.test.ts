@@ -602,6 +602,13 @@ test("PR #120 review: an outcome replayed before its task anchor settles the pla
   assert.equal(rowsOf(snapshot, "tool").filter((t) => t.orphaned).length, 0, "nothing is left over as an orphan");
 });
 
+test("PR #120 round 4: a live reasoning row and its replayed twin share one disclosure key", () => {
+  const live = apply(createTranscriptProjection(), { type: "user_prompt", text: "go", seq: 1 }, { type: "thinking_delta", text: "hmm", seq: 2 }, { type: "thinking_delta", text: " more", seq: 3 });
+  const replayed = apply(createTranscriptProjection(), { type: "user_prompt", text: "go", seq: 1, replay: true }, { type: "thinking_delta", text: "hmm more", seq: 2, replay: true });
+  assert.equal(rowsOf(live, "thinking")[0]?.wireKey, "seq:2");
+  assert.equal(rowsOf(replayed, "thinking")[0]?.wireKey, "seq:2");
+});
+
 test("PR #120 round 3: a running task's child call survives the root turn end; a live-only orphan keeps running past replay end", () => {
   const projection = createTranscriptProjection();
   const snapshot = apply(

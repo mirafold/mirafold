@@ -5126,6 +5126,15 @@ verified and fixed with a regression check per class:
 - `formatDuration` could print "1m 60s"; `Write` counted the trailing
   newline as a line.
 
+**PR #120 round 4 (`1381931`, CI green).** Three findings, all verified
+and fixed with a regression check each: the note ledgers were cleared on a
+same-session resume (now only when the session id changes); one Codex
+collab result could fan out an unbounded total of child reports (now one
+report budget and at most 500 state updates per result, the rest logged);
+live thinking deltas lost their `seq` in the browser batch so a row's
+disclosure key differed from its replay (the merged delta keeps the first
+seq; live and replayed rows now derive one key).
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in

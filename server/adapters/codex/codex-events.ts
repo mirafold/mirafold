@@ -122,6 +122,9 @@ export class CodexEventMapper {
   // the map is bounded here instead: past the cap a new thread's activity
   // falls to the budgeted unanchored lane rather than growing memory.
   private static readonly MAX_SUBAGENT_ANCHORS = 5_000;
+  // Child state updates forwarded from ONE collab result: a fan-out past
+  // this is engine-sized noise, not a transcript (round 4).
+  static readonly MAX_TASK_UPDATES_PER_RESULT = 500;
   // Streamed tool output (TS.11 / Phase TF): the shared bounded accumulator
   // — legacy prefix deltas plus replacement snapshots, capped like the final
   // output so a chatty command cannot flood the ring.
@@ -611,16 +614,32 @@ export class CodexEventMapper {
     // Each child's lifecycle is the engine's word on THAT thread, carried
     // separately from this call's own settlement; the full message is the
     // child's report, retained through the bounded report contract — the
-    // 160-char first line below is only the collapsed row's text.
+    // 160-char first line below is only the collapsed row's text. One
+    // result's fan-out shares ONE report budget and one update count
+    // (round 4): past them a child gets its state without a report, or
+    // nothing this time — its earlier state stands, and the log says so.
+    let reportBudget = OUTPUT_CAP_BYTES;
+    let updates = 0;
+    let omittedUpdates = 0;
     for (const [thread, st] of states) {
       const state = collabState(st?.status);
       if (!state) continue;
+      if (updates >= CodexEventMapper.MAX_TASK_UPDATES_PER_RESULT) {
+        omittedUpdates++;
+        continue;
+      }
+      updates++;
       if (prompt && (item.tool === "spawnAgent" || item.tool === "spawn_agent") && !this.taskLabels.has(thread) && this.subagentAnchor.has(thread)) {
         this.taskLabels.set(thread, firstLine(prompt, 96));
       }
-      const message = typeof st?.message === "string" && st.message ? capOutput(st.message) : undefined;
+      let message: ReturnType<typeof capOutput> | undefined;
+      if (typeof st?.message === "string" && st.message && reportBudget > 0) {
+        message = capOutput(st.message, Math.min(OUTPUT_CAP_BYTES, reportBudget));
+        reportBudget -= Buffer.byteLength(message.text, "utf8") + Buffer.byteLength(message.tail ?? "", "utf8");
+      }
       this.emitTask(thread, state, message);
     }
+    if (omittedUpdates) log.warn(`collab result ${item.id}: ${omittedUpdates} child state update(s) past the per-result cap were not forwarded`);
     // Engine-sized fan-out: build lines only up to the output ceiling and
     // say how many were left, instead of materializing every state first
     // (release review 2026-09-01).
