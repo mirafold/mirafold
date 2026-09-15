@@ -1321,6 +1321,26 @@ test("PR #122 review round 4: a child whose turn failed is a failed task with th
   s.close();
 });
 
+test("PR #122 review round 5: a child's written plan rides its lane as commentary, streamed and whole", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "plan", id: "cp1", text: "" }, "started"),
+    ["item/plan/delta", { threadId: "CHILD", itemId: "cp1", delta: "1. look " }],
+    childItem("CHILD", { type: "plan", id: "cp1", text: "1. look 2. leap" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "leapt.", phase: "final_answer" }),
+    settled("CHILD"),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lane = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor && m.phase === "commentary").map((m) => m.text);
+  assert.deepEqual(lane.filter((t) => /look|leap/.test(t)), ["1. look ", "2. leap"], "the streamed part, then only the remainder");
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && !m.parentId && /look/.test(m.text)), "nothing in the root transcript");
+  assert.equal(msgs.filter((m) => m.type === "task_update" && m.state === "completed").at(-1)!.report, "leapt.", "the plan is never the report");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

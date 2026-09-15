@@ -780,6 +780,14 @@ export class CodexEventMapper {
         if (this.childItems.has(id)) this.onProseDelta(id, String(p["delta"] ?? ""));
         break;
       }
+      case "item/plan/delta": {
+        // A child's written plan is narration in its lane, like the root's.
+        const id = String(p["itemId"] ?? "");
+        if (!this.childItems.has(id)) break;
+        this.phaseOf.set(id, "commentary");
+        this.onProseDelta(id, String(p["delta"] ?? ""));
+        break;
+      }
       case "item/commandExecution/outputDelta":
       case "item/fileChange/outputDelta": {
         const id = String(p["itemId"] ?? "");
@@ -848,8 +856,10 @@ export class CodexEventMapper {
     if (!item || typeof item.type !== "string" || typeof item.id !== "string") return;
     if (!this.trackChildItem(thread, item.id, parentId)) return;
     switch (item.type) {
+      case "plan": // the child's written plan: commentary in its lane, never its report
       case "agentMessage": {
-        const declared = item.phase === "commentary" ? "commentary" : item.phase === "final_answer" ? "final" : undefined;
+        const declared =
+          item.type === "plan" || item.phase === "commentary" ? "commentary" : item.phase === "final_answer" ? "final" : undefined;
         if (declared) this.phaseOf.set(item.id, declared);
         if (phase !== "completed") return;
         const text = typeof item.text === "string" ? item.text : "";

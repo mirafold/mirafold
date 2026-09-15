@@ -119,6 +119,35 @@ test("disconnect retains the turn; interrupt leaves exactly one turn_end owed; z
   assert.deepEqual(reduceTurn(two, { kind: "message", msg: { type: "zone_reset" } }).state, IDLE_TURN);
 });
 
+// PR #122 review: a background child outlives the root turn; its late traffic
+// must not re-open a busy state nothing will close (the phone's Send became a
+// Stop that stopped nothing).
+test("a subagent's traffic after the root turn ended never re-opens busy; during the turn it still proves busy", () => {
+  const ended = play([{ type: "user_prompt", text: "spawn and don't wait" }, { type: "turn_end" }]).state;
+  assert.equal(ended.busy, false);
+  const late: ZoneMsg[] = [
+    { type: "text_delta", text: "child narration", parentId: "codex-agent:c" },
+    { type: "thinking_delta", text: "child pondering", parentId: "codex-agent:c" },
+    { type: "tool_use", name: "Shell", id: "c1", parentId: "codex-agent:c" },
+    { type: "tool_result", output: "ok", id: "c1", parentId: "codex-agent:c" },
+    { type: "task_update", id: "codex-agent:c", state: "completed", report: "done" },
+  ];
+  let state = ended;
+  for (const msg of late) {
+    state = reduceTurn(state, { kind: "message", msg }).state;
+    assert.equal(state.busy, false, `${msg.type} from a child after turn_end leaves the shell idle`);
+  }
+  // Mid-turn a child's traffic is still evidence the turn is running (a replay
+  // tail that begins inside a spawn's activity).
+  const midTurn = reduceTurn(play([{ type: "user_prompt", text: "x" }]).state, {
+    kind: "message",
+    msg: { type: "text_delta", text: "child", parentId: "codex-agent:c" },
+  }).state;
+  assert.equal(midTurn.busy, true);
+  // Root traffic after turn_end keeps its existing meaning: it re-establishes busy.
+  assert.equal(reduceTurn(ended, { kind: "message", msg: { type: "text_delta", text: "root" } }).state.busy, true);
+});
+
 // AUDIT 2026-08-26 (hardening): a message the reducer ignores — or one that
 // leaves every rendered field as it was — must return `prev` itself, or the
 // whole Shell re-renders per frame (the OutputZone's full row map included)

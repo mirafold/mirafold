@@ -126,15 +126,19 @@ function reduceTurnFresh(
     next.turnText = "";
     if (live) announcements.push({ text: "Sent. Working…" });
   } else if (isActivity(m)) {
-    // Activity also establishes busy when replay starts after a turn's prompt.
-    next.busy = true;
-    // A SUBAGENT's traffic (parentId set) still proves the turn is busy, but
-    // it is not the parent's voice — child prose and child tool churn must
-    // not steer the activity label (the deck shows each subagent's own
-    // action), and child prose never lands in the turn-end announcement.
-    // The announcer still speaks child tools — the audible peer of the
-    // deck's ticker.
+    // A SUBAGENT's traffic (parentId set) proves the turn is busy only while
+    // a turn is open: a background child outlives the root turn (Codex and
+    // OpenCode spawn without waiting), and its late prose or calls must not
+    // re-open a busy state nothing will ever close — the phone's Send would
+    // turn into a Stop that stops nothing (PR #122 review). It is never the
+    // parent's voice either — child prose and child tool churn must not
+    // steer the activity label (the deck shows each subagent's own action),
+    // and child prose never lands in the turn-end announcement. The
+    // announcer still speaks child tools — the audible peer of the deck's
+    // ticker.
     const subagentTraffic = m.type !== "status" && Boolean(m.parentId);
+    // Root activity also establishes busy when replay starts after a turn's prompt.
+    if (!subagentTraffic || prev.openTurns > 0) next.busy = true;
     if (m.type === "status") next.activity = { state: m.state, label: m.label };
     else if (m.type === "thinking_delta") {
       if (!subagentTraffic) next.activity = { state: "thinking" };

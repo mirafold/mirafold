@@ -3833,6 +3833,17 @@ the request's thread); a child turn that ended `failed` was dropped, so a
 provider/model failure read as a completed task (the failure is a `failed`
 task update with the engine's capped diagnostic, and the activity item's
 later "completed" keeps reading as failed). All three mutation-checked.
+**Round 5 (`49b0062`, CI green):** two new findings, both legitimate,
+fixed with a regression each — a child's written plan (`item/plan/delta`
+and the `plan` item) was dropped from its lane (now commentary in the deck,
+never its report); a background child's late traffic after the root
+`turn_end` re-opened the busy state nothing would close (the phone's Send
+became a Stop that stopped nothing) — fixed in BOTH reducers: the browser's
+turn reducer (subagent traffic proves busy only while a turn is open) and
+the daemon's session-state reducer (subagent traffic or a task lifecycle
+word never re-marks an idle session working), the second being the same
+class on the fleet row for any adapter with background children.
+Mutation-checked.
 
 **Residuals (recorded, not hidden):** RESOLVED by the TF5.2 live run —
 Codex delivers a child thread's items on the parent connection (lane

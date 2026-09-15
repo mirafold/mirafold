@@ -161,8 +161,13 @@ export function reduceSessionState(
     if (next.status !== "permission") next.status = "working";
   } else if (msg.type !== "permission_resolved") {
     // permission_resolved decides its own status below — it must not
-    // blanket-flip to "working" while a SECOND ask still pends.
-    next.status = "working";
+    // blanket-flip to "working" while a SECOND ask still pends. A
+    // subagent's traffic (parentId set, or a task lifecycle word) after the
+    // root turn ended — a background child that outlived it — must not
+    // re-mark the session working either: no turn_end would ever idle it
+    // again, and the fleet would read "working" forever (PR #122 review).
+    const subagentTraffic = msg.type === "task_update" || ("parentId" in msg && Boolean(msg.parentId));
+    if (!subagentTraffic || next.modelTurnsPending > 0 || next.bangActive) next.status = "working";
   }
 
   // ---- cockpit: activity ----

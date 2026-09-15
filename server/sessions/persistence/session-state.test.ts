@@ -19,6 +19,33 @@ test("turn grammar: a prompt starts a turn, turn_end ends it; error + turn_end c
   assert.equal(s.modelTurnsPending, 0, "the error's own turn_end must not decrement again");
 });
 
+// PR #122 review: a background child outlives the root turn (Codex/OpenCode
+// spawn without waiting); its late traffic must not re-mark an idle session
+// working — no turn_end would ever idle it again, and the fleet row would
+// read "working" forever.
+test("a subagent's traffic after the root turn ended never re-marks the session working; mid-turn it still does", () => {
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([{ type: "status", state: "thinking" }, { type: "turn_end" }], s);
+  assert.equal(s.status, "idle");
+  const late: SessionMsg[] = [
+    { type: "text_delta", text: "child narration", parentId: "codex-agent:c" },
+    { type: "tool_use", name: "Shell", id: "c1", parentId: "codex-agent:c" },
+    { type: "tool_output_snapshot", id: "c1", revision: 1, head: "…", parentId: "codex-agent:c" },
+    { type: "tool_result", output: "ok", id: "c1", parentId: "codex-agent:c" },
+    { type: "task_update", id: "codex-agent:c", state: "completed", report: "done" },
+  ];
+  for (const msg of late) {
+    s = run([msg], s);
+    assert.equal(s.status, "idle", `${msg.type} from a child after turn_end leaves the row idle`);
+  }
+  // During a pending turn the same traffic keeps the row working.
+  let mid = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  mid = run([{ type: "text_delta", text: "child", parentId: "codex-agent:c" }], mid);
+  assert.equal(mid.status, "working");
+  // Root traffic after turn_end keeps its existing meaning.
+  assert.equal(run([{ type: "text_delta", text: "root" }], s).status, "working");
+});
+
 test("a permission hold sticks through bang traffic and lifts only when nothing pends", () => {
   let s = run([
     { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" },
