@@ -461,8 +461,8 @@ export class OpenCodeEventMapper {
       // keeps the output it had produced (the engine stores it on the error
       // state's metadata) ahead of the error text.
       const error = String(state["error"] ?? "tool failed");
-      const observed =
-        meta["interrupted"] === true && typeof meta["output"] === "string" && meta["output"] ? `${meta["output"]}\n` : "";
+      const interrupted = meta["interrupted"] === true;
+      const observed = interrupted && typeof meta["output"] === "string" && meta["output"] ? `${meta["output"]}\n` : "";
       const capped = capOutput(observed + error);
       this.options.emit({
         type: "tool_result",
@@ -471,7 +471,8 @@ export class OpenCodeEventMapper {
         id: partID,
         ...(parentId ? { parentId } : {}),
       });
-      if (isTask) this.emitTask(partID, "failed", capped, input);
+      // A task the user stopped is interrupted, not failed (PR #120 review).
+      if (isTask) this.emitTask(partID, interrupted ? "interrupted" : "failed", capped, input);
     }
   }
 

@@ -546,7 +546,30 @@ export function createTranscriptProjection(): TranscriptProjection {
     const batchId = orphanToolBatch;
     const rows: ToolEntry[] = [];
     for (const [toolId, pending] of orphans) {
-      if (toolEntry(toolId)) continue;
+      const existing = toolEntry(toolId);
+      if (existing) {
+        // The anchor arrived after the outcome (a task placeholder): the
+        // outcome settles it rather than vanishing (PR #120 review).
+        if (existing.output === undefined && pending.output !== undefined) {
+          entries = entries.map((entry) =>
+            entry.kind === "tool" && entry.toolId === toolId
+              ? {
+                  ...entry,
+                  settled: true,
+                  output: pending.output,
+                  ...(pending.tail !== undefined ? { tail: pending.tail } : {}),
+                  ...(pending.omittedBytes !== undefined ? { omittedBytes: pending.omittedBytes } : {}),
+                  ...(pending.truncatedBytes !== undefined ? { truncatedBytes: pending.truncatedBytes } : {}),
+                  isError: pending.isError,
+                  ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
+                  ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
+                  live: undefined,
+                }
+              : entry,
+          );
+        }
+        continue;
+      }
       rows.push(
         {
           kind: "tool",
@@ -894,19 +917,41 @@ export function createTranscriptProjection(): TranscriptProjection {
         // background job, or a spawn evicted from replay) gets a placeholder
         // anchor so its state and report have a row to live on — the real
         // announcement, if it ever arrives, fills that row in.
+        // Engines do not repeat durable fields on every frame (a completed
+        // task_updated after a report-bearing notification; a Codex wait
+        // without the message seen earlier): the report, its retention
+        // facts, the duration, and the identity carry over; the state and
+        // the transient current action are the newest frame's (PR #120
+        // review).
+        const prior = tasks.get(msg.id);
         const lifecycle: TaskLifecycle = {
           state: msg.state,
-          ...(msg.label !== undefined ? { label: msg.label } : {}),
-          ...(msg.agentType !== undefined ? { agentType: msg.agentType } : {}),
+          ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
+          ...(msg.agentType !== undefined ? { agentType: msg.agentType } : prior?.agentType !== undefined ? { agentType: prior.agentType } : {}),
           ...(msg.action !== undefined ? { action: msg.action } : {}),
-          ...(msg.report !== undefined ? { report: msg.report } : {}),
-          ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
-          ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
-          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : {}),
+          ...(msg.report !== undefined
+            ? {
+                report: msg.report,
+                ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
+                ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
+              }
+            : prior?.report !== undefined
+              ? {
+                  report: prior.report,
+                  ...(prior.reportTail !== undefined ? { reportTail: prior.reportTail } : {}),
+                  ...(prior.reportOmittedBytes !== undefined ? { reportOmittedBytes: prior.reportOmittedBytes } : {}),
+                }
+              : {}),
+          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined ? { elapsedMs: prior.elapsedMs } : {}),
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
         if (!toolEntry(msg.id)) {
+          // An outcome that arrived before this anchor (its opening was
+          // evicted) belongs to it: the placeholder is born settled with
+          // that outcome instead of the orphan being lost (PR #120 review).
+          const pending = orphans.get(msg.id);
+          if (pending) orphans = new Map([...orphans].filter(([id]) => id !== msg.id));
           entries = [
             ...entries,
             {
@@ -917,10 +962,23 @@ export function createTranscriptProjection(): TranscriptProjection {
               detail: msg.label,
               parentId: msg.parentId,
               batchId: openToolBatches[0] ?? orphanToolBatch,
-              settled: false,
+              settled: pending?.output !== undefined,
               startedAt: readNow(),
               synthetic: true,
-              ...(msg.replay ? { replayed: true } : {}),
+              ...(msg.replay || pending?.replayed ? { replayed: true } : {}),
+              ...(pending?.output !== undefined
+                ? {
+                    output: pending.output,
+                    ...(pending.tail !== undefined ? { tail: pending.tail } : {}),
+                    ...(pending.omittedBytes !== undefined ? { omittedBytes: pending.omittedBytes } : {}),
+                    ...(pending.truncatedBytes !== undefined ? { truncatedBytes: pending.truncatedBytes } : {}),
+                    isError: pending.isError,
+                    ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
+                    ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
+                  }
+                : pending?.live
+                  ? { live: pending.live }
+                  : {}),
             },
           ];
         }
@@ -970,10 +1028,13 @@ export function createTranscriptProjection(): TranscriptProjection {
       }
       case "error": {
         // A terminal error ends the turn without a turn_end (the adapter-crash
-        // path): anchorless narration is just as orphaned here. A
-        // request-scoped error (terminal: false) ends nothing — same reading
-        // as turn-busy and the daemon's session state.
+        // path): anchorless narration is just as orphaned here, and an open
+        // reasoning row is done — it must not keep pulsing "Thinking…" over
+        // an idle shell (PR #120 review). A request-scoped error (terminal:
+        // false) ends nothing — same reading as turn-busy and the daemon's
+        // session state.
         streamingId = null;
+        if (msg.terminal !== false) foldThinking();
         entries = [
           ...(msg.terminal === false ? entries : orphanAnchorless(entries)),
           {

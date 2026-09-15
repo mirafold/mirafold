@@ -859,15 +859,19 @@ export class ClaudeCodeSession implements AgentSession {
   private handleTaskMsg(sub: string, m: Record<string, unknown>) {
     const taskId = typeof m["task_id"] === "string" ? m["task_id"] : "";
     if (!taskId) return;
-    if (this.hiddenTasks.has(taskId)) {
-      if (sub === "task_notification") this.hiddenTasks.delete(taskId);
-      return;
-    }
+    // Hidden for the session, not just until the notification: a late
+    // task_updated after it must stay hidden too (PR #120 review). Bounded
+    // by evicting the oldest hidden id when full.
+    if (this.hiddenTasks.has(taskId)) return;
     let known = this.tasks_.get(taskId);
     if (!known) {
       if (m["skip_transcript"] === true) {
         // The SDK's own ambient housekeeping: hidden from the transcript.
-        if (this.hiddenTasks.size < ClaudeCodeSession.MAX_TASKS) this.hiddenTasks.add(taskId);
+        if (this.hiddenTasks.size >= ClaudeCodeSession.MAX_TASKS) {
+          const oldest = this.hiddenTasks.values().next().value;
+          if (oldest !== undefined) this.hiddenTasks.delete(oldest);
+        }
+        this.hiddenTasks.add(taskId);
         return;
       }
       if (this.tasks_.size >= ClaudeCodeSession.MAX_TASKS) {
@@ -951,6 +955,8 @@ export class ClaudeCodeSession implements AgentSession {
         ...(known.agentType ? { agentType: known.agentType } : {}),
         ...(status === "paused" ? { action: "paused" } : {}),
         ...(error ? { report: error.text } : {}),
+        ...(error?.tail !== undefined ? { reportTail: error.tail } : {}),
+        ...(error?.omittedBytes !== undefined ? { reportOmittedBytes: error.omittedBytes } : {}),
       });
     }
   }

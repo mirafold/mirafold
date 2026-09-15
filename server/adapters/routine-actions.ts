@@ -50,7 +50,11 @@ export function routineActions(
   tool: string,
   input: unknown,
 ): ToolAction[] | undefined {
-  const entry = TABLES[agent][tool];
+  // Own entries only: an engine-chosen name like `constructor` or
+  // `__proto__` must resolve to nothing, never to an inherited property
+  // (PR #120 review).
+  const table = TABLES[agent];
+  const entry = Object.hasOwn(table, tool) ? table[tool] : undefined;
   if (!entry) return undefined;
   const rec = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   let target: string | undefined;

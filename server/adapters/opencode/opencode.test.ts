@@ -312,6 +312,21 @@ test("TF2.5: the spawn part carries the child's lifecycle — busy is running, s
   session.close();
 });
 
+test("PR #120 review: a task part stopped by the user reads interrupted, not failed", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "long job", prompt: "run it" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "error", input, error: "aborted", metadata: { ...meta, interrupted: true, output: "partial" } } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => [m.state, m.report]), [["running", undefined], ["interrupted", "partial\naborted"]]);
+  session.close();
+});
+
 test("TF2.5: a child session error fails its task without ending the root turn", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

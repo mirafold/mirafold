@@ -114,8 +114,10 @@ test("TF5.1 parallel work: the parent finishes first; one child fails, one repor
     await trace.locator(".subagent-live", { hasText: "done" }).waitFor({ timeout: 10_000 });
     assert.equal(await build.evaluate((el) => el.classList.contains("subagent-deck-running")), true);
     assert.match(await build.locator(".subagent-live").innerText(), /compiled \d+ files/);
-    // The completion note lands in the current-activity area, compactly.
+    // The completion note lands in the current-activity area, compactly —
+    // and is spoken once through the polite live region (PR #120 review).
     assert.match(await page.locator(".activity-note").innerText(), /trace the token path finished|audit the watcher failed/);
+    assert.match(await page.locator('.sr-only[role="status"]').innerText(), /finished|failed/);
     // Open the completed task: the FULL report first, then the activity.
     await trace.locator(".subagent-deck-head").click();
     const report = trace.locator(".subagent-report");

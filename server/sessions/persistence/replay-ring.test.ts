@@ -148,6 +148,12 @@ test("TF1.3c: only the newest tool_output_snapshot and task_update per id are re
   const replayed = r.replayAfter().filter((m) => m.type === "tool_output_snapshot" && m.id === "c1");
   assert.equal(replayed.length, 1);
   assert.equal((replayed[0] as Extract<WireMsg, { type: "tool_output_snapshot" }>).revision, 50);
+  // PR #120 review: durable fields survive a partial superseding update;
+  // the transient action does not.
+  r.offer({ type: "task_update", id: "t2", state: "completed", label: "job", report: "R", reportTail: "T", reportOmittedBytes: 3, elapsedMs: 9, action: "Grep" });
+  r.offer({ type: "task_update", id: "t2", state: "completed" });
+  const kept2 = r.buffer.find((m) => m.type === "task_update" && m.id === "t2") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([kept2.report, kept2.reportTail, kept2.reportOmittedBytes, kept2.elapsedMs, kept2.label, kept2.action], ["R", "T", 3, 9, "job", undefined]);
 });
 
 test("superseding keeps fields an earlier partial tool_update carried (review 2026-09-01)", () => {

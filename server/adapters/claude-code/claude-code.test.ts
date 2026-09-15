@@ -1052,6 +1052,24 @@ test("TF2.1: TaskOutput and TaskStop are ordinary calls with inspectable results
   s.close();
 });
 
+test("PR #120 review: hidden tasks stay hidden after their notification; a failed task_updated keeps its capped error tail", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    { type: "system", subtype: "task_started", task_id: "T-h", description: "memory tidy", skip_transcript: true },
+    { type: "system", subtype: "task_notification", task_id: "T-h", status: "completed", output_file: "/tmp/y", summary: "tidied" },
+    { type: "system", subtype: "task_updated", task_id: "T-h", patch: { status: "completed", end_time: 2 } },
+    { type: "system", subtype: "task_started", task_id: "T-e", description: "big job" },
+    { type: "system", subtype: "task_updated", task_id: "T-e", patch: { status: "failed", error: "E".repeat(70_000) } },
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.ok(tasks.every((m) => m.id === "task:T-e"), "the hidden task never surfaces, even via a late update");
+  const failed = tasks.find((m) => m.state === "failed")!;
+  assert.ok(failed.reportTail !== undefined && (failed.reportOmittedBytes ?? 0) > 0, "the capped error keeps its tail and omission count");
+  s.close();
+});
+
 test("review 2026-09-15: a task_updated after the notification lands on the same anchor, never a second row", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { description: "d" } }]),

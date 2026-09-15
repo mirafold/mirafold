@@ -131,11 +131,6 @@ export function Shell() {
   // unchanged state (Codex re-sends every thread's state on each collab
   // call) must not re-announce it (review 2026-09-15). Bounded.
   const notedTaskStates = useRef(new Map<string, string>());
-  const noteCompletion = useCallback((text: string, failed: boolean) => {
-    setTaskNote({ text, failed });
-    window.clearTimeout(taskNoteTimer.current);
-    taskNoteTimer.current = window.setTimeout(() => setTaskNote(null), 12_000);
-  }, []);
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
   // Replaced whole whenever the adapter reports a changed catalog.
@@ -277,6 +272,14 @@ export function Shell() {
   // Screen-reader announcements — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
+  const noteCompletion = useCallback((text: string, failed: boolean) => {
+    setTaskNote({ text, failed });
+    window.clearTimeout(taskNoteTimer.current);
+    taskNoteTimer.current = window.setTimeout(() => setTaskNote(null), 12_000);
+    // The visible note is aria-hidden chrome; the same fact is spoken once,
+    // like a turn boundary (PR #120 review).
+    announce(text, failed);
+  }, [announce]);
   // Every turn transition goes through here: reduce, adopt, then speak the
   // announcements the reducer decided on.
   const applyTurn = useCallback(

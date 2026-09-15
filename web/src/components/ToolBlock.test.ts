@@ -264,6 +264,12 @@ test("edit rows show change counts computed from their own input", () => {
   assert.deepEqual(changeCounts("apply_patch", { changes: [{ kind: "update", diff: "@@ -1 +1 @@\n-alpha\n+beta\n+gamma\n" }] }), { added: 2, removed: 1 });
   assert.equal(changeCounts("Bash", { command: "ls" }), undefined);
   assert.equal(changeCounts("Edit", { old_string: "x".repeat(300_000), new_string: "" }), undefined, "an oversized input is not counted");
+  // PR #120 review: the bound is on the AGGREGATE — many individually small
+  // edits or patches must not run the diff each render.
+  const manyEdits = Array.from({ length: 4 }, () => ({ old_string: "x".repeat(60_000), new_string: "y".repeat(60_000) }));
+  assert.equal(changeCounts("MultiEdit", { edits: manyEdits }), undefined);
+  assert.equal(changeCounts("MultiEdit", { edits: Array.from({ length: 201 }, () => ({ old_string: "a", new_string: "b" })) }), undefined);
+  assert.equal(changeCounts("apply_patch", { changes: Array.from({ length: 5 }, () => ({ kind: "update", diff: "+" + "z".repeat(50_000) })) }), undefined);
   const html = renderToStaticMarkup(
     createElement(ToolBlock, { toggleKey: "tool:e", expanded: false, onToggle: () => {}, name: "Edit", detail: "a.ts", input: { file_path: "a.ts", old_string: "a", new_string: "b\nc" }, output: "ok" }),
   );

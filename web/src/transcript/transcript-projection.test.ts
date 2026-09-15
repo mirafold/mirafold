@@ -90,7 +90,7 @@ test("a user prompt arriving mid-stream does not detach the assistant reply tail
   ]);
 });
 
-test("notice leaves streams open; error closes text without folding thinking", () => {
+test("notice leaves streams open; a terminal error closes text and settles thinking", () => {
   const projection = createTranscriptProjection();
   const noticed = apply(
     projection,
@@ -110,7 +110,9 @@ test("notice leaves streams open; error closes text without folding thinking", (
     { type: "thinking_delta", text: "still open" },
     { type: "error", message: "boom" },
   );
-  assert.equal(rowsOf(atError, "thinking")[0]?.done, false);
+  // The turn is over: the reasoning row is done, not left pulsing (PR #120
+  // review) — its text is retained either way.
+  assert.equal(rowsOf(atError, "thinking")[0]?.done, true);
 
   const errored = apply(errors, { type: "text_delta", text: "after" });
   assert.deepEqual(rowsOf(errored, "text").map((row) => row.text), [
@@ -563,6 +565,41 @@ test("R4: two concurrent children and a background job keep independent identiti
   const announced = apply(projection, { type: "tool_use", id: "task:bg", name: "Bash", detail: "make watch" });
   const bg = rowsOf(announced, "subagent-deck").find((d) => d.task.toolId === "task:bg")!;
   assert.deepEqual([bg.task.name, bg.task.synthetic, bg.id], ["Bash", undefined, decks[2]!.id]);
+});
+
+test("PR #120 review: a partial task update keeps the report, duration, and identity; a terminal error settles the thinking row", () => {
+  const projection = createTranscriptProjection();
+  const snapshot = apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d", agentType: "Explore", action: "Grep" },
+    { type: "task_update", id: "t1", state: "completed", label: "d", agentType: "Explore", report: "R", reportTail: "T", reportOmittedBytes: 3, elapsedMs: 9 },
+    { type: "task_update", id: "t1", state: "completed" },
+  );
+  const deck = rowsOf(snapshot, "subagent-deck")[0]!;
+  assert.deepEqual(deck.lifecycle, { state: "completed", label: "d", agentType: "Explore", report: "R", reportTail: "T", reportOmittedBytes: 3, elapsedMs: 9 });
+  assert.equal(deck.summary.report?.text, "R");
+  const errored = apply(projection, { type: "thinking_delta", text: "still…" }, { type: "error", message: "engine died" });
+  assert.equal(rowsOf(errored, "thinking").at(-1)?.done, true, "a terminal error settles the open reasoning row");
+  const scoped = apply(projection, { type: "thinking_delta", text: "again" }, { type: "error", message: "refused", terminal: false });
+  assert.equal(rowsOf(scoped, "thinking").at(-1)?.done, false, "a request-scoped error ends nothing");
+});
+
+test("PR #120 review: an outcome replayed before its task anchor settles the placeholder instead of vanishing", () => {
+  const projection = createTranscriptProjection();
+  const snapshot = apply(
+    projection,
+    { type: "zone_reset" },
+    { type: "tool_result", id: "sp1", output: "<task_result>CHILD DONE</task_result>", replay: true },
+    { type: "task_update", id: "sp1", state: "completed", label: "probe child", report: "CHILD DONE", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  const decks = rowsOf(snapshot, "subagent-deck");
+  assert.equal(decks.length, 1);
+  assert.deepEqual([decks[0]!.task.synthetic, decks[0]!.task.output, decks[0]!.summary.state], [true, "<task_result>CHILD DONE</task_result>", "done"]);
+  assert.equal(rowsOf(snapshot, "tool").filter((t) => t.orphaned).length, 0, "nothing is left over as an orphan");
 });
 
 test("R7: head/tail results, snapshot revisions, and an interruption keep the observed evidence", () => {

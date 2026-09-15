@@ -18,6 +18,13 @@ test("R2: only exact known built-ins classify; shell commands and unknown tools 
   assert.equal(routineActions("codex", "Shell", { command: "ls" }), undefined, "Codex classifies only from commandActions");
 });
 
+test("PR #120 review: prototype-named tools resolve to nothing, never to an inherited property", () => {
+  for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+    assert.equal(routineActions("claude-code", name, { file_path: "x" }), undefined, name);
+    assert.equal(routineActions("opencode", name, {}), undefined, name);
+  }
+});
+
 test("targets are clamped and control-visible; a missing target is simply absent", () => {
   const [a] = routineActions("claude-code", "Read", { file_path: "x".repeat(400) })!;
   assert.ok(a.target!.length <= 200);

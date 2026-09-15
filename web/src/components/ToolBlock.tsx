@@ -207,9 +207,12 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-// Inputs above this many characters are not counted — the diff body in the
-// expansion is already unbounded model content; the head badge is a glance.
+// Inputs above this many characters IN TOTAL — or with more edits than this
+// — are not counted: the badge is a glance, and diffing runs on every
+// collapsed-row render (PR #120 review: a per-string guard let many large
+// edits run the LCS each time).
 const CHANGE_COUNT_MAX_CHARS = 200_000;
+const CHANGE_COUNT_MAX_ITEMS = 200;
 
 /** Lines added and removed by an edit-shaped call, from its own input —
  *  Edit/MultiEdit old/new strings, a Write's content, an apply_patch's
@@ -220,13 +223,16 @@ export function changeCounts(name: string, input?: Record<string, unknown>): { a
     added: lines.filter((l) => l.sign === "+").length,
     removed: lines.filter((l) => l.sign === "-").length,
   });
-  const within = (...texts: unknown[]) => texts.every((t) => typeof t !== "string" || t.length <= CHANGE_COUNT_MAX_CHARS);
+  const within = (...texts: unknown[]) =>
+    texts.reduce<number>((n, t) => n + (typeof t === "string" ? t.length : 0), 0) <= CHANGE_COUNT_MAX_CHARS;
   if ((name === "Edit" || name === "MultiEdit") && Array.isArray(input["edits"])) {
+    const edits = (input["edits"] as unknown[]).map((raw) =>
+      typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {},
+    );
+    if (edits.length > CHANGE_COUNT_MAX_ITEMS || !within(...edits.flatMap((e) => [e["old_string"], e["new_string"]]))) return undefined;
     let added = 0;
     let removed = 0;
-    for (const raw of input["edits"] as unknown[]) {
-      const e = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-      if (!within(e["old_string"], e["new_string"])) return undefined;
+    for (const e of edits) {
       const c = count(diffLines(String(e["old_string"] ?? ""), String(e["new_string"] ?? "")));
       added += c.added;
       removed += c.removed;
@@ -242,13 +248,15 @@ export function changeCounts(name: string, input?: Record<string, unknown>): { a
     return { added: input["content"] ? input["content"].split("\n").length : 0, removed: 0 };
   }
   if (name === "apply_patch" && Array.isArray(input["changes"])) {
+    const changes = (input["changes"] as unknown[]).map((raw) =>
+      typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {},
+    );
+    if (changes.length > CHANGE_COUNT_MAX_ITEMS || !within(...changes.map((c) => c["diff"]))) return undefined;
     let added = 0;
     let removed = 0;
-    for (const raw of input["changes"] as unknown[]) {
-      const c = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    for (const c of changes) {
       const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
       const diff = typeof c["diff"] === "string" ? c["diff"] : "";
-      if (!within(diff)) return undefined;
       const counted = count(kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-"));
       added += counted.added;
       removed += counted.removed;

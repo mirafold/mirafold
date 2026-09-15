@@ -5060,6 +5060,36 @@ the `evicted` replay flag. Committed as one coherent checkpoint.
   needs the current-head CI and the automated review comments read and
   answered before he decides on the merge.
 
+**PR #120 (opened 2026-09-15 on Kyle's ask; CI green on `bada70f`: DCO,
+Tier 1, Tier 2+3, Cloudflare Pages).** The Codex reviewer posted nine P2
+findings; each was verified against the code and all nine were legitimate
+and fixed, with a regression check per class:
+1. Partial task updates lost the report/duration (projection replaced the
+   lifecycle whole; the ring replaced the retained update). Fixed: durable
+   fields carry over under the newest state in both; `action` stays
+   transient. Tests in projection and ring suites.
+2. OpenCode task stopped by the user read `failed`. Fixed: `interrupted`
+   from `metadata.interrupted`; test.
+3. Claude `task_updated` error over the cap dropped its tail. Fixed:
+   `reportTail`/`reportOmittedBytes` forwarded; test.
+4. Routine-tool lookup indexed a prototype-bearing table with an
+   engine-chosen name (`constructor` would throw). Fixed: own-property
+   lookup; test.
+5. Change counting bounded per string, not in aggregate. Fixed: aggregate
+   character and item budgets; test.
+6. Task completions were not announced to screen readers. Fixed: the same
+   note is spoken through the announcer; browser assertion on the polite
+   region.
+7. A terminal `error` left the thinking row "Thinking…" and pulsing.
+   Fixed: a terminal error settles it (the old expectation revised: the
+   turn is over); test.
+8. A replayed result before its task anchor was lost when the placeholder
+   was created. Fixed: the placeholder is born with the outcome, and a
+   pending outcome settles an existing anchor; test.
+9. `skip_transcript` task ids were forgotten at the notification, so a late
+   `task_updated` could surface. Fixed: hidden for the session (bounded);
+   test.
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in

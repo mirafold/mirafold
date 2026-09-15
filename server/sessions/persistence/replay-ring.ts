@@ -148,17 +148,33 @@ export class ReplayRing {
     // it refreshes (release review 2026-09-01). A live viewport receives the
     // same merged copy — idempotent for it, since it applies only present fields.
     let retained: SessionMsg = msg;
-    // A replacement snapshot / task state supersedes the earlier one for the
-    // same id outright (Phase TF): a running command publishing four
-    // snapshots a second must not consume a replay slot each — the newest
-    // is the whole truth, so the stale one leaves and its bytes go with it.
-    if (msg.type === "tool_output_snapshot" || msg.type === "task_update") {
-      const type = msg.type;
+    // A replacement snapshot supersedes the earlier one for the same id
+    // outright (Phase TF): a running command publishing four snapshots a
+    // second must not consume a replay slot each — the newest is the whole
+    // truth, so the stale one leaves and its bytes go with it.
+    if (msg.type === "tool_output_snapshot") {
       const id = msg.id;
-      const stale = this.buffer.findIndex((m) => m.type === type && m.id === id);
+      const stale = this.buffer.findIndex((m) => m.type === "tool_output_snapshot" && m.id === id);
       if (stale >= 0) {
         const [prior] = this.buffer.splice(stale, 1);
         this.bytes -= msgBytes(prior!);
+      }
+    }
+    // A task update also keeps one slot per id, but engines do not repeat
+    // durable fields on every frame (Claude's task_updated carries no
+    // report; a Codex wait may omit a message seen earlier), so the retained
+    // update carries the prior durable fields under the newest state (PR
+    // #120 review). `action` is the one transient: it describes the running
+    // moment and is dropped when the newest frame does not carry it.
+    if (msg.type === "task_update") {
+      const id = msg.id;
+      const stale = this.buffer.findIndex((m) => m.type === "task_update" && m.id === id);
+      if (stale >= 0) {
+        const [prior] = this.buffer.splice(stale, 1);
+        this.bytes -= msgBytes(prior!);
+        const { seq: _seq, action: _action, ...carried } = prior as SessionMsg & { seq?: number; action?: string };
+        const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
+        retained = { ...carried, ...present } as SessionMsg;
       }
     }
     if (msg.type === "tool_update") {
