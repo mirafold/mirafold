@@ -439,7 +439,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
       if (restoredFor.current) savePins(restoredFor.current, []);
       restoredFor.current = sessionKey;
       setPinned(loadPins(sessionKey));
-      setChoices(loadDisclosure(sessionKey));
+      setChoices(loadDisclosure(sessionKey), sessionKey);
       return;
     }
     savePins(sessionKey, pinned);
@@ -457,12 +457,18 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   // remount), a replay rebuilds every row, a session switch is a whole
   // navigation — and the reader's explicit open/closed choices ride along
   // through all of it, restored from this tab's storage per session.
-  const [choices, setChoices] = useState<ReadonlyMap<string, boolean>>(() =>
-    restoredFor.current ? loadDisclosure(restoredFor.current) : new Map(),
-  );
+  // The choices carry the session they were loaded for: the save effect
+  // writes only when they belong to the current key, so a session switch or
+  // fallback can never store the old session's choices under the new key
+  // in the commit before the reload lands (PR #120 review round 2).
+  const [choices, setChoicesState] = useState<{ key: string | undefined; map: ReadonlyMap<string, boolean> }>(() => ({
+    key: restoredFor.current || undefined,
+    map: restoredFor.current ? loadDisclosure(restoredFor.current) : new Map(),
+  }));
+  const setChoices = useCallback((map: ReadonlyMap<string, boolean>, key: string | undefined) => setChoicesState({ key, map }), []);
   useEffect(() => {
-    if (!sessionKey || restoredFor.current !== sessionKey) return;
-    saveDisclosure(sessionKey, choices);
+    if (!sessionKey || choices.key !== sessionKey) return;
+    saveDisclosure(sessionKey, choices.map);
   }, [sessionKey, choices]);
   const assistantMarkdown = useMemo(
     () => workspaceMarkdown(workspaceRoot, onOpenWorkspaceFile),
@@ -523,11 +529,12 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   );
 
   const toggle = useCallback<Toggle>(
-    (key, expanded) => setChoices((current) => withChoice(current, key, expanded)),
-    [],
+    (key, expanded) =>
+      setChoicesState((current) => ({ key: current.key ?? sessionKey, map: withChoice(current.map, key, expanded) })),
+    [sessionKey],
   );
   const disclosure = useMemo<Disclosure>(
-    () => ({ choices, details, toggle, capabilities }),
+    () => ({ choices: choices.map, details, toggle, capabilities }),
     [choices, details, toggle, capabilities],
   );
 

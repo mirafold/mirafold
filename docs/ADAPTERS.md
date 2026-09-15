@@ -411,7 +411,9 @@ call keeps its last snapshot as evidence.
 **Bounded, honest evidence (Phase TF R7).** `capOutput` keeps a UTF-8-safe
 HEAD and TAIL of a large result within the budget (`TOOL_OUTPUT_CAP_BYTES`,
 64,000 by default; the head gets the odd byte): `tool_result.output` is the
-head exactly as before, `truncatedBytes` still counts every byte past it, and
+head — the same field a pre-TF client reads, now half the budget long rather
+than all of it (a deliberate trade: one budget, both ends of the evidence) —
+`truncatedBytes` still counts every byte past it, and
 `tail` / `omittedBytes` carry the trailing text and the dropped middle. The
 counts are of what THIS cap dropped — never a guess at what the engine
 already truncated. Task reports use the same shape (`report`,

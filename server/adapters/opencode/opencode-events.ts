@@ -77,6 +77,10 @@ export class OpenCodeEventMapper {
   // every update (replay keeps only the newest). Session-lifetime, like the
   // lane maps, and bounded by the same insert-time cap.
   private taskIdentity = new Map<string, { label?: string; agentType?: string }>();
+  // Spawn part ids whose child runs in the background: their completion is
+  // the child's own idle, never the launcher's settlement. Session-lifetime
+  // like the lane maps, bounded the same way.
+  private backgroundTasks = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -223,8 +227,15 @@ export class OpenCodeEventMapper {
         this.options.endTurn();
         break;
       }
-      case "session.idle":
-        if (!this.options.isOurs(p["sessionID"])) break;
+      case "session.idle": {
+        if (!this.options.isOurs(p["sessionID"])) {
+          // A BACKGROUND child's launcher part settled long ago; the child's
+          // own idle is the engine's word that its work finished (PR #120
+          // review round 2).
+          const lane = this.laneOf(p["sessionID"]);
+          if (lane && lane !== "root" && this.backgroundTasks.has(lane)) this.emitTask(lane, "completed");
+          break;
+        }
         // The session decides whether THIS idle ends the active turn — a
         // stale idle from an interrupt-abandoned turn must not end the next
         // one, and usage flushes inside the end path so it can never land
@@ -232,6 +243,7 @@ export class OpenCodeEventMapper {
         // the fleet status "working").
         this.options.onEngineIdle();
         break;
+      }
       default:
         if (!opencodeEventIgnored(event.type)) this.unknown.report("event", event.type);
     }
@@ -435,6 +447,11 @@ export class OpenCodeEventMapper {
     if (track.finished) return;
     const meta = (state["metadata"] ?? {}) as Record<string, unknown>;
     const isTask = !parentId && typeof meta["sessionId"] === "string";
+    // A `background: true` task part is only the LAUNCHER: its settlement
+    // says the child was started, not that it finished (the OC.3 fixture
+    // shows child asks and prose long after `started in background`).
+    const background = isTask && meta["background"] === true;
+    if (background && this.backgroundTasks.size < MAX_PARTS_PER_TURN) this.backgroundTasks.add(partID);
     if (status === "running") {
       // The bash tool republishes its whole output so far as it runs.
       if (typeof meta["output"] === "string") this.live.replace(partID, meta["output"], parentId);
@@ -451,7 +468,8 @@ export class OpenCodeEventMapper {
         id: partID,
         ...(parentId ? { parentId } : {}),
       });
-      if (isTask) this.emitTask(partID, "completed", capped, input);
+      if (isTask && !background) this.emitTask(partID, "completed", capped, input);
+      else if (background) this.emitTask(partID, "running", undefined, input);
     } else if (status === "error") {
       track.finished = true;
       this.live.settle(partID);

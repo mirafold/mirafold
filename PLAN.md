@@ -5090,6 +5090,25 @@ and fixed, with a regression check per class:
    `task_updated` could surface. Fixed: hidden for the session (bounded);
    test.
 
+**PR #120 round 2 (`5efaed5`, CI green; re-review requested with
+`@codex review`).** Eleven comments: four re-posted the round-1 findings
+at their new positions (each verified fixed in the diff); one dismissed
+with reason; six new, all legitimate, fixed:
+- Dismissed: "the legacy `output` prefix halves from 64 KB to 32 KB for
+  pre-TF clients" — true, and the spec's own contract (R7: head and tail
+  share ONE budget). The defect was my wire comment claiming an old client
+  "sees what it always saw"; `protocol.ts` and ADAPTERS.md now say the head
+  is half the budget.
+- OpenCode `background: true` task parts: the launcher's settlement no
+  longer reads as completion; the child's own `session.idle` does; test.
+- Codex `taskLabels` bounded by the anchor table.
+- OutputZone: disclosure choices carry the session they were loaded for;
+  the save runs only when they match the current key (no stale write in
+  the switch commit).
+- Claude: terminal `task_updated` patches mark the mapping evictable.
+- Shell: task/plan note ledgers reset per session; plan completion noted
+  on the transition only.
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in

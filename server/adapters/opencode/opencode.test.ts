@@ -312,6 +312,25 @@ test("TF2.5: the spawn part carries the child's lifecycle — busy is running, s
   session.close();
 });
 
+test("PR #120 review round 2: a background launcher's settlement is not the child finishing; the child's idle is", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "watch the build", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => m.state), ["running", "running"], "the launcher's settlement keeps the task running");
+  feed({ type: "session.status", properties: { sessionID: "ses_bg", status: { type: "busy" } } });
+  feed(idle("ses_bg"));
+  assert.equal(msgs.filter((m) => m.type === "task_update").at(-1)!.state, "completed", "the child's own idle completes it");
+  session.close();
+});
+
 test("PR #120 review: a task part stopped by the user reads interrupted, not failed", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

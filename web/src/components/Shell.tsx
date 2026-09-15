@@ -131,6 +131,9 @@ export function Shell() {
   // unchanged state (Codex re-sends every thread's state on each collab
   // call) must not re-announce it (review 2026-09-15). Bounded.
   const notedTaskStates = useRef(new Map<string, string>());
+  // Checklist paintings that were already complete, by render id, so a
+  // republished complete plan does not re-announce (round 2).
+  const completedPlans = useRef(new Set<string>());
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
   // Replaced whole whenever the adapter reports a changed catalog.
@@ -337,6 +340,10 @@ export function Shell() {
             capabilities: m.capabilities,
           });
           setDetailsMode(loadDetailsMode(m.sessionId));
+          // Task and plan ids are session-scoped: a new session starts a
+          // fresh ledger (round 2).
+          notedTaskStates.current.clear();
+          completedPlans.current.clear();
           setNotices((n) => ({
             ...n,
             agentPicker: null,
@@ -354,11 +361,19 @@ export function Shell() {
             const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
             noteCompletion(`${what} ${word}`, m.state === "failed");
           }
-        } else if (m.type === "render" && live && m.component === "todo-list" && planCompleted(m.props)) {
+        } else if (m.type === "render" && live && m.component === "todo-list") {
           // A KNOWN completion signal — the shell's own checklist component
           // with every item done — never an inference from agent-authored
-          // markup (Phase TF R5).
-          noteCompletion("plan complete", false);
+          // markup (Phase TF R5); noted on the transition only.
+          const complete = planCompleted(m.props);
+          const was = completedPlans.current.has(m.id);
+          if (complete && !was) {
+            if (completedPlans.current.size >= 2_000) completedPlans.current.delete(completedPlans.current.values().next().value as string);
+            completedPlans.current.add(m.id);
+            noteCompletion("plan complete", false);
+          } else if (!complete && was) {
+            completedPlans.current.delete(m.id);
+          }
         } else if (m.type === "shell_cwd") {
           setMeta((current) => ({ ...current, shellCwd: m.cwd }));
         } else if (m.type === "refused") {

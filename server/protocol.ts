@@ -156,11 +156,13 @@ export type SessionMsgBody =
   // silently. Optional/additive. `parentId` rides here too, exactly as on
   // tool_use.
   // Phase TF additions, all optional/additive. Retention keeps a HEAD and a
-  // TAIL of a large result: `output` is the head exactly as before (an old
-  // client sees what it always saw, `truncatedBytes` still counting every
-  // byte past it), `tail` is the retained trailing text, and `omittedBytes`
-  // is the middle that was dropped between them — reported so the browser
-  // says so instead of implying complete evidence. `exitCode` is the
+  // TAIL of a large result within ONE budget (TOOL_OUTPUT_CAP_BYTES, split
+  // half and half): `output` is the head — the same field an older client
+  // reads, now half the budget long rather than all of it, with
+  // `truncatedBytes` still counting every byte past it honestly — `tail`
+  // is the retained trailing text, and `omittedBytes` is the middle that
+  // was dropped between them, reported so the browser says so instead of
+  // implying complete evidence. `exitCode` is the
   // command's own exit status when the engine reports one — a fact,
   // independent of `isError` (Codex reports a nonzero probe as a completed
   // command); `durationMs` is the engine's measured duration.

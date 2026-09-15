@@ -946,6 +946,9 @@ export class ClaudeCodeSession implements AgentSession {
                 ? "running"
                 : undefined;
       if (!state) return; // a patch without a status change carries nothing the transcript shows
+      // A terminal patch finishes the task exactly like a notification does,
+      // so the mapping is evictable when full (PR #120 review round 2).
+      if (state !== "running") known.done = true;
       const error = typeof patch["error"] === "string" && patch["error"] ? capOutput(patch["error"]) : undefined;
       this.emit({
         type: "task_update",

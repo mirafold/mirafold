@@ -595,7 +595,9 @@ export class CodexEventMapper {
       // engine's point of view before the spawn call itself settles (TF2.4).
       if (item.tool === "spawnAgent" || item.tool === "spawn_agent") {
         for (const thread of receivers) {
-          this.taskLabels.set(thread, firstLine(prompt, 96) || thread);
+          // Labels only for anchored threads: the anchor table is the one
+          // bound on fan-out (PR #120 review round 2).
+          if (this.subagentAnchor.has(thread)) this.taskLabels.set(thread, firstLine(prompt, 96) || thread);
           this.emitTask(thread, "running");
         }
       }
@@ -613,7 +615,7 @@ export class CodexEventMapper {
     for (const [thread, st] of states) {
       const state = collabState(st?.status);
       if (!state) continue;
-      if (prompt && (item.tool === "spawnAgent" || item.tool === "spawn_agent") && !this.taskLabels.has(thread)) {
+      if (prompt && (item.tool === "spawnAgent" || item.tool === "spawn_agent") && !this.taskLabels.has(thread) && this.subagentAnchor.has(thread)) {
         this.taskLabels.set(thread, firstLine(prompt, 96));
       }
       const message = typeof st?.message === "string" && st.message ? capOutput(st.message) : undefined;
@@ -685,7 +687,7 @@ export class CodexEventMapper {
             ? "interrupted"
             : undefined;
     if (lifecycle && parentId) {
-      if (!this.taskLabels.has(thread)) this.taskLabels.set(thread, who);
+      if (!this.taskLabels.has(thread)) this.taskLabels.set(thread, who); // anchored: parentId exists
       this.emitTask(thread, lifecycle);
     }
     if (parentId) {
