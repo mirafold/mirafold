@@ -5143,6 +5143,15 @@ session (cleared with the ledgers); the ring kept a call's last snapshot
 beside its final result (the result now retires it); Claude/OpenCode task
 identity strings were unclamped (200/64 code points, control-visible).
 
+**PR #120 round 6 (`c76fde5`, CI green: DCO, Tier 1, Tier 2+3, Cloudflare
+Pages).** The Codex re-review completed with NO new findings. Review tally
+over the PR: 29 findings across five rounds, 28 fixed with a regression
+check each, one dismissed with a recorded reason (the half-budget legacy
+head is the spec's contract; the misleading comment was corrected). Every
+push was gated locally first (typecheck, dotenv-safe unit, Tier-2, the
+affected browser suites on the built bundle). The PR stays open for Kyle's
+merge decision.
+
 **Residuals (recorded, not hidden):** Codex child-thread inner activity —
 unverified whether app-server 0.153.4 delivers other-thread notifications
 on the parent connection (no live spawning run); declared absent in
