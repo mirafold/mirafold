@@ -127,6 +127,10 @@ export function Shell() {
   // never a repaint of the deck above (Phase TF R5).
   const [taskNote, setTaskNote] = useState<{ text: string; failed: boolean } | null>(null);
   const taskNoteTimer = useRef<number | undefined>(undefined);
+  // The last state noted per task: a poll that re-reports a child's
+  // unchanged state (Codex re-sends every thread's state on each collab
+  // call) must not re-announce it (review 2026-09-15). Bounded.
+  const notedTaskStates = useRef(new Map<string, string>());
   const noteCompletion = useCallback((text: string, failed: boolean) => {
     setTaskNote({ text, failed });
     window.clearTimeout(taskNoteTimer.current);
@@ -335,10 +339,18 @@ export function Shell() {
             agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
-        } else if (m.type === "task_update" && live && m.state !== "running") {
-          const what = m.label ?? "a task";
-          const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
-          noteCompletion(`${what} ${word}`, m.state === "failed");
+        } else if (m.type === "task_update" && live) {
+          const noted = notedTaskStates.current;
+          const changed = noted.get(m.id) !== m.state;
+          if (changed) {
+            if (noted.size >= 2_000) noted.delete(noted.keys().next().value as string);
+            noted.set(m.id, m.state);
+          }
+          if (changed && m.state !== "running") {
+            const what = m.label ?? "a task";
+            const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
+            noteCompletion(`${what} ${word}`, m.state === "failed");
+          }
         } else if (m.type === "render" && live && m.component === "todo-list" && planCompleted(m.props)) {
           // A KNOWN completion signal — the shell's own checklist component
           // with every item done — never an inference from agent-authored

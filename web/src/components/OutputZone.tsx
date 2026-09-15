@@ -433,10 +433,13 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   useEffect(() => {
     if (!sessionKey) return;
     if (restoredFor.current !== sessionKey) {
-      // The URL's session is gone for good: its stored pins go with it.
+      // The URL's session is gone for good: its stored pins go with it, and
+      // its disclosure choices must not be carried into (or saved under)
+      // the fallback session's key (review 2026-09-15).
       if (restoredFor.current) savePins(restoredFor.current, []);
       restoredFor.current = sessionKey;
       setPinned(loadPins(sessionKey));
+      setChoices(loadDisclosure(sessionKey));
       return;
     }
     savePins(sessionKey, pinned);
@@ -458,7 +461,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
     restoredFor.current ? loadDisclosure(restoredFor.current) : new Map(),
   );
   useEffect(() => {
-    if (!sessionKey) return;
+    if (!sessionKey || restoredFor.current !== sessionKey) return;
     saveDisclosure(sessionKey, choices);
   }, [sessionKey, choices]);
   const assistantMarkdown = useMemo(

@@ -204,7 +204,7 @@ export class ClaudeCodeSession implements AgentSession {
   // tool_use id when the SDK names one, else a task-scoped id) plus the
   // identity every update repeats, so a replay retaining only the newest
   // update still names the task. Bounded like the other per-session maps.
-  private tasks_ = new Map<string, { id: string; label?: string; agentType?: string }>();
+  private tasks_ = new Map<string, { id: string; label?: string; agentType?: string; done?: boolean }>();
   // Ambient housekeeping tasks the SDK asks consumers to hide: every later
   // frame for one of these stays off the transcript too.
   private hiddenTasks = new Set<string>();
@@ -870,7 +870,15 @@ export class ClaudeCodeSession implements AgentSession {
         if (this.hiddenTasks.size < ClaudeCodeSession.MAX_TASKS) this.hiddenTasks.add(taskId);
         return;
       }
-      if (this.tasks_.size >= ClaudeCodeSession.MAX_TASKS) return;
+      if (this.tasks_.size >= ClaudeCodeSession.MAX_TASKS) {
+        // Finished tasks stay mapped so a late frame (a task_updated after
+        // the notification) lands on the same anchor instead of minting a
+        // second row (review 2026-09-15); when full, the oldest finished
+        // one makes room.
+        const finished = [...this.tasks_].find(([, t]) => t.done)?.[0];
+        if (finished === undefined) return;
+        this.tasks_.delete(finished);
+      }
       const toolUseId = typeof m["tool_use_id"] === "string" && m["tool_use_id"] ? m["tool_use_id"] : undefined;
       known = { id: toolUseId ?? `task:${taskId}` };
       this.tasks_.set(taskId, known);
@@ -918,7 +926,7 @@ export class ClaudeCodeSession implements AgentSession {
         ...(report.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
         ...elapsed,
       });
-      this.tasks_.delete(taskId);
+      known.done = true;
     } else {
       const patch = (m["patch"] ?? {}) as Record<string, unknown>;
       if (typeof patch["description"] === "string" && patch["description"]) known.label = patch["description"];

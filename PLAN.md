@@ -4992,8 +4992,35 @@ the `evicted` replay flag. Committed as one coherent checkpoint.
 - **TF5.2** live provider comparison NOT performed (would spend Kyle's
   accounts; needs his explicit go). Unverified, not absent.
 - **TF5.3** independent read-only reviewer (subagent) over
-  `git diff d3ec718 -- server web/src` against R1–R8 — findings and
-  dispositions recorded below when in.
+  `git diff d3ec718 -- server web/src` against R1–R8.
+
+  **TF5.3 review findings (independent read-only subagent, 2026-09-15) and
+  dispositions — all six fixed, each with a regression check:**
+  1. Medium — Codex moved the "(exit N)" note into the TAIL for over-cap
+     output, so a pre-TF client (which never sees `tail`) read a large
+     failing run as clean. Fixed: the note stays on the head; test.
+  2. Medium — `commandActions` was uncapped at the adapter while the
+     checkpoint decoder caps `actions` at 1,000, so one pathological command
+     could make a saved session unrestorable. Fixed: >200 parsed actions →
+     no classification (`MAX_COMMAND_ACTIONS`); test.
+  3. Low/medium — Claude dropped the task-id mapping at `task_notification`,
+     so a later `task_updated` minted a second, unlabeled task row. Fixed:
+     finished tasks stay mapped (oldest finished evicted when full); test.
+     Residual (unverified ordering, recorded not fixed): a `task_updated`
+     arriving BEFORE `task_started` would anchor on a task-scoped id and
+     not adopt the later `tool_use_id`.
+  4. Low — orphaned results were appended at the bottom, reordering
+     history. Fixed: they sit at the top after the eviction notice; test.
+  5. Low — a dead URL session's disclosure choices could be carried into
+     and saved under its fallback replacement. Fixed: the same guard the
+     pins use.
+  6. Low — Codex re-reports every child's state on each collab call, so the
+     activity note repeated. Fixed: Shell notes a task only on a state
+     transition (bounded map).
+  Reviewer's clean areas: LiveOutput bounds/timers, UTF-8 seams, ring
+  accounting and `historyEvicted`, additive compatibility and the decoder,
+  turn_end/task handling, grouping rule, trust boundary (every engine
+  string is a text node), capabilities vs. actual emissions.
 
 ---
 

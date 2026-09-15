@@ -537,14 +537,17 @@ export function createTranscriptProjection(): TranscriptProjection {
     entries.find((entry): entry is ToolEntry => entry.kind === "tool" && entry.toolId === toolId);
 
   /** Results for calls never announced become explicit rows once nothing
-   *  more can arrive for them (turn end, replay end). */
+   *  more can arrive for them (turn end, replay end). They go at the TOP,
+   *  after any eviction notice: an outcome whose opening is missing is
+   *  older than everything retained, so placing it below the newest turn
+   *  would reorder the transcript (review 2026-09-15). */
   const materializeOrphans = (readNow: () => number): boolean => {
     if (!orphans.size) return false;
     const batchId = orphanToolBatch;
+    const rows: ToolEntry[] = [];
     for (const [toolId, pending] of orphans) {
       if (toolEntry(toolId)) continue;
-      entries = [
-        ...entries,
+      rows.push(
         {
           kind: "tool",
           id: nextTranscriptId++,
@@ -571,7 +574,12 @@ export function createTranscriptProjection(): TranscriptProjection {
               ? { ...interruptedOutcome({ live: pending.live } as ToolEntry), isError: true }
               : { output: "(no result was retained)", isError: true }),
         },
-      ];
+      );
+    }
+    if (rows.length) {
+      const noticeCount = entries.findIndex((entry) => !(entry.kind === "notice" && entry.text === EVICTED_HISTORY_NOTICE));
+      const at = noticeCount < 0 ? entries.length : noticeCount;
+      entries = [...entries.slice(0, at), ...rows, ...entries.slice(at)];
     }
     orphans = new Map();
     return true;

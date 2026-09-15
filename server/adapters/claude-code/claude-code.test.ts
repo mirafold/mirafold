@@ -1052,6 +1052,21 @@ test("TF2.1: TaskOutput and TaskStop are ordinary calls with inspectable results
   s.close();
 });
 
+test("review 2026-09-15: a task_updated after the notification lands on the same anchor, never a second row", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { description: "d" } }]),
+    { type: "system", subtype: "task_started", task_id: "T-1", tool_use_id: "task1", description: "d" },
+    { type: "system", subtype: "task_notification", task_id: "T-1", tool_use_id: "task1", status: "completed", output_file: "/tmp/x", summary: "done" },
+    { type: "system", subtype: "task_updated", task_id: "T-1", patch: { status: "completed", end_time: 1 } },
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const ids = new Set(msgs.filter((m) => m.type === "task_update").map((m) => m.id));
+  assert.deepEqual([...ids], ["task1"]);
+  s.close();
+});
+
 test("TF2.2: task lifecycle frames become task_update on the spawn's own id; elapsed progress is never stdout", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { description: "map the auth path", subagent_type: "Explore", prompt: "go" } }]),

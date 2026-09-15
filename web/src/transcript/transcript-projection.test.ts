@@ -604,7 +604,9 @@ test("R7: an outcome whose opening was evicted becomes an explicit orphan record
     { type: "turn_end", replay: true },
     { type: "replay_complete", evicted: true },
   );
-  assert.deepEqual(rowKinds(replayed), ["notice", "text", "tool", "tool"]);
+  // Orphans sit at the top (after the notice): their openings are older than
+  // everything retained, so the bottom would reorder history.
+  assert.deepEqual(rowKinds(replayed), ["notice", "tool", "tool", "text"]);
   const notice = rowsOf(replayed, "notice")[0]!;
   assert.match(notice.text, /no longer retained/);
   const [gone, gone2] = rowsOf(replayed, "tool");

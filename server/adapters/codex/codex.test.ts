@@ -779,6 +779,24 @@ test("TF1.4: verified commandActions classify routine work; exit code and durati
   s.close();
 });
 
+test("review 2026-09-15: a large failing run keeps its exit note in the head, and an oversized action list is not routine", async () => {
+  const big = "log line\n".repeat(12_000); // over the 64 KB cap → head + tail
+  const many = Array.from({ length: 300 }, (_, i) => ({ type: "read", command: `cat f${i}`, name: `f${i}`, path: `/w/f${i}` }));
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/completed", { item: { type: "commandExecution", id: "big", command: "yarn test", aggregatedOutput: big, exitCode: 1, status: "failed", commandActions: [] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "many", command: "cat …", aggregatedOutput: "", exitCode: 0, status: "completed", commandActions: many } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "big")!;
+  assert.ok(result.tail !== undefined && result.omittedBytes > 0, "a head/tail result");
+  assert.ok(result.output.endsWith("(exit 1)"), "the exit note is where a pre-TF client reads");
+  assert.equal(result.exitCode, 1);
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "many")!.actions, undefined);
+  s.close();
+});
+
 test("TF1.3: a running command's output streams as bounded legacy deltas AND replacement snapshots; the result settles the row", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/started", { item: { type: "commandExecution", id: "s1", command: "make", status: "inProgress", commandActions: [] } }],

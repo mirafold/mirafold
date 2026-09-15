@@ -520,18 +520,16 @@ export class CodexEventMapper {
     const ran = item.exitCode != null;
     const isError = declined || (!ran && item.status === "failed");
     // The exit status rides as a fact of its own (Phase TF) — the browser
-    // badges "exit N" on the row — and stays in the text for older clients.
+    // badges "exit N" on the row — and stays in the HEAD text for older
+    // clients, which never see a tail: a large failing run must not read as
+    // a clean success on a pre-TF viewport (review 2026-09-15).
     const exitNote =
       ran && item.exitCode !== 0 ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})` : "";
-    const fields = outputFields(capped);
     this.finishTool(item.id, {
-      ...fields,
+      ...outputFields(capped),
       output: declined
         ? `${capped.text}${capped.text ? "\n" : ""}(declined)`
-        : capped.tail === undefined
-          ? capped.text + exitNote
-          : capped.text,
-      ...(capped.tail !== undefined && !declined && exitNote ? { tail: capped.tail + exitNote } : {}),
+        : capped.text + exitNote,
       isError,
       ...(ran ? { exitCode: item.exitCode as number } : {}),
       ...(typeof item.durationMs === "number" && item.durationMs >= 0 ? { durationMs: Math.floor(item.durationMs) } : {}),
@@ -889,8 +887,14 @@ function collabState(status: unknown): TaskState | undefined {
  *  read, listing, or search — one `unknown` (or a pipeline the parser could
  *  not name) means the command stays a command. Targets are the engine's
  *  parsed paths/queries, clamped, never re-derived from the command text. */
+// A pipeline the parser splits into more actions than this is not routine
+// display material, and the checkpoint decoder caps the array at 1,000:
+// the adapter must never emit what the store would refuse (review
+// 2026-09-15).
+export const MAX_COMMAND_ACTIONS = 200;
+
 export function commandActions(raw: unknown): ToolAction[] | undefined {
-  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_COMMAND_ACTIONS) return undefined;
   const actions: ToolAction[] = [];
   for (const entry of raw) {
     const a = entry as { type?: unknown; path?: unknown; query?: unknown; name?: unknown } | null;
