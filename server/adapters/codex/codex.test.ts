@@ -1199,6 +1199,72 @@ test("PR #122 review round 2: a grandchild still running when the root turn ends
   s.close();
 });
 
+test("PR #122 review round 3: a background child's approval ask survives the root turn ending", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: Promise<unknown> | undefined;
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    decision = ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "cc1", command: "git push", reason: "network" });
+    ctx.complete("completed"); // the parent did not wait
+    await decision;
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", aggregatedOutput: "", exitCode: 0, status: "completed" }));
+    ctx.notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  assert.equal(ask.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "permission_resolved"), "the root turn's end did not deny the child's ask");
+  s.resolvePermission(ask.id, true);
+  assert.deepEqual(await decision, { decision: "accept" }, "the user's answer still reaches the child");
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  s.close();
+});
+
+test("PR #122 review round 3: a child settling does not forget a grandchild that is still running", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", status: "inProgress" }, "started"));
+    notify(...settled("CHILD")); // the child is done; its grandchild is not
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g1", delta: "still here\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", aggregatedOutput: "still here\n", exitCode: 0, status: "completed" }));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = await waitFor(msgs, (m) => m.type === "tool_result" && m.id === "g1");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g1").length, 1, "one announcement, no duplicate row");
+  assert.deepEqual([result.parentId, result.output], [anchor, "still here\n"]);
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g1" && m.parentId === anchor), "its late output still rides the deck");
+  s.close();
+});
+
+test("PR #122 review round 3: a child's terminal word flushes its streaming rows first — nothing streams after the task is over", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "tail -f log", status: "inProgress" }, "started"),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 1\n" }],
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 2\n" }], // within the throttle: a timer is pending
+    settled("CHILD", "interrupted"), // no item/completed ever comes for cc1
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await new Promise((r) => setTimeout(r, 400)); // past the snapshot interval
+  const terminalAt = msgs.findIndex((m) => m.type === "task_update" && m.id === anchor && m.state === "interrupted");
+  const streams = msgs.map((m, i) => [m, i] as const).filter(([m]) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "cc1");
+  assert.ok(streams.length > 0, "the interrupted row kept its evidence");
+  assert.ok(streams.every(([, i]) => i < terminalAt), "every snapshot precedes the terminal word");
+  assert.ok(/line 2/.test(streams.map(([m]) => (m.type === "tool_output_snapshot" ? `${m.output ?? ""}${m.tail ?? ""}` : m.text)).join("")), "the pending tail was flushed, not lost");
+  s.close();
+});
+
 test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
   const thread = "t".repeat(3_000);
   const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);

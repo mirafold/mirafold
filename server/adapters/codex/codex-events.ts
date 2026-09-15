@@ -881,7 +881,8 @@ export class CodexEventMapper {
   /** The engine's terminal word on a thread: its items, streaming state, and
    *  retained report are done with. The anchor itself stays (bounded, and a
    *  late update still needs its row). */
-  private forgetChildThread(thread: string, cascade = true) {
+  private forgetChildThread(thread: string) {
+    this.settleChildOutput(thread);
     for (const id of this.childThreadItems.get(thread) ?? []) {
       this.childItems.delete(id);
       this.prose.delete(id);
@@ -892,11 +893,15 @@ export class CodexEventMapper {
     this.childThreadItems.delete(thread);
     this.childReports.delete(thread);
     this.runningChildren.delete(thread);
-    // A settled child takes the grandchildren riding its deck with it.
-    if (cascade && !this.adoptedThreads.has(thread)) {
-      const anchor = this.subagentAnchor.get(thread);
-      if (anchor) for (const t of this.adoptedThreads) if (this.subagentAnchor.get(t) === anchor) this.forgetChildThread(t, false);
-    }
+    // A grandchild riding this deck is NOT taken along: it may still be
+    // running (a spawn with no wait) and settles on its own terminal word.
+  }
+
+  /** A thread's still-streaming rows flush now — before its terminal word
+   *  goes out — so no snapshot timer fires after the task is over and no
+   *  orphaned track lingers in the live-output table (PR #122 review). */
+  private settleChildOutput(thread: string) {
+    for (const id of this.childThreadItems.get(thread) ?? []) this.live.settle(id);
   }
 
   /** A thread a CHILD spawned or messaged anchors on that child's own deck —
@@ -926,7 +931,7 @@ export class CodexEventMapper {
     // The child's own word on the threads it waited for releases them.
     for (const [thread, st] of states) {
       const state = collabState(st?.status);
-      if (state && state !== "running" && state !== "unknown" && this.adoptedThreads.has(thread)) this.forgetChildThread(thread, false);
+      if (state && state !== "running" && state !== "unknown" && this.adoptedThreads.has(thread)) this.forgetChildThread(thread);
     }
   }
 
@@ -951,6 +956,8 @@ export class CodexEventMapper {
     const id = this.subagentAnchor.get(thread);
     if (!id || this.adoptedThreads.has(thread)) return;
     const label = this.taskLabels.get(thread);
+    const terminal = state !== "running" && state !== "unknown";
+    if (terminal) this.settleChildOutput(thread); // the last evidence precedes the terminal word
     this.options.emit({
       type: "task_update",
       id,
@@ -962,7 +969,7 @@ export class CodexEventMapper {
     });
     // The engine's word decides how long the thread's bookkeeping lives.
     if (state === "running") this.runningChildren.add(thread);
-    else if (state !== "unknown") this.forgetChildThread(thread);
+    else if (terminal) this.forgetChildThread(thread);
   }
 
   /** A child agent's lifecycle, narrated under its spawn row when the anchor

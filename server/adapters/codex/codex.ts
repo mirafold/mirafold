@@ -757,7 +757,10 @@ export class CodexSession implements AgentSession {
         });
       }
       if (this.activeTurn === turn) this.activeTurn = undefined;
-      this.permissions.denyAll("moot"); // drop any ask the ended turn left open
+      // Drop any ask the ended turn left open — except a CHILD's: a spawn
+      // with no wait is still running and its escalation is still the
+      // user's to answer; the ask's own timeout bounds it (PR #122 review).
+      this.permissions.denyAll("moot", (ask) => Boolean(ask.parentId));
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
     }
   }
