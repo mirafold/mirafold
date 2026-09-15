@@ -5,11 +5,13 @@ import {
   type TodoItem,
   capOutput,
   emitPromptOptions,
+  outputFields,
   PERMISSION_TIMEOUT_MS,
 } from "../types";
 import { RENDER_TOOL_COMPONENT } from "../render-mcp-cmd";
 import { codexSlashOptions } from "../codex/codex-prompt-options";
 import { PermissionLedger } from "../wire-helpers";
+import { routineActions } from "../routine-actions";
 
 // component → its real render_* tool name, inverted from the one mapping
 // (a hand-rolled inverse here would produce tool names no agent can call —
@@ -1305,7 +1307,7 @@ export class MockSession implements AgentSession {
     const id = randomUUID();
     const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
     const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
-    const capped = capOutput(big);
+    const capped = outputFields(capOutput(big));
     this.beginTurn();
     this.schedule(() => {
       this.emit({ type: "status", state: "tool", label: "Bash" });
@@ -1315,8 +1317,7 @@ export class MockSession implements AgentSession {
       () =>
         this.emit({
           type: "tool_result",
-          output: capped.text,
-          truncatedBytes: capped.truncatedBytes,
+          ...capped,
           id,
         }),
       900,
@@ -1412,13 +1413,12 @@ export class MockSession implements AgentSession {
         this.emit({ type: "tool_use", name: t.name, detail: t.detail, id, input: t.input });
       }, delay);
       delay += randInt(300, 700);
-      const capped = capOutput(t.output);
+      const capped = outputFields(capOutput(t.output));
       this.schedule(
         () =>
           this.emit({
             type: "tool_result",
-            output: capped.text,
-            truncatedBytes: capped.truncatedBytes,
+            ...capped,
             isError: t.isError,
             id,
           }),
@@ -1606,6 +1606,14 @@ export class MockSession implements AgentSession {
   }
 
   private emit(msg: SessionMsg) {
+    // The scripted calls speak Claude-style names (Read/Grep/Glob); classify
+    // them the way that adapter does so the browser's grouping runs
+    // API-free. Bash and friends carry nothing, exactly like the real path.
+    if (msg.type === "tool_use" && !msg.actions) {
+      const input = msg.input ?? (msg.name === "Read" ? { file_path: msg.detail } : { pattern: msg.detail });
+      const actions = routineActions("claude-code", msg.name, input);
+      if (actions) msg = { ...msg, actions };
+    }
     for (const cb of this.listeners) cb(msg);
   }
 

@@ -39,6 +39,8 @@ export const CODEX_HANDLED_METHODS = [
   "item/fileChange/patchUpdated",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",
+  "item/mcpToolCall/progress",
+  "item/commandExecution/terminalInteraction",
   "turn/plan/updated",
   "thread/tokenUsage/updated",
   "error",
@@ -73,12 +75,13 @@ export const CODEX_IGNORED_METHODS: Record<string, string> = {
   "item/autoApprovalReview/completed": "internal review of an auto-approval; the approval itself is surfaced",
   "autoApprovalReview/strictReviewRequired": "internal review of an auto-approval; the approval itself is surfaced",
   "item/reasoning/summaryPartAdded": "a paragraph boundary inside reasoning already streamed as deltas",
-  "item/mcpToolCall/progress": "progress ticks of a call whose completion is shown",
   "serverRequest/resolved": "the answer to an ask the session itself resolved",
   "command/exec/outputDelta": "the exec runtime's own streaming; the item completion is shown",
-  "process/outputDelta": "background process plumbing not represented in the transcript",
-  "process/exited": "background process plumbing not represented in the transcript",
-  "item/commandExecution/terminalInteraction": "interactive-terminal plumbing not represented in the transcript",
+  // Both belong to a CLIENT's own `process/spawn` request (`processHandle`
+  // is "client-supplied, connection-scoped" in the 0.153 schema); Mirafold
+  // issues none, so nothing of the agent's arrives here (TF0.3).
+  "process/outputDelta": "streams only a client's own process/spawn request, which Mirafold never issues",
+  "process/exited": "exit of a client's own process/spawn request, which Mirafold never issues",
   "mcpServer/oauthLogin/completed": "MCP server administration",
   "mcpServer/event/stream/notification": "MCP server administration",
   "account/updated": "account administration",

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { SessionMsg } from "../../protocol";
-import { type TodoItem, capOutput, joinTextBlocks, OUTPUT_CAP_BYTES, SubagentProseBudget } from "../types";
+import type { SessionMsg, ToolAction } from "../../protocol";
+import { type TodoItem, capOutput, joinTextBlocks, outputFields, OUTPUT_CAP_BYTES, SubagentProseBudget } from "../types";
+import { LiveOutput } from "../live-output";
 import { resolveImageProps } from "../../render-image";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "../render-mcp-cmd";
 import { ChecklistPainter, UnknownKindReporter, displayPath, inertToken } from "../wire-helpers";
@@ -11,12 +12,7 @@ import { convertMermaidCharts } from "./mermaid-chart";
 
 const log = createLogger("codex-events");
 
-// Reaching the live-output ceiling is said once on the stream itself: an
-// interrupted command settles from that stream, and a silent cut would read
-// as "that was all the output" (release review 2026-09-01).
-export const streamCapMarker = (cap: number) =>
-  `\n(… live output capped at ${Math.round(cap / 1000)} KB — the settled result reports how much was cut …)`;
-export const STREAM_CAP_MARKER = streamCapMarker(OUTPUT_CAP_BYTES);
+export { STREAM_CAP_MARKER, streamCapMarker } from "../live-output";
 
 // The `codex app-server` v2 notification stream (`item/*`, `turn/*`,
 // `thread/*`) normalized into SessionMsg. Shapes come from the binary's own
@@ -37,6 +33,8 @@ export type CodexItem = {
   command?: string;
   aggregatedOutput?: string | null;
   exitCode?: number | null;
+  commandActions?: unknown;
+  processId?: string | null;
   status?: string;
   changes?: unknown;
   // collabAgentToolCall / subAgentActivity / imageView / imageGeneration /
@@ -124,10 +122,10 @@ export class CodexEventMapper {
   // the map is bounded here instead: past the cap a new thread's activity
   // falls to the budgeted unanchored lane rather than growing memory.
   private static readonly MAX_SUBAGENT_ANCHORS = 5_000;
-  // Streamed tool output (TS.11): UTF-8 bytes forwarded per running item, capped
-  // like the final output so a chatty command cannot flood the ring.
-  private streamed = new Map<string, number>();
-  private capMarked = new Set<string>();
+  // Streamed tool output (TS.11 / Phase TF): the shared bounded accumulator
+  // — legacy prefix deltas plus replacement snapshots, capped like the final
+  // output so a chatty command cannot flood the ring.
+  private readonly live: LiveOutput;
   // Latest normalized fileChange snapshot per running item. Codex publishes
   // full structured snapshots, not textual patch deltas; the signature keeps
   // duplicate completion snapshots from repainting the same row.
@@ -160,6 +158,7 @@ export class CodexEventMapper {
   ) {
     this.checklist = new ChecklistPainter(options.emit);
     this.unknown = new UnknownKindReporter(options.emit, "Codex", (message) => log.warn(message));
+    this.live = new LiveOutput({ emit: options.emit, capBytes: options.outputCapBytes });
   }
 
   private readonly unknown: UnknownKindReporter;
@@ -191,8 +190,7 @@ export class CodexEventMapper {
     this.checklist.reset();
     this.prose.clear();
     this.phaseOf.clear();
-    this.streamed.clear();
-    this.capMarked.clear();
+    this.live.clear();
     this.fileChangeSnapshots.clear();
     this.subagentProse.clear();
     this.thinkingStreamed.clear();
@@ -240,6 +238,21 @@ export class CodexEventMapper {
       case "item/fileChange/patchUpdated":
         this.publishFileChange(String(p["itemId"] ?? ""), p["changes"]);
         break;
+      case "item/mcpToolCall/progress": {
+        // The call's own progress line, in the running row's live preview —
+        // what the TUI prints while an MCP tool works (Phase TF2.3).
+        const message = typeof p["message"] === "string" ? p["message"] : "";
+        if (message) this.streamToolOutput(String(p["itemId"] ?? ""), `${inertToken(message, 500)}\n`);
+        break;
+      }
+      case "item/commandExecution/terminalInteraction": {
+        // Bytes the AGENT typed into its running command's PTY: shown in the
+        // output stream marked as input, the way an echoing terminal shows
+        // them (Phase TF2.3). `processId` ties it to the same running item.
+        const stdin = typeof p["stdin"] === "string" ? p["stdin"].replace(/\r?\n$/, "") : "";
+        if (stdin) this.streamToolOutput(String(p["itemId"] ?? ""), `‹stdin› ${inertToken(stdin, 500)}\n`);
+        break;
+      }
       case "item/plan/delta": {
         // The model's written plan streams like prose and is narration by
         // nature — never the answer.
@@ -487,11 +500,12 @@ export class CodexEventMapper {
 
   private onCommandExecution(item: CodexItem, phase: ItemPhase) {
     const command = typeof item.command === "string" ? item.command : "";
+    const actions = commandActions(item.commandActions);
     if (phase === "started") {
-      this.announceTool(item.id, "Shell", command, { command });
+      this.announceTool(item.id, "Shell", command, { command }, actions);
       return;
     }
-    this.ensureAnnounced(item.id, "Shell", command, { command });
+    this.ensureAnnounced(item.id, "Shell", command, { command }, actions);
     const capped = capOutput(item.aggregatedOutput ?? "");
     // A command that RAN is an ordinary completed command, exactly as the
     // Codex TUI shows it — dim, foldable, exit code annotated — never a red
@@ -505,14 +519,22 @@ export class CodexEventMapper {
     const declined = item.status === "declined";
     const ran = item.exitCode != null;
     const isError = declined || (!ran && item.status === "failed");
+    // The exit status rides as a fact of its own (Phase TF) — the browser
+    // badges "exit N" on the row — and stays in the text for older clients.
     const exitNote =
       ran && item.exitCode !== 0 ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})` : "";
+    const fields = outputFields(capped);
     this.finishTool(item.id, {
+      ...fields,
       output: declined
         ? `${capped.text}${capped.text ? "\n" : ""}(declined)`
-        : capped.text + exitNote,
-      truncatedBytes: capped.truncatedBytes,
+        : capped.tail === undefined
+          ? capped.text + exitNote
+          : capped.text,
+      ...(capped.tail !== undefined && !declined && exitNote ? { tail: capped.tail + exitNote } : {}),
       isError,
+      ...(ran ? { exitCode: item.exitCode as number } : {}),
+      ...(typeof item.durationMs === "number" && item.durationMs >= 0 ? { durationMs: Math.floor(item.durationMs) } : {}),
     });
   }
 
@@ -543,29 +565,10 @@ export class CodexEventMapper {
   }
 
   /** Streamed bytes of a running command (plus legacy patch output): forwarded only
-   *  for a row already announced, capped at the same size as final output. */
+   *  for a row already announced, through the shared bounded accumulator. */
   private streamToolOutput(itemId: string, delta: string) {
     if (!delta || !this.announced.has(itemId)) return;
-    const cap = this.options.outputCapBytes ?? OUTPUT_CAP_BYTES;
-    const sent = this.streamed.get(itemId) ?? 0;
-    // Past the ceiling nothing more streams — but the ceiling itself is said
-    // once, even when it was zero to begin with.
-    const marker = this.capMarked.has(itemId) ? "" : streamCapMarker(cap);
-    if (sent >= cap) {
-      if (marker) {
-        this.capMarked.add(itemId);
-        this.options.emit({ type: "tool_output_delta", id: itemId, text: marker });
-      }
-      return;
-    }
-    const room = cap - sent;
-    const bytes = Buffer.from(delta, "utf8");
-    const truncated = bytes.length > room;
-    const reached = bytes.length >= room;
-    const text = truncated ? utf8Prefix(bytes, room) : delta;
-    this.streamed.set(itemId, reached ? cap : sent + bytes.length);
-    if (reached) this.capMarked.add(itemId);
-    this.options.emit({ type: "tool_output_delta", id: itemId, text: text + (reached ? marker : "") });
+    this.live.append(itemId, delta);
   }
 
   /** A collab call (spawn / wait / send…) is a tool row named by the engine's
@@ -590,6 +593,14 @@ export class CodexEventMapper {
     }
     if (phase === "started") {
       this.announceTool(item.id, name, detail, input);
+      // A spawn names its child: the task exists and is running from the
+      // engine's point of view before the spawn call itself settles (TF2.4).
+      if (item.tool === "spawnAgent" || item.tool === "spawn_agent") {
+        for (const thread of receivers) {
+          this.taskLabels.set(thread, firstLine(prompt, 96) || thread);
+          this.emitTask(thread, "running");
+        }
+      }
       return;
     }
     this.ensureAnnounced(item.id, name, detail, input);
@@ -597,6 +608,19 @@ export class CodexEventMapper {
       typeof item.agentsStates === "object" && item.agentsStates !== null
         ? Object.entries(item.agentsStates as Record<string, { status?: unknown; message?: unknown }>)
         : [];
+    // Each child's lifecycle is the engine's word on THAT thread, carried
+    // separately from this call's own settlement; the full message is the
+    // child's report, retained through the bounded report contract — the
+    // 160-char first line below is only the collapsed row's text.
+    for (const [thread, st] of states) {
+      const state = collabState(st?.status);
+      if (!state) continue;
+      if (prompt && (item.tool === "spawnAgent" || item.tool === "spawn_agent") && !this.taskLabels.has(thread)) {
+        this.taskLabels.set(thread, firstLine(prompt, 96));
+      }
+      const message = typeof st?.message === "string" && st.message ? capOutput(st.message) : undefined;
+      this.emitTask(thread, state, message);
+    }
     // Engine-sized fan-out: build lines only up to the output ceiling and
     // say how many were left, instead of materializing every state first
     // (release review 2026-09-01).
@@ -615,14 +639,37 @@ export class CodexEventMapper {
     // The state fan-out is engine-sized: capped like every other result.
     const capped = capOutput(lines.join("\n"));
     this.finishTool(item.id, {
+      ...outputFields(capped),
       output: item.status === "declined" ? "(declined)" : capped.text || "(done)",
-      truncatedBytes: capped.truncatedBytes,
       isError: item.status === "failed" || item.status === "declined" || failed,
     });
   }
 
+  // The engine's own name for each child thread (the spawn prompt's first
+  // line), repeated on every task_update so the retained newest update
+  // still names the task after replay compaction.
+  private taskLabels = new Map<string, string>();
+
+  /** One child thread's lifecycle on the wire, anchored on the collab call
+   *  that first named it. A thread no call anchored has no row to update. */
+  private emitTask(thread: string, state: TaskState, report?: ReturnType<typeof capOutput>) {
+    const id = this.subagentAnchor.get(thread);
+    if (!id) return;
+    const label = this.taskLabels.get(thread);
+    this.options.emit({
+      type: "task_update",
+      id,
+      state,
+      ...(label ? { label } : {}),
+      ...(report?.text ? { report: report.text } : {}),
+      ...(report?.tail !== undefined ? { reportTail: report.tail } : {}),
+      ...(report?.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
+    });
+  }
+
   /** A child agent's lifecycle, narrated under its spawn row when the anchor
-   *  is known, otherwise as commentary in the transcript. */
+   *  is known, otherwise as commentary in the transcript — and, as the
+   *  engine's own lifecycle word, a task_update on that anchor (TF2.4). */
   private onSubagentActivity(item: CodexItem) {
     const thread = typeof item.agentThreadId === "string" ? item.agentThreadId : "";
     // Engine-chosen identifiers on a narration line: clamped, single-line,
@@ -631,6 +678,18 @@ export class CodexEventMapper {
     const who = typeof item.agentPath === "string" && item.agentPath ? inertToken(item.agentPath, 96) : "subagent";
     const parentId = this.subagentAnchor.get(thread);
     const text = `${who} ${kind}`;
+    const lifecycle =
+      item.kind === "started" || item.kind === "interacted"
+        ? "running"
+        : item.kind === "completed"
+          ? "completed"
+          : item.kind === "interrupted"
+            ? "interrupted"
+            : undefined;
+    if (lifecycle && parentId) {
+      if (!this.taskLabels.has(thread)) this.taskLabels.set(thread, who);
+      this.emitTask(thread, lifecycle);
+    }
     if (parentId) {
       const forwarded = this.subagentProse.take(parentId, `${text}\n`);
       if (forwarded) this.options.emit({ type: "text_delta", text: forwarded, parentId });
@@ -659,8 +718,7 @@ export class CodexEventMapper {
     this.announceTool(item.id, "image_generation", firstLine(prompt, 96), { ...(prompt ? { prompt } : {}), ...(saved ? { savedPath: saved } : {}) });
     const failure = capOutput(String(item.failure ?? "failed"));
     this.finishTool(item.id, {
-      output: failed ? failure.text : saved || "(no file saved)",
-      ...(failed && failure.truncatedBytes !== undefined ? { truncatedBytes: failure.truncatedBytes } : {}),
+      ...(failed ? outputFields(failure) : { output: saved || "(no file saved)" }),
       isError: failed,
     });
     if (saved && !failed) this.paintWorkspaceImage(saved, prompt || "generated image");
@@ -692,10 +750,8 @@ export class CodexEventMapper {
       return;
     }
     this.ensureAnnounced(item.id, name, detail, args);
-    const capped = capOutput(mcpText(item.contentItems));
     this.finishTool(item.id, {
-      output: capped.text,
-      truncatedBytes: capped.truncatedBytes,
+      ...outputFields(capOutput(mcpText(item.contentItems))),
       isError: item.status === "failed" || item.success === false,
     });
   }
@@ -726,13 +782,10 @@ export class CodexEventMapper {
       return;
     }
     this.ensureAnnounced(item.id, label, detail, item.arguments);
-    const capped = capOutput(
-      item.error ? String(item.error.message ?? "") : mcpText(item.result?.content),
-    );
     this.finishTool(item.id, {
-      output: capped.text,
-      truncatedBytes: capped.truncatedBytes,
+      ...outputFields(capOutput(item.error ? String(item.error.message ?? "") : mcpText(item.result?.content))),
       isError: item.status === "failed" || Boolean(item.error),
+      ...(typeof item.durationMs === "number" && item.durationMs >= 0 ? { durationMs: Math.floor(item.durationMs) } : {}),
     });
   }
 
@@ -753,11 +806,11 @@ export class CodexEventMapper {
   }
 
   /** Announce only when the started phase was missed. */
-  private ensureAnnounced(id: string, name: string, detail: string, input: unknown) {
-    if (!this.announced.has(id)) this.announceTool(id, name, detail, input);
+  private ensureAnnounced(id: string, name: string, detail: string, input: unknown, actions?: ToolAction[]) {
+    if (!this.announced.has(id)) this.announceTool(id, name, detail, input, actions);
   }
 
-  private announceTool(id: string, name: string, detail: string, input: unknown) {
+  private announceTool(id: string, name: string, detail: string, input: unknown, actions?: ToolAction[]) {
     this.announced.add(id);
     this.options.emit({ type: "status", state: "tool", label: name });
     this.options.emit({
@@ -766,15 +819,27 @@ export class CodexEventMapper {
       detail: detail || undefined,
       id,
       input: typeof input === "object" && input !== null ? (input as Record<string, unknown>) : undefined,
+      ...(actions?.length ? { actions } : {}),
     });
   }
 
   private finishTool(
     id: string,
-    result: { output: string; isError?: boolean; truncatedBytes?: number },
+    result: {
+      output: string;
+      isError?: boolean;
+      truncatedBytes?: number;
+      tail?: string;
+      omittedBytes?: number;
+      exitCode?: number;
+      durationMs?: number;
+    },
   ) {
     this.announced.delete(id);
     this.fileChangeSnapshots.delete(id);
+    // The final snapshot goes out before the authoritative result, so a
+    // pre-result viewport never holds a stale tail.
+    this.live.settle(id);
     this.options.emit({ type: "tool_result", ...result, id });
   }
 
@@ -798,16 +863,49 @@ export class CodexEventMapper {
   }
 }
 
-/** Decode the longest complete UTF-8 prefix within a byte budget. A stream
- *  slice must not split a character or grow back over the cap as U+FFFD. */
-function utf8Prefix(bytes: Buffer, maxBytes: number): string {
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  for (let end = Math.min(bytes.length, maxBytes); end >= Math.max(0, maxBytes - 3); end--) {
-    try {
-      return decoder.decode(bytes.subarray(0, end));
-    } catch {
-      // A UTF-8 scalar is at most four bytes; back up to its leading byte.
-    }
+type TaskState = Extract<SessionMsg, { type: "task_update" }>["state"];
+
+/** A collab call's per-thread `CollabAgentStatus` → the wire's task state. */
+function collabState(status: unknown): TaskState | undefined {
+  switch (status) {
+    case "pendingInit":
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "errored":
+    case "notFound":
+      return "failed";
+    case "interrupted":
+    case "shutdown":
+      return "interrupted";
+    default:
+      return undefined;
   }
-  return "";
+}
+
+/** Codex's own best-effort parse of a command (`commandActions`) mapped to
+ *  the wire's display classification: only when EVERY parsed action is a
+ *  read, listing, or search — one `unknown` (or a pipeline the parser could
+ *  not name) means the command stays a command. Targets are the engine's
+ *  parsed paths/queries, clamped, never re-derived from the command text. */
+export function commandActions(raw: unknown): ToolAction[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const actions: ToolAction[] = [];
+  for (const entry of raw) {
+    const a = entry as { type?: unknown; path?: unknown; query?: unknown; name?: unknown } | null;
+    const kind =
+      a?.type === "read" ? "read" : a?.type === "listFiles" ? "list" : a?.type === "search" ? "search" : undefined;
+    if (!kind) return undefined;
+    const target =
+      kind === "search"
+        ? [a?.query, a?.path].find((v): v is string => typeof v === "string" && v.length > 0)
+        : kind === "read"
+          ? [a?.name, a?.path].find((v): v is string => typeof v === "string" && v.length > 0)
+          : typeof a?.path === "string" && a.path
+            ? a.path
+            : undefined;
+    actions.push({ kind, ...(target ? { target: inertToken(target, 200) } : {}) });
+  }
+  return actions;
 }

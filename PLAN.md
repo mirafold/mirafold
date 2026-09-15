@@ -4835,6 +4835,100 @@ production merge, or publication belongs to this phase.
 
 ---
 
+## Phase TF — Transcript fidelity and readability (opened 2026-09-15; Kyle-directed: "Let's do this" on `mirafold-transcript-fidelity-spec.md`; branch `feature/transcript-fidelity` → `next`)
+
+The spec (prepared 2026-09-15, kept outside the repo in Kyle's Downloads) is
+the contract: R1–R8, phases TF0–TF6. This section records progress, evidence,
+decisions, and limits. Delivery boundary: a verified local candidate on one
+feature branch; push and PR only on Kyle's explicit ask (his git rule);
+never a merge, tag, version bump, or release.
+
+### TF0 — Executable baseline (✅ 2026-09-15)
+
+- **TF0.1 authority + source.** Base `next` = `d3ec718` (== `origin/next`;
+  `main` = `f1e1fdb`); working tree clean except the untracked, unrelated
+  `decks/` folder (left alone). No open PRs; no branch in review; latest
+  release v0.9.1. OIC.3 above is merged as PR #119 but still unchecked in
+  its own section — noted, deliberately not folded into this feature.
+- **TF0.2 toolchain.** Node v22.23.1, yarn 1.22.22, playwright-core 1.61.1,
+  `/usr/bin/google-chrome` 152, managed chromium/firefox/webkit present.
+  `rg` is not installed, so the unit gate runs through a Node file walk with
+  the spec's five dotenv-fixture exclusions (`server/project-env.test.ts`,
+  `server/project-env-safety.test.ts`, `server/render-image.test.ts`,
+  `server/sessions/workspace/git/git.test.ts`,
+  `server/sessions/workspace/filesystem/fs-folder-tree.test.ts`). Baseline:
+  `yarn typecheck` clean; unit gate 1,243/1,243 across 123 files. No dotenv
+  file or template was opened.
+- **TF0.3 provider evidence** (approved interfaces only: installed binaries,
+  published schemas, shipped SDK types — no credential files):
+
+  | Provider · version | Exposed | Absent (verified) | Unverified |
+  | --- | --- | --- | --- |
+  | Claude Agent SDK 0.3.201 (`claude` 2.1.272) | `tool_progress` (tool_use_id, elapsed_time_seconds — no stdout); system subtypes `task_started` (task_id, tool_use_id?, description, subagent_type?, skip_transcript?), `task_progress` (usage.duration_ms, last_tool_name?, summary?), `task_notification` (status completed/failed/stopped, summary), `task_updated` (patch.status/error) | live tool stdout | that `task_started.tool_use_id` is the Agent spawn id child calls carry as `parent_tool_use_id` (contracted by the types; no live run) |
+  | Codex app-server 0.153.4 | `commandExecution.commandActions` (read/listFiles/search/unknown), `exitCode`, `durationMs`, `processId`; `item/mcpToolCall/progress` {message}; `item/commandExecution/terminalInteraction` {stdin, processId}; `collabAgentToolCall.agentsStates` {status, message}; `subAgentActivity.kind` started/interacted/interrupted/completed | a `thread/subscribe` request (the schema has only `thread/unsubscribe`, `thread/read`, `thread/items/list`); `process/outputDelta`/`process/exited` belong to a client's own `process/spawn` (never issued) | whether a child thread's `item/*` notifications reach the parent connection (needs a live spawning run; today the adapter drops other-thread notifications) |
+  | Gemini CLI 0.58.0 headless | `JsonStreamEventType` = init, message, tool_use, tool_result, error, result; built-ins `read_file`, `read_many_files`, `glob`, `list_directory`, `grep_search`, `run_shell_command` | thinking, live output, task lane, exit codes (the "thought" path is the ACP surface, not stream-json) | — |
+  | OpenCode 1.18.29 | the bash tool republishes `metadata.output` (the whole output so far) while `status: running`; an interrupted tool keeps `metadata.interrupted + output` on its error state; task parts carry `metadata.sessionId/parentSessionId`; child `session.status busy` | — | — |
+
+  Live provider runs were not performed: they spend Kyle's accounts.
+  Fixtures prove the adapter/browser contract for each shape; they do not
+  prove the installed engine emits it.
+
+### TF1 — Display facts and bounded evidence (✅ 2026-09-15)
+
+- **TF1.1** additive contracts in `server/protocol.ts`: `tool_use.actions`
+  (engine-verified read/list/search), `tool_update.elapsedMs`,
+  `tool_result.tail/omittedBytes/exitCode/durationMs`, new
+  `tool_output_snapshot` (replacement, monotonic `revision`), new
+  `task_update` (running/completed/failed/interrupted/unknown + bounded
+  report), `replay_complete.evicted`, `session_created.capabilities`
+  (`server/adapters/capabilities.ts`). Consumers first: checkpoint schema,
+  ring, tail, protocol fixtures, projection.
+- **TF1.2** `capOutput` keeps a UTF-8-safe head and tail (head gets the odd
+  byte); `output` stays the head so pre-TF clients see what they always
+  did; `omittedBytes` counts only what this cap dropped.
+- **TF1.3a–c** `server/adapters/live-output.ts`: per-call head/tail
+  accumulator, 250 ms throttle with immediate final flush at settlement,
+  legacy bounded delta prefix kept for old clients, `replace()` for
+  engines that republish the whole output; the ring retains one snapshot
+  and one task_update per id.
+- **TF1.4** Codex: `commandActions` → `actions` only when every parsed
+  action is read/list/search; `exitCode`/`durationMs` as facts beside the
+  unchanged `isError` rule; MCP call `durationMs`.
+
+### TF2 — Provider task and progress information (✅ 2026-09-15)
+
+- **TF2.1** Claude: `TaskOutput`/`TaskStop` are ordinary rows with
+  inspectable results; checklist CRUD still folds.
+- **TF2.2** Claude: `task_started/progress/notification/updated` →
+  `task_update` on the spawn's `tool_use_id` (or a task-scoped anchor);
+  `skip_transcript` tasks stay hidden; `tool_progress` → `tool_update.elapsedMs`.
+- **TF2.3** Codex: MCP progress lines and the agent's own stdin ride the
+  running row's live output; `process/*` stays ledgered with the corrected
+  reason.
+- **TF2.4** Codex: a spawn's child is `running` from `item/started`; every
+  `agentsStates` entry updates the same anchor with the FULL message as its
+  report; `subAgentActivity` kinds map to lifecycle. Child inner activity
+  is declared unavailable (`capabilities.childActivity: false`), not
+  fabricated.
+- **TF2.5** OpenCode: running `metadata.output` → replacement snapshots
+  (suffix-only forwarding, reset on a non-extension); interrupted output
+  kept ahead of the error; task parts carry lifecycle and the report;
+  child busy/error map to running/failed.
+- **TF2.6** Gemini: exact-name classification; nothing invented for the
+  absent surfaces.
+
+**Checkpoint TF1+TF2 (2026-09-15):** `yarn typecheck` clean; unit gate
+1,271/1,271 (five dotenv-fixture files excluded, as recorded above). New
+Tier-1 coverage: `live-output.test.ts`, `routine-actions.test.ts`, head/tail
+`capOutput` boundaries (multibyte at both seams, zero and tiny budgets),
+ring compaction of snapshots/task updates, checkpoint admission of every
+new frame, Codex command facts and streaming order, Claude task lifecycle
+and unswallowed TaskOutput/TaskStop, OpenCode snapshots/interruption/task
+lifecycle, Gemini exact-name classification, the hello's capabilities and
+the `evicted` replay flag. Committed as one coherent checkpoint.
+
+---
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

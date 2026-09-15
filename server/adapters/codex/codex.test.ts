@@ -68,6 +68,11 @@ async function answerAsk(s: CodexSession, msgs: Any[], n: number, allow: boolean
 }
 
 const DONE: Notification = ["turn/completed", { turn: { status: "completed" } }];
+const last = (arr: Any[]): Any => {
+  const m = arr.at(-1);
+  assert.ok(m, "expected at least one message");
+  return m;
+};
 const usage = (inputTokens: number, outputTokens: number, reasoningOutputTokens = 0): Notification => [
   "thread/tokenUsage/updated",
   { tokenUsage: { total: { inputTokens, outputTokens, reasoningOutputTokens, cachedInputTokens: 0, totalTokens: inputTokens + outputTokens }, last: {} } },
@@ -741,6 +746,126 @@ test("a command that RAN is never a red error, whatever its exit status — app-
   const results = msgs.filter((m) => m.type === "tool_result");
   assert.ok(results.every((r) => r.isError !== true), "a command that ran is not a red error");
   assert.deepEqual(results.map((r) => r.output), ["(exit 1)", "ls: cannot access\n(exit 2)", "(exit 1)"]);
+  s.close();
+});
+
+test("TF1.4: verified commandActions classify routine work; exit code and duration ride as facts", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    // Every parsed action is a read/listing/search → groupable, targets carried.
+    ["item/started", { item: { type: "commandExecution", id: "r1", command: "cat a.ts && ls src && rg TODO src", status: "inProgress", commandActions: [{ type: "read", command: "cat a.ts", name: "a.ts", path: "/w/a.ts" }, { type: "listFiles", command: "ls src", path: "src" }, { type: "search", command: "rg TODO src", query: "TODO", path: "src" }] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "r1", command: "cat a.ts && ls src && rg TODO src", aggregatedOutput: "…", exitCode: 0, durationMs: 12.7, status: "completed", commandActions: [{ type: "read", command: "cat a.ts", name: "a.ts", path: "/w/a.ts" }, { type: "listFiles", command: "ls src", path: "src" }, { type: "search", command: "rg TODO src", query: "TODO", path: "src" }] } }],
+    // A mixed pipeline (one unknown) stays a command: no actions at all.
+    ["item/completed", { item: { type: "commandExecution", id: "m1", command: "cat a | wc -l", aggregatedOutput: "3", exitCode: 0, status: "completed", commandActions: [{ type: "read", command: "cat a", name: "a", path: "/w/a" }, { type: "unknown", command: "wc -l" }] } }],
+    // grep exit 1 (no match) and a test run exit 1: both factual, neither red.
+    ["item/completed", { item: { type: "commandExecution", id: "g1", command: "rg zzz", aggregatedOutput: "", exitCode: 1, status: "failed", commandActions: [{ type: "search", command: "rg zzz", query: "zzz", path: null }] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "x1", command: "yarn test", aggregatedOutput: "1 failing", exitCode: 1, durationMs: 900, status: "failed", commandActions: [{ type: "unknown", command: "yarn test" }] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const use = (id: string) => msgs.find((m) => m.type === "tool_use" && m.id === id)!;
+  const result = (id: string) => msgs.find((m) => m.type === "tool_result" && m.id === id)!;
+  assert.deepEqual(use("r1").actions, [
+    { kind: "read", target: "a.ts" },
+    { kind: "list", target: "src" },
+    { kind: "search", target: "TODO" },
+  ]);
+  assert.deepEqual([result("r1").exitCode, result("r1").durationMs, result("r1").isError], [0, 12, false]);
+  assert.equal(use("m1").actions, undefined, "an unknown action anywhere keeps the command a command");
+  assert.deepEqual(use("g1").actions, [{ kind: "search", target: "zzz" }]);
+  assert.deepEqual([result("g1").exitCode, result("g1").isError, result("g1").output], [1, false, "(exit 1)"]);
+  assert.deepEqual([result("x1").exitCode, result("x1").durationMs, result("x1").isError, result("x1").output], [1, 900, false, "1 failing\n(exit 1)"]);
+  assert.equal(use("x1").actions, undefined);
+  s.close();
+});
+
+test("TF1.3: a running command's output streams as bounded legacy deltas AND replacement snapshots; the result settles the row", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "commandExecution", id: "s1", command: "make", status: "inProgress", commandActions: [] } }],
+    ["item/commandExecution/outputDelta", { itemId: "s1", delta: "line 1\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "s1", delta: "line 2\n" }],
+    ["item/completed", { item: { type: "commandExecution", id: "s1", command: "make", aggregatedOutput: "line 1\nline 2\n", exitCode: 0, status: "completed", commandActions: [] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const types = msgs.filter((m) => m.id === "s1").map((m) => m.type);
+  assert.equal(types[0], "tool_use");
+  assert.ok(types.includes("tool_output_delta") && types.includes("tool_output_snapshot"));
+  assert.equal(types.at(-1), "tool_result", "the authoritative result comes last");
+  const snaps = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "s1");
+  assert.equal(last(snaps).head, "line 1\nline 2\n", "the final snapshot flushed before the result");
+  assert.ok(snaps.every((m, i) => i === 0 || m.revision > snaps[i - 1].revision));
+  assert.ok(msgs.indexOf(last(snaps)) < msgs.indexOf(msgs.find((m) => m.type === "tool_result" && m.id === "s1")!));
+  s.close();
+});
+
+test("TF2.3: MCP progress and the agent's own stdin ride the running row's live output; process/* stays ignored", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "mcpToolCall", id: "m1", server: "docs", tool: "search", status: "inProgress", arguments: { q: "x" } } }],
+    ["item/mcpToolCall/progress", { itemId: "m1", message: "indexing 3/9" }],
+    ["item/mcpToolCall/progress", { itemId: "m1", message: "indexing 9/9" }],
+    ["item/completed", { item: { type: "mcpToolCall", id: "m1", server: "docs", tool: "search", status: "completed", arguments: { q: "x" }, result: { content: [{ type: "text", text: "3 hits" }] }, durationMs: 250 } }],
+    ["item/started", { item: { type: "commandExecution", id: "c1", command: "python repl.py", status: "inProgress", commandActions: [], processId: "pty-9" } }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: ">>> " }],
+    ["item/commandExecution/terminalInteraction", { itemId: "c1", processId: "pty-9", stdin: "print(1)\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "1\n" }],
+    ["item/completed", { item: { type: "commandExecution", id: "c1", command: "python repl.py", aggregatedOutput: ">>> 1\n", exitCode: 0, status: "completed", commandActions: [], processId: "pty-9" } }],
+    ["process/outputDelta", { processHandle: "h1", stream: "stdout", deltaBase64: "eA==", capReached: false }],
+    ["process/exited", { processHandle: "h1", exitCode: 0, stdout: "", stderr: "", stdoutCapReached: false, stderrCapReached: false }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const live = (id: string) => msgs.filter((m) => m.type === "tool_output_delta" && m.id === id).map((m) => m.text).join("");
+  assert.equal(live("m1"), "indexing 3/9\nindexing 9/9\n");
+  assert.equal(live("c1"), ">>> ‹stdin› print(1)\n1\n");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "m1")!.durationMs, 250);
+  assert.ok(!msgs.some((m) => m.type === "notice"), "process/* is ledgered, never reported as unknown");
+  assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "h1"));
+  s.close();
+});
+
+test("TF2.4: a spawn returns while its child runs; later state updates the same task; the full report survives", async () => {
+  const report = "Audit complete.\n" + "detail line\n".repeat(30) + "FINAL: two findings.";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "running", message: null } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb2", tool: "wait", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb2", tool: "wait", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "completed", message: report } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t-child", agentPath: "worker" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.ok(tasks.every((m) => m.id === "cb1"), "every child update lands on the spawn that first named the thread");
+  assert.deepEqual(tasks.map((m) => [m.state, m.label]), [
+    ["running", "Audit the watcher"], // spawn started: the child exists
+    ["running", "Audit the watcher"], // spawn completed with the child still running
+    ["running", "Audit the watcher"], // subAgentActivity started
+    ["completed", "Audit the watcher"], // wait: the child's state and its full report
+    ["completed", "Audit the watcher"], // subAgentActivity completed
+  ]);
+  const spawnResult = msgs.find((m) => m.type === "tool_result" && m.id === "cb1")!;
+  assert.equal(spawnResult.isError, false, "the finished spawn call is not the child finishing");
+  const withReport = tasks.find((m) => m.report);
+  assert.equal(withReport!.report, report, "the report is the whole message, not the collapsed 160-char line");
+  assert.ok(msgs.find((m) => m.type === "tool_result" && m.id === "cb2")!.output.length < report.length);
+  s.close();
+});
+
+test("TF2.4: an errored or interrupted child marks its task failed/interrupted", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: ["t-a", "t-b"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: ["t-a", "t-b"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-a": { status: "errored", message: "boom" }, "t-b": { status: "interrupted" } } } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.slice(-2).map((m) => [m.state, m.report]), [["failed", "boom"], ["interrupted", undefined]]);
   s.close();
 });
 

@@ -1015,8 +1015,8 @@ test("the ui render server exempts every tool from Claude Code's tool-search def
 
 test("TS.12: an SDK message kind the ledger leaves unmapped is reported once, never dropped silently", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
-    { type: "task_started", task_id: "t1" }, // ledger: unmapped
-    { type: "task_started", task_id: "t2" }, // once per kind
+    { type: "some_future_kind", data: 1 }, // newer than this build's ledger
+    { type: "some_future_kind", data: 2 }, // once per kind
     { type: "auth_status", status: "ok" }, // ledger: deliberately ignored — no notice
     RESULT,
   ]);
@@ -1024,7 +1024,72 @@ test("TS.12: an SDK message kind the ledger leaves unmapped is reported once, ne
   await awaitTurnEnd();
   assert.deepEqual(
     msgs.filter((m) => m.type === "notice").map((m) => [m.text, m.source]),
-    [["Mirafold doesn't display this Claude Agent message yet: task_started", undefined]],
+    [["Mirafold doesn't display this Claude Agent message yet: some_future_kind", undefined]],
   );
+  s.close();
+});
+
+test("TF2.1: TaskOutput and TaskStop are ordinary calls with inspectable results; checklist CRUD still folds", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "c1", name: "TaskCreate", input: { subject: "run the suite" } }]),
+    user([{ type: "tool_result", tool_use_id: "c1", content: "created 1" }]),
+    assistant([{ type: "tool_use", id: "o1", name: "TaskOutput", input: { task_id: "bg-1" } }]),
+    user([{ type: "tool_result", tool_use_id: "o1", content: "Task bg-1 is still running", is_error: true }]),
+    assistant([{ type: "tool_use", id: "o2", name: "TaskOutput", input: { task_id: "bg-1" } }]),
+    user([{ type: "tool_result", tool_use_id: "o2", content: "Suite passed: 12 tests" }]),
+    assistant([{ type: "tool_use", id: "k1", name: "TaskStop", input: { task_id: "bg-2" } }]),
+    user([{ type: "tool_result", tool_use_id: "k1", content: "stopped bg-2" }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(msgs.some((m) => m.type === "render" && m.component === "todo-list"), "TaskCreate still paints the checklist");
+  assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "c1"), "checklist CRUD is not a raw row");
+  const rows = msgs.filter((m) => m.type === "tool_use").map((m) => [m.name, m.id]);
+  assert.deepEqual(rows, [["TaskOutput", "o1"], ["TaskOutput", "o2"], ["TaskStop", "k1"]]);
+  const results = msgs.filter((m) => m.type === "tool_result").map((m) => [m.id, m.output, m.isError]);
+  assert.deepEqual(results, [["o1", "Task bg-1 is still running", true], ["o2", "Suite passed: 12 tests", false], ["k1", "stopped bg-2", false]]);
+  s.close();
+});
+
+test("TF2.2: task lifecycle frames become task_update on the spawn's own id; elapsed progress is never stdout", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { description: "map the auth path", subagent_type: "Explore", prompt: "go" } }]),
+    { type: "system", subtype: "task_started", task_id: "T-1", tool_use_id: "task1", description: "map the auth path", subagent_type: "Explore" },
+    { type: "system", subtype: "task_progress", task_id: "T-1", tool_use_id: "task1", description: "map the auth path", usage: { total_tokens: 10, tool_uses: 2, duration_ms: 1500 }, last_tool_name: "Grep" },
+    assistant([{ type: "tool_use", id: "in1", name: "Grep", input: { pattern: "auth" } }], "task1"),
+    { type: "tool_progress", tool_use_id: "in1", tool_name: "Grep", parent_tool_use_id: "task1", elapsed_time_seconds: 2.5 },
+    user([{ type: "tool_result", tool_use_id: "in1", content: "3 hits" }], "task1"),
+    { type: "system", subtype: "task_notification", task_id: "T-1", tool_use_id: "task1", status: "completed", output_file: "/tmp/x", summary: "Two entry points.\nBoth cookie-based.", usage: { total_tokens: 40, tool_uses: 3, duration_ms: 4200 } },
+    user([{ type: "tool_result", tool_use_id: "task1", content: "Two entry points.\nBoth cookie-based." }]),
+    // A background job the SDK ties to no tool call gets a task-scoped anchor;
+    // an ambient housekeeping task (skip_transcript) never paints.
+    { type: "system", subtype: "task_started", task_id: "T-2", description: "watch the build", task_type: "local_bash" },
+    { type: "system", subtype: "task_updated", task_id: "T-2", patch: { status: "failed", error: "exit 2" } },
+    { type: "system", subtype: "task_started", task_id: "T-3", description: "memory tidy", skip_transcript: true },
+    { type: "system", subtype: "task_notification", task_id: "T-3", status: "completed", output_file: "/tmp/y", summary: "tidied" },
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(
+    tasks.map((m) => [m.id, m.state, m.label, m.agentType, m.action, m.elapsedMs, m.report]),
+    [
+      ["task1", "running", "map the auth path", "Explore", undefined, undefined, undefined],
+      ["task1", "running", "map the auth path", "Explore", "Grep", 1500, undefined],
+      ["task1", "completed", "map the auth path", "Explore", undefined, 4200, "Two entry points.\nBoth cookie-based."],
+      ["task:T-2", "running", "watch the build", undefined, undefined, undefined, undefined],
+      ["task:T-2", "failed", "watch the build", undefined, undefined, undefined, "exit 2"],
+    ],
+  );
+  assert.ok(!tasks.some((m) => m.label === "memory tidy"), "skip_transcript tasks stay off the transcript");
+  const progress = msgs.filter((m) => m.type === "tool_update");
+  assert.deepEqual(progress.map((m) => [m.id, m.elapsedMs]), [["in1", 2500]]);
+  assert.ok(!msgs.some((m) => m.type === "tool_output_delta" || m.type === "tool_output_snapshot"), "elapsed is not output");
+  assert.ok(!msgs.some((m) => m.type === "notice"), "nothing reported as unmapped");
+  // Routine reads classify by exact name; the spawn itself does not.
+  assert.deepEqual(msgs.find((m) => m.type === "tool_use" && m.id === "in1")!.actions, [{ kind: "search", target: "auth" }]);
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "task1")!.actions, undefined);
   s.close();
 });

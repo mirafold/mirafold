@@ -1,3 +1,4 @@
+import type { ToolAction } from "@protocol";
 import type { ZoneMsg } from "../transport/session-bus";
 import { subagentSummary, type SubagentSummary } from "./subagent-deck";
 import {
@@ -41,6 +42,16 @@ export type ArtifactRow = {
 
 export type PaintingRow = RenderRow | ArtifactRow;
 
+/** The latest bounded replacement snapshot of a running call's output
+ *  (tool_output_snapshot): a fixed head, the newest tail, and how much fell
+ *  between them. Authoritative over the legacy `streamed` prefix. */
+export type LiveOutputView = {
+  head: string;
+  tail?: string;
+  omittedBytes?: number;
+  revision: number;
+};
+
 export type ToolRow = {
   kind: "tool";
   id: number;
@@ -57,6 +68,18 @@ export type ToolRow = {
   /** Output streamed while the call runs (tool_output_delta); `output` is
    *  still the engine's authoritative text once the call completes. */
   streamed?: string;
+  /** The newest replacement snapshot while the call runs (Phase TF). */
+  live?: LiveOutputView;
+  /** The engine's verified read/list/search classification (tool_use.actions). */
+  actions?: ToolAction[];
+  /** The retained tail of a large result and the middle dropped before it. */
+  tail?: string;
+  omittedBytes?: number;
+  /** The command's own exit status, a fact independent of `isError`. */
+  exitCode?: number;
+  durationMs?: number;
+  /** The engine's own running clock for the call (tool_update.elapsedMs). */
+  elapsedMs?: number;
 };
 
 export type SubagentProseRow = {
@@ -315,6 +338,21 @@ function orphanAnchorless(entries: readonly TranscriptEntry[]): TranscriptEntry[
       ? { ...entry, orphaned: true }
       : entry,
   );
+}
+
+/** What an interrupted call keeps as its result: the observed live output
+ *  (the snapshot's head and tail, or the legacy prefix) plus the honest
+ *  note that no result ever came. */
+function interruptedOutcome(entry: ToolEntry): Pick<ToolRow, "output" | "tail" | "omittedBytes"> {
+  const note = "(interrupted — no result)";
+  if (entry.live) {
+    return {
+      output: entry.live.head,
+      tail: `${entry.live.tail ?? ""}${entry.live.tail || entry.live.head ? "\n" : ""}${note}`,
+      ...(entry.live.omittedBytes !== undefined ? { omittedBytes: entry.live.omittedBytes } : {}),
+    };
+  }
+  return { output: entry.streamed ? `${entry.streamed}\n${note}` : note };
 }
 
 function buildSnapshot(
@@ -644,6 +682,7 @@ export function createTranscriptProjection(): TranscriptProjection {
             detail: msg.detail,
             input: msg.input,
             parentId: msg.parentId,
+            ...(msg.actions?.length ? { actions: msg.actions } : {}),
             batchId,
             settled: false,
             startedAt: readNow(),
@@ -659,15 +698,40 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...entry,
                 ...(msg.detail !== undefined ? { detail: msg.detail } : {}),
                 ...(msg.input !== undefined ? { input: msg.input } : {}),
+                ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : {}),
               }
             : entry,
         );
         return true;
       }
       case "tool_output_delta": {
+        // Once a replacement snapshot exists for the row, the legacy prefix
+        // is redundant — the snapshot is the whole truth of what was seen.
         entries = entries.map((entry) =>
-          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined && !entry.live
             ? { ...entry, streamed: (entry.streamed ?? "") + msg.text }
+            : entry,
+        );
+        return true;
+      }
+      case "tool_output_snapshot": {
+        // Newest revision wins; a replayed or reordered older snapshot can
+        // never overwrite fresher state, and a settled row ignores stragglers.
+        entries = entries.map((entry) =>
+          entry.kind === "tool" &&
+          entry.toolId === msg.id &&
+          entry.output === undefined &&
+          msg.revision > (entry.live?.revision ?? 0)
+            ? {
+                ...entry,
+                streamed: undefined,
+                live: {
+                  head: msg.head,
+                  ...(msg.tail !== undefined ? { tail: msg.tail } : {}),
+                  ...(msg.omittedBytes !== undefined ? { omittedBytes: msg.omittedBytes } : {}),
+                  revision: msg.revision,
+                },
+              }
             : entry,
         );
         return true;
@@ -681,12 +745,22 @@ export function createTranscriptProjection(): TranscriptProjection {
                 // The authoritative output subsumes the streamed copy —
                 // release it (PR #80 review).
                 streamed: undefined,
+                live: undefined,
                 truncatedBytes: msg.truncatedBytes,
                 isError: msg.isError,
+                ...(msg.tail !== undefined ? { tail: msg.tail } : {}),
+                ...(msg.omittedBytes !== undefined ? { omittedBytes: msg.omittedBytes } : {}),
+                ...(msg.exitCode !== undefined ? { exitCode: msg.exitCode } : {}),
+                ...(msg.durationMs !== undefined ? { durationMs: msg.durationMs } : {}),
               }
             : entry,
         );
         return true;
+      }
+      case "task_update": {
+        // Lifecycle lands in Phase TF3; until then it is inert transcript
+        // state that old and new viewports alike can ignore.
+        return changed;
       }
       case "turn_end": {
         const id = streamingId;
@@ -705,13 +779,12 @@ export function createTranscriptProjection(): TranscriptProjection {
               // copy is released either way (PR #80 review).
               ...(entry.output === undefined
                 ? {
-                    output: entry.streamed
-                      ? `${entry.streamed}\n(interrupted — no result)`
-                      : "(interrupted — no result)",
+                    ...interruptedOutcome(entry),
                     isError: true,
                   }
                 : {}),
               streamed: undefined,
+              live: undefined,
             };
           }
           return entry;

@@ -16,12 +16,14 @@ import { makeCanUseTool } from "../../security/permissions";
 import { makeRenderServer } from "../../render-tools";
 import { RENDER_GUIDANCE } from "../../render-guidance";
 import { ResumeIdState } from "../resume-id";
-import { UnknownKindReporter } from "../wire-helpers";
+import { routineActions } from "../routine-actions";
+import { UnknownKindReporter, inertToken } from "../wire-helpers";
 import { ChecklistPainter, PermissionLedger } from "../wire-helpers";
 import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  outputFields,
   emitPromptOptions,
   envWithout,
   errText,
@@ -53,10 +55,10 @@ export const CLAUDE_MESSAGE_LEDGER = {
   hook_response: "ignored",
   hook_progress: "ignored",
   compact_boundary: "handled", // the compaction notice, via handleSystemMsg (it also arrives as a system subtype)
-  tool_progress: "unmapped", // TS.11 sibling: streamed tool progress
-  task_started: "unmapped", // background tasks
-  task_progress: "unmapped",
-  task_notification: "unmapped",
+  tool_progress: "handled", // Phase TF: the engine's elapsed clock for a running call → tool_update.elapsedMs (never stdout)
+  task_started: "handled", // Phase TF: task lifecycle → task_update (system subtypes, via handleSystemMsg)
+  task_progress: "handled",
+  task_notification: "handled",
 } satisfies Record<SDKMessage["type"], "handled" | "ignored" | "unmapped">;
 
 // The in-process render-tools MCP server's registered name — the SDK exposes
@@ -66,14 +68,15 @@ const UI_MCP = "ui";
 
 // The SDK's session-task-list tools — folded into the live checklist,
 // never shown as raw tool rows. Note the subagent spawner is named "Agent"
-// in this SDK, not "Task", so it doesn't collide.
+// in this SDK, not "Task", so it doesn't collide. TaskOutput and TaskStop
+// are NOT here (Phase TF2.1): they read or stop a background task and their
+// results — a task's report, a stop's acknowledgement, a failure — are
+// evidence the user must be able to inspect, not checklist bookkeeping.
 const TASK_TOOLS = new Set([
   "TaskCreate",
   "TaskUpdate",
   "TaskList",
   "TaskGet",
-  "TaskStop",
-  "TaskOutput",
   "TodoWrite",
 ]);
 
@@ -197,6 +200,15 @@ export class ClaudeCodeSession implements AgentSession {
   // Per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
   private permissions = new PermissionLedger((msg) => this.emit(msg));
+  // Engine task id → the wire anchor its task_update rides on (the spawn
+  // tool_use id when the SDK names one, else a task-scoped id) plus the
+  // identity every update repeats, so a replay retaining only the newest
+  // update still names the task. Bounded like the other per-session maps.
+  private tasks_ = new Map<string, { id: string; label?: string; agentType?: string }>();
+  // Ambient housekeeping tasks the SDK asks consumers to hide: every later
+  // frame for one of these stays off the transcript too.
+  private hiddenTasks = new Set<string>();
+  private static readonly MAX_TASKS = 2_000;
 
   // Label shown in the status bar. Undefined when `model` is unset (the SDK
   // falls back to its own default) until system/init names the real one — the
@@ -616,6 +628,7 @@ export class ClaudeCodeSession implements AgentSession {
                 continue;
               }
               this.announcedTools.add(block.id);
+              const actions = routineActions("claude-code", block.name, block.input);
               this.emit({
                 type: "tool_use",
                 name: block.name,
@@ -626,6 +639,7 @@ export class ClaudeCodeSession implements AgentSession {
                     ? (block.input as Record<string, unknown>)
                     : undefined,
                 parentId,
+                ...(actions ? { actions } : {}),
               });
             }
             break;
@@ -649,11 +663,9 @@ export class ClaudeCodeSession implements AgentSession {
                     ...(pendingRender.input ? { input: pendingRender.input } : {}),
                     ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
                   });
-                  const capped = capOutput(resultText(block.content));
                   this.emit({
                     type: "tool_result",
-                    output: capped.text,
-                    truncatedBytes: capped.truncatedBytes,
+                    ...outputFields(capOutput(resultText(block.content))),
                     isError: true,
                     id: block.tool_use_id,
                     ...(pendingRender.parentId ? { parentId: pendingRender.parentId } : {}),
@@ -662,11 +674,9 @@ export class ClaudeCodeSession implements AgentSession {
                 continue;
               }
               if (!this.announcedTools.delete(block.tool_use_id)) continue;
-              const capped = capOutput(resultText(block.content));
               this.emit({
                 type: "tool_result",
-                output: capped.text,
-                truncatedBytes: capped.truncatedBytes,
+                ...outputFields(capOutput(resultText(block.content))),
                 isError: block.is_error === true,
                 id: block.tool_use_id,
                 parentId,
@@ -684,6 +694,21 @@ export class ClaudeCodeSession implements AgentSession {
           case "result":
             this.handleResultMsg(msg);
             break;
+          case "tool_progress": {
+            // The engine's own clock for a running call — elapsed, not
+            // stdout; the ring keeps only the newest tool_update per row.
+            const p = msg as { tool_use_id?: unknown; elapsed_time_seconds?: unknown };
+            if (
+              typeof p.tool_use_id === "string" &&
+              this.announcedTools.has(p.tool_use_id) &&
+              typeof p.elapsed_time_seconds === "number" &&
+              Number.isFinite(p.elapsed_time_seconds) &&
+              p.elapsed_time_seconds >= 0
+            ) {
+              this.emit({ type: "tool_update", id: p.tool_use_id, elapsedMs: Math.floor(p.elapsed_time_seconds * 1000) });
+            }
+            break;
+          }
           default: {
             // Exhaustive above by the SDK's union; a kind that reaches here is
             // one the ledger classifies as unmapped (or one newer than the
@@ -819,6 +844,105 @@ export class ClaudeCodeSession implements AgentSession {
         type: "notice",
         text: "the model declined to complete this request",
         kind: "refusal",
+      });
+    } else if (sub === "task_started" || sub === "task_progress" || sub === "task_notification" || sub === "task_updated") {
+      this.handleTaskMsg(sub, msg as Record<string, unknown>);
+    }
+  }
+
+  /** The SDK's task lifecycle frames (Phase TF2.2) → task_update on the
+   *  anchor every lane already groups by. Identity comes only from the
+   *  engine: `tool_use_id` names the spawn call (the Agent tool_use id that
+   *  child calls carry as parent_tool_use_id, per the SDK's contract), and
+   *  a task the SDK does not tie to a call gets a task-scoped anchor. State
+   *  is the engine's word; nothing here is inferred from call settlement. */
+  private handleTaskMsg(sub: string, m: Record<string, unknown>) {
+    const taskId = typeof m["task_id"] === "string" ? m["task_id"] : "";
+    if (!taskId) return;
+    if (this.hiddenTasks.has(taskId)) {
+      if (sub === "task_notification") this.hiddenTasks.delete(taskId);
+      return;
+    }
+    let known = this.tasks_.get(taskId);
+    if (!known) {
+      if (m["skip_transcript"] === true) {
+        // The SDK's own ambient housekeeping: hidden from the transcript.
+        if (this.hiddenTasks.size < ClaudeCodeSession.MAX_TASKS) this.hiddenTasks.add(taskId);
+        return;
+      }
+      if (this.tasks_.size >= ClaudeCodeSession.MAX_TASKS) return;
+      const toolUseId = typeof m["tool_use_id"] === "string" && m["tool_use_id"] ? m["tool_use_id"] : undefined;
+      known = { id: toolUseId ?? `task:${taskId}` };
+      this.tasks_.set(taskId, known);
+    }
+    if (typeof m["description"] === "string" && m["description"]) known.label = m["description"];
+    if (typeof m["subagent_type"] === "string" && m["subagent_type"]) known.agentType = m["subagent_type"];
+    const identity = {
+      ...(known.label ? { label: known.label } : {}),
+      ...(known.agentType ? { agentType: known.agentType } : {}),
+    };
+    const usage = m["usage"] as { duration_ms?: unknown } | undefined;
+    const elapsed =
+      typeof usage?.duration_ms === "number" && Number.isFinite(usage.duration_ms) && usage.duration_ms >= 0
+        ? { elapsedMs: Math.floor(usage.duration_ms) }
+        : {};
+    if (sub === "task_started") {
+      this.emit({ type: "task_update", id: known.id, state: "running", ...identity });
+    } else if (sub === "task_progress") {
+      const action =
+        typeof m["last_tool_name"] === "string" && m["last_tool_name"]
+          ? m["last_tool_name"]
+          : typeof m["summary"] === "string" && m["summary"]
+            ? m["summary"]
+            : undefined;
+      this.emit({
+        type: "task_update",
+        id: known.id,
+        state: "running",
+        ...identity,
+        ...(action ? { action: inertToken(action, 160) } : {}),
+        ...elapsed,
+      });
+    } else if (sub === "task_notification") {
+      const status = m["status"];
+      const state = status === "completed" ? "completed" : status === "failed" ? "failed" : status === "stopped" ? "interrupted" : "unknown";
+      const summary = typeof m["summary"] === "string" ? m["summary"] : "";
+      const report = capOutput(summary);
+      this.emit({
+        type: "task_update",
+        id: known.id,
+        state,
+        ...identity,
+        ...(report.text ? { report: report.text } : {}),
+        ...(report.tail !== undefined ? { reportTail: report.tail } : {}),
+        ...(report.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
+        ...elapsed,
+      });
+      this.tasks_.delete(taskId);
+    } else {
+      const patch = (m["patch"] ?? {}) as Record<string, unknown>;
+      if (typeof patch["description"] === "string" && patch["description"]) known.label = patch["description"];
+      const status = patch["status"];
+      const state =
+        status === "completed"
+          ? "completed"
+          : status === "failed"
+            ? "failed"
+            : status === "killed"
+              ? "interrupted"
+              : status === "pending" || status === "running" || status === "paused"
+                ? "running"
+                : undefined;
+      if (!state) return; // a patch without a status change carries nothing the transcript shows
+      const error = typeof patch["error"] === "string" && patch["error"] ? capOutput(patch["error"]) : undefined;
+      this.emit({
+        type: "task_update",
+        id: known.id,
+        state,
+        ...(known.label ? { label: known.label } : {}),
+        ...(known.agentType ? { agentType: known.agentType } : {}),
+        ...(status === "paused" ? { action: "paused" } : {}),
+        ...(error ? { report: error.text } : {}),
       });
     }
   }

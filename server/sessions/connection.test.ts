@@ -31,6 +31,33 @@ test("component tool actions contain unknown and prototype names and still run v
   }
 });
 
+test("TF: the hello declares the agent's capabilities; a full replay past evicted history says so", (t) => {
+  const reg = new SessionRegistry({
+    backend: { agent: "gemini-cli", kind: "none", live: false },
+    deltaCoalesceMs: 0,
+    ringCountCap: 2,
+  });
+  const entry = reg.create({ cwd: mkdtempSync(join(tmpdir(), "mirafold-evicted-")) });
+  const seen: WireMsg[] = [];
+  const conn = openConnection(reg, (message) => seen.push(message));
+  t.after(() => { conn.close(); reg.end(entry.id); });
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  const created = seen.find((m) => m.type === "session_created");
+  if (created?.type !== "session_created") throw new Error("missing identity");
+  assert.deepEqual(created.capabilities, { liveOutput: false, thinking: false, tasks: false, childActivity: false });
+  assert.deepEqual(seen.find((m) => m.type === "replay_complete"), { type: "replay_complete" }, "nothing evicted yet");
+  reg.broadcast(entry, { type: "user_prompt", text: "one" });
+  reg.broadcast(entry, { type: "user_prompt", text: "two" });
+  reg.broadcast(entry, { type: "user_prompt", text: "three" });
+  seen.length = 0;
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  assert.deepEqual(seen.filter((m) => m.replay).map((m) => m.seq), [2, 3]);
+  assert.deepEqual(seen.at(-1), { type: "replay_complete", evicted: true });
+  seen.length = 0;
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id, afterSeq: 2 }));
+  assert.deepEqual(seen.at(-1), { type: "replay_complete" }, "a tail resume lost nothing the viewport had not seen");
+});
+
 test("attach brackets full, resumed, and empty history before live output", (t) => {
   const reg = new SessionRegistry({
     backend: { agent: "claude-code", kind: "none", live: false },

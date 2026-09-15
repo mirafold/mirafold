@@ -27,6 +27,8 @@ function transcriptSegment(msg: SessionMsg): string | undefined {
       const visible = [msg.output, elided].filter(Boolean).join("\n");
       return visible ? `\n${visible}\n` : undefined;
     }
+    case "task_update":
+      return `\n[${msg.label ?? "task"} · ${msg.state}]\n`;
     case "permission_request":
       return `\n[permission · ${msg.tool}]\n`;
     case "error":

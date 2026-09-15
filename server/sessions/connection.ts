@@ -33,6 +33,7 @@ import { VERSION } from "../version";
 export { escapeTranscriptFence } from "./bang-handlers";
 import { envInt } from "../env";
 import { folderPickerAvailable } from "../folder-picker";
+import { agentCapabilities } from "../adapters/capabilities";
 
 // Minimum gap between refresh_agents-triggered probe sweeps per connection.
 // The picker polls every few seconds; anything faster serves the cached
@@ -214,6 +215,7 @@ export function openConnection(
       shellCwd: e.bangCwd,
       agent: e.agent,
       model: e.session.modelName,
+      capabilities: agentCapabilities(e.agent),
       replayPending: true,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
@@ -222,7 +224,10 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
-    viewport({ type: "replay_complete" });
+    viewport({
+      type: "replay_complete",
+      ...(!resumed && registry.historyEvicted(e) ? { evicted: true as const } : {}),
+    });
     // A relay viewport is governed by the relay gate even after a mid-session
     // credential-kind flip: mark it so the registry can evict it if the kind
     // becomes relay-ineligible.
