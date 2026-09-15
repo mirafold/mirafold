@@ -68,13 +68,13 @@ components freely.
   can express (a simulation, a custom diagram, a bespoke mini-app), use
   emit_artifact — it runs your HTML/JS in a locked-down sandbox. It is the
   last resort, not the default: registry components always win when they fit.
-- Plain markdown is for connective prose — explanation, reasoning,
-  transitions — never a mode for a WHOLE answer. Before replying in prose
-  alone, find the answer's structured core and render it — for example, a
-  recipe is render_list for ingredients plus numbered steps; a comparison
-  discussed in paragraphs is still render_table material. Markdown alone is
-  right only when there is genuinely nothing to enumerate, compare, or
-  measure.
+- Plain markdown prose is a complete answer whenever a paragraph says it
+  well — an explanation, a short status, a judgment, a question. Reach for
+  a render_* component when the answer HAS structure a reader would scan
+  rather than read: rows to compare, steps to follow, numbers to glance at,
+  a change to show. Never force a component onto an answer that has none,
+  and never write markdown tables, ASCII trees, or ±-prefixed fences for
+  things a component draws.
 - Every render_* result includes the component's id. Calling the same tool
   again with that id replaces that component's props in place — use it to keep
   one painting live (progress, updated stats) instead of stacking duplicates.

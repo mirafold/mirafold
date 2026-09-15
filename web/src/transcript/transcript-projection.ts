@@ -1,10 +1,13 @@
+import type { ToolAction } from "@protocol";
 import type { ZoneMsg } from "../transport/session-bus";
-import { subagentSummary, type SubagentSummary } from "./subagent-deck";
+import { subagentSummary, type SubagentSummary, type TaskLifecycle } from "./subagent-deck";
 import {
   groupToolActivity,
   type ActivityItem,
   type FoldedActivity,
 } from "./tool-visibility";
+
+export type { TaskLifecycle } from "./subagent-deck";
 
 /**
  * Stateful wire-to-view projection for the output zone. It owns transcript
@@ -41,6 +44,16 @@ export type ArtifactRow = {
 
 export type PaintingRow = RenderRow | ArtifactRow;
 
+/** The latest bounded replacement snapshot of a running call's output
+ *  (tool_output_snapshot): a fixed head, the newest tail, and how much fell
+ *  between them. Authoritative over the legacy `streamed` prefix. */
+export type LiveOutputView = {
+  head: string;
+  tail?: string;
+  omittedBytes?: number;
+  revision: number;
+};
+
 export type ToolRow = {
   kind: "tool";
   id: number;
@@ -57,6 +70,24 @@ export type ToolRow = {
   /** Output streamed while the call runs (tool_output_delta); `output` is
    *  still the engine's authoritative text once the call completes. */
   streamed?: string;
+  /** The newest replacement snapshot while the call runs (Phase TF). */
+  live?: LiveOutputView;
+  /** The engine's verified read/list/search classification (tool_use.actions). */
+  actions?: ToolAction[];
+  /** The retained tail of a large result and the middle dropped before it. */
+  tail?: string;
+  omittedBytes?: number;
+  /** The command's own exit status, a fact independent of `isError`. */
+  exitCode?: number;
+  durationMs?: number;
+  /** The engine's own running clock for the call (tool_update.elapsedMs). */
+  elapsedMs?: number;
+  /** A task anchor the engine reported (task_update) with no announcing
+   *  call of its own — a background job, or a spawn evicted from replay. */
+  synthetic?: boolean;
+  /** A result whose announcing call was never retained (evicted before this
+   *  viewport attached): shown as an explicit record, never dropped. */
+  orphaned?: boolean;
 };
 
 export type SubagentProseRow = {
@@ -75,6 +106,9 @@ export type ThinkingRow = {
   id: number;
   text: string;
   done: boolean;
+  /** Stable across replay: the wire seq of the row's first delta when the
+   *  daemon stamped one, else the transcript id — what disclosure keys on. */
+  wireKey: string;
 };
 
 export type NoticeRow = {
@@ -107,35 +141,24 @@ export type PickerTranscriptRow = {
   active: boolean;
 };
 
-export type ToolFoldItem = FoldedActivity<ToolRow, ThinkingRow, TextRow>;
+export type ToolFoldItem = FoldedActivity<ToolRow, ThinkingRow>;
 
 export type ToolFoldRow = {
   kind: "tool-fold";
   id: number;
   items: ToolFoldItem[];
   actionCount: number;
+  /** "Read 8 files · 3 searches" — counts by the engine's classification. */
   summary: string;
+  /** A bounded selection of the paths/queries the engine named. */
+  targets: string[];
   /** The turn that produced these calls is still running ("working" vs
    *  "worked"). */
   live: boolean;
 };
 
-/** Narration the fold may absorb between two calls: a short assistant
- *  remark ("Typecheck is clean — running the tests next."), not a paragraph.
- *  Anything longer is a real boundary and stays its own visible row. */
-export const NARRATION_MAX_LINES = 2;
-export const NARRATION_MAX_CHARS = 160;
-export function isShortNarration(row: TextRow): boolean {
-  if (row.role !== "assistant") return false;
-  // An engine that declares the phase settles it: commentary is narration
-  // whatever its length; the answer never folds.
-  if (row.phase === "commentary") return row.text.trim().length > 0;
-  if (row.phase === "final") return false;
-  const text = row.text.trim();
-  if (!text) return false;
-  const lines = text.split("\n").filter((line) => line.trim()).length;
-  return lines <= NARRATION_MAX_LINES && text.length <= NARRATION_MAX_CHARS;
-}
+/** How many named targets a group's row shows before "…". */
+export const FOLD_TARGET_LIMIT = 4;
 
 export type SubagentDeckRow = {
   kind: "subagent-deck";
@@ -143,6 +166,8 @@ export type SubagentDeckRow = {
   task: ToolRow;
   items: Array<ToolRow | SubagentProseRow>;
   summary: SubagentSummary;
+  /** The engine's lifecycle word for the task, when it gave one. */
+  lifecycle?: TaskLifecycle;
 };
 
 export type OutputZoneRow =
@@ -221,9 +246,7 @@ const sameFoldItems = (
     if (!other || item.kind !== other.kind) return false;
     return item.kind === "tool"
       ? item.tool === (other as Extract<ToolFoldItem, { kind: "tool" }>).tool
-      : item.kind === "thinking"
-        ? item.thinking === (other as Extract<ToolFoldItem, { kind: "thinking" }>).thinking
-        : item.text === (other as Extract<ToolFoldItem, { kind: "text" }>).text;
+      : item.thinking === (other as Extract<ToolFoldItem, { kind: "thinking" }>).thinking;
   });
 
 const sameDeckItems = (
@@ -245,18 +268,35 @@ function toolFoldRow(
     return previous;
   }
   const calls = items.flatMap((item) => (item.kind === "tool" ? [item.tool] : []));
-  const counts = new Map<string, number>();
-  for (const call of calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
-  const summary = [...counts]
-    .slice(0, 3)
-    .map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ""}`)
-    .join(" · ");
-  return { kind: "tool-fold", id, items, actionCount: calls.length, summary, live };
+  const { summary, targets } = describeRoutineWork(calls.flatMap((call) => call.actions ?? []));
+  return { kind: "tool-fold", id, items, actionCount: calls.length, summary, targets, live };
+}
+
+/** "Read 8 files · 3 searches · 2 listings", from the engine's own
+ *  classification of each call — never from tool names or command text —
+ *  plus a bounded selection of the targets it named. */
+export function describeRoutineWork(actions: readonly ToolAction[]): { summary: string; targets: string[] } {
+  const counts = { read: 0, search: 0, list: 0 };
+  const targets: string[] = [];
+  const seen = new Set<string>();
+  for (const action of actions) {
+    counts[action.kind] += 1;
+    if (action.target && !seen.has(action.target)) {
+      seen.add(action.target);
+      if (targets.length < FOLD_TARGET_LIMIT) targets.push(action.target);
+    }
+  }
+  const parts: string[] = [];
+  if (counts.read) parts.push(`Read ${counts.read} ${counts.read === 1 ? "file" : "files"}`);
+  if (counts.search) parts.push(`${counts.search} ${counts.search === 1 ? "search" : "searches"}`);
+  if (counts.list) parts.push(`${counts.list} ${counts.list === 1 ? "listing" : "listings"}`);
+  return { summary: parts.join(" · "), targets };
 }
 
 function subagentDeckRow(
   task: ToolEntry,
   items: Array<ToolEntry | SubagentProseRow>,
+  lifecycle: TaskLifecycle | undefined,
   previous: OutputZoneRow | undefined,
 ): SubagentDeckRow {
   const taskRow = visibleToolRow(task);
@@ -266,6 +306,7 @@ function subagentDeckRow(
   if (
     previous?.kind === "subagent-deck" &&
     previous.task === taskRow &&
+    previous.lifecycle === lifecycle &&
     sameDeckItems(previous.items, visibleItems)
   ) {
     return previous;
@@ -276,7 +317,8 @@ function subagentDeckRow(
     id: task.id,
     task: taskRow,
     items: visibleItems,
-    summary: subagentSummary(task, calls),
+    summary: subagentSummary(task, calls, lifecycle),
+    ...(lifecycle ? { lifecycle } : {}),
   };
 }
 
@@ -302,7 +344,7 @@ function pickerRow(
 // voice); its narration reads as commentary.
 const orphanNarration = (entry: SubagentProseRow): TextRow | ThinkingRow =>
   entry.variant === "thinking"
-    ? { kind: "thinking", id: entry.id, text: entry.text, done: true }
+    ? { kind: "thinking", id: entry.id, text: entry.text, done: true, wireKey: `orphan:${entry.id}` }
     : { kind: "text", id: entry.id, role: "assistant", text: entry.text, done: true, phase: "commentary" };
 
 /** At a turn's end, narration whose anchor row is still absent is never
@@ -317,8 +359,24 @@ function orphanAnchorless(entries: readonly TranscriptEntry[]): TranscriptEntry[
   );
 }
 
+/** What an interrupted call keeps as its result: the observed live output
+ *  (the snapshot's head and tail, or the legacy prefix) plus the honest
+ *  note that no result ever came. */
+function interruptedOutcome(entry: ToolEntry): Pick<ToolRow, "output" | "tail" | "omittedBytes"> {
+  const note = "(interrupted — no result)";
+  if (entry.live) {
+    return {
+      output: entry.live.head,
+      tail: `${entry.live.tail ?? ""}${entry.live.tail || entry.live.head ? "\n" : ""}${note}`,
+      ...(entry.live.omittedBytes !== undefined ? { omittedBytes: entry.live.omittedBytes } : {}),
+    };
+  }
+  return { output: entry.streamed ? `${entry.streamed}\n${note}` : note };
+}
+
 function buildSnapshot(
   entries: readonly TranscriptEntry[],
+  tasks: ReadonlyMap<string, TaskLifecycle>,
   previous: TranscriptSnapshot,
 ): TranscriptSnapshot {
   const previousById = new Map(previous.rows.map((row) => [row.id, row]));
@@ -330,22 +388,29 @@ function buildSnapshot(
     items.push(entry);
     cardItemsByParent.set(entry.parentId, items);
   }
+  // A deck is any call other records group under OR the engine reported a
+  // task lifecycle for — a spawn whose child never called a tool is still a
+  // task with a state and a report.
+  const isDeck = (entry: ToolEntry) => cardItemsByParent.has(entry.toolId) || tasks.has(entry.toolId);
+  // A child row nests only under a parent that EXISTS; an orphaned outcome
+  // whose parent anchor was evicted too has no deck to live in and shows at
+  // the root instead of nowhere (PR #120 round 5).
+  const anchorIds = new Set(entries.flatMap((entry) => (entry.kind === "tool" ? [entry.toolId] : [])));
+  const nested = (entry: ToolEntry) => Boolean(entry.parentId) && !entry.isError && anchorIds.has(entry.parentId!);
 
   const compactedTools = groupToolActivity(
-    entries.flatMap((entry): Array<ActivityItem<ToolEntry, ThinkingRow, TextRow>> =>
+    entries.flatMap((entry): Array<ActivityItem<ToolEntry, ThinkingRow>> =>
       entry.kind === "tool"
-        ? entry.parentId && !entry.isError
+        ? nested(entry)
           ? []
-          : cardItemsByParent.has(entry.toolId)
+          : isDeck(entry)
             ? [null]
             : [{ kind: "tool", tool: entry }]
         : entry.kind === "thinking"
           ? [{ kind: "thinking", thinking: entry }]
-          : entry.kind === "text" && isShortNarration(entry)
-            ? [{ kind: "text", text: entry }]
-            : entry.kind === "subtext"
-              ? []
-              : [null],
+          : entry.kind === "subtext"
+            ? []
+            : [null],
     ),
   );
 
@@ -385,10 +450,11 @@ function buildSnapshot(
         continue;
       }
       if (compactedTools.hidden.has(entry.id)) continue;
-      if (entry.parentId && !entry.isError) continue;
+      if (nested(entry)) continue;
       const items = cardItemsByParent.get(entry.toolId);
-      if (items?.length) {
-        rows.push(subagentDeckRow(entry, items, previousById.get(entry.id)));
+      const lifecycle = tasks.get(entry.toolId);
+      if (items?.length || lifecycle) {
+        rows.push(subagentDeckRow(entry, items ?? [], lifecycle, previousById.get(entry.id)));
       } else {
         rows.push(visibleToolRow(entry));
       }
@@ -428,8 +494,35 @@ function buildSnapshot(
   };
 }
 
+/** A result-side message that arrived for a call this viewport never saw
+ *  announced: held until the turn (or the replay) closes, then shown as an
+ *  explicit record rather than dropped — its start was evicted, not its
+ *  outcome. */
+type PendingOrphan = {
+  output?: string;
+  tail?: string;
+  omittedBytes?: number;
+  truncatedBytes?: number;
+  isError?: boolean;
+  exitCode?: number;
+  durationMs?: number;
+  live?: LiveOutputView;
+  parentId?: string;
+  replayed: boolean;
+};
+
+export const EVICTED_HISTORY_NOTICE =
+  "Earlier history is no longer retained — the daemon keeps a bounded replay, and this session's oldest messages have fallen off it.";
+export const ORPHAN_CALL_NAME = "(earlier call)";
+export const ORPHAN_CALL_DETAIL = "its start was not retained";
+
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
+  let tasks = new Map<string, TaskLifecycle>();
+  let orphans = new Map<string, PendingOrphan>();
+  // Bounded like every other per-session ledger: a hostile stream minting
+  // results for unknown ids must not grow memory without limit.
+  const MAX_PENDING_ORPHANS = 500;
   let streamingId: number | null = null;
   // The phase the open prose row was started with (text_delta.phase); a
   // delta declaring a different phase closes the row and opens a new one.
@@ -443,6 +536,92 @@ export function createTranscriptProjection(): TranscriptProjection {
     hasTranscriptContent: false,
     rows: [],
     paintingsById: new Map(),
+  };
+
+  const toolEntry = (toolId: string): ToolEntry | undefined =>
+    entries.find((entry): entry is ToolEntry => entry.kind === "tool" && entry.toolId === toolId);
+
+  /** Results for calls never announced become explicit rows once nothing
+   *  more can arrive for them (turn end, replay end). They go at the TOP,
+   *  after any eviction notice: an outcome whose opening is missing is
+   *  older than everything retained, so placing it below the newest turn
+   *  would reorder the transcript (review 2026-09-15). */
+  const materializeOrphans = (readNow: () => number, terminal: boolean): boolean => {
+    if (!orphans.size) return false;
+    const batchId = orphanToolBatch;
+    const rows: ToolEntry[] = [];
+    for (const [toolId, pending] of orphans) {
+      const existing = toolEntry(toolId);
+      if (existing) {
+        // The anchor arrived after the outcome (a task placeholder): the
+        // outcome settles it rather than vanishing (PR #120 review).
+        if (existing.output === undefined && pending.output !== undefined) {
+          entries = entries.map((entry) =>
+            entry.kind === "tool" && entry.toolId === toolId
+              ? {
+                  ...entry,
+                  settled: true,
+                  output: pending.output,
+                  ...(pending.tail !== undefined ? { tail: pending.tail } : {}),
+                  ...(pending.omittedBytes !== undefined ? { omittedBytes: pending.omittedBytes } : {}),
+                  ...(pending.truncatedBytes !== undefined ? { truncatedBytes: pending.truncatedBytes } : {}),
+                  isError: pending.isError,
+                  ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
+                  ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
+                  live: undefined,
+                }
+              : entry,
+          );
+        }
+        continue;
+      }
+      rows.push(
+        {
+          kind: "tool",
+          id: nextTranscriptId++,
+          toolId,
+          name: ORPHAN_CALL_NAME,
+          detail: ORPHAN_CALL_DETAIL,
+          parentId: pending.parentId,
+          batchId,
+          settled: terminal || pending.output !== undefined,
+          startedAt: readNow(),
+          orphaned: true,
+          ...(pending.replayed ? { replayed: true } : {}),
+          ...(pending.output !== undefined
+            ? {
+                output: pending.output,
+                ...(pending.tail !== undefined ? { tail: pending.tail } : {}),
+                ...(pending.omittedBytes !== undefined ? { omittedBytes: pending.omittedBytes } : {}),
+                ...(pending.truncatedBytes !== undefined ? { truncatedBytes: pending.truncatedBytes } : {}),
+                isError: pending.isError,
+                ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
+                ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
+              }
+            : pending.live && !terminal
+              ? // Replay end is a delivery boundary, not the call's end: a
+                // live-only orphan keeps RUNNING so later snapshots and the
+                // real result still land on it (round 3).
+                { live: pending.live }
+              : pending.live
+                ? { ...interruptedOutcome({ live: pending.live } as ToolEntry), isError: true }
+                : { output: "(no result was retained)", isError: true }),
+        },
+      );
+    }
+    if (rows.length) {
+      const noticeCount = entries.findIndex((entry) => !(entry.kind === "notice" && entry.text === EVICTED_HISTORY_NOTICE));
+      const at = noticeCount < 0 ? entries.length : noticeCount;
+      entries = [...entries.slice(0, at), ...rows, ...entries.slice(at)];
+    }
+    orphans = new Map();
+    return true;
+  };
+
+  const rememberOrphan = (toolId: string, patch: Partial<PendingOrphan>, replayed: boolean) => {
+    const prior = orphans.get(toolId);
+    if (!prior && orphans.size >= MAX_PENDING_ORPHANS) return;
+    orphans.set(toolId, { ...(prior ?? { replayed }), ...patch, replayed: (prior?.replayed ?? replayed) && replayed });
   };
 
   const foldThinking = (): boolean => {
@@ -522,7 +701,8 @@ export function createTranscriptProjection(): TranscriptProjection {
         } else {
           const id = nextTranscriptId++;
           thinkingId = id;
-          entries = [...entries, { kind: "thinking", id, text: msg.text, done: false }];
+          const wireKey = msg.seq !== undefined ? `seq:${msg.seq}` : `local:${id}`;
+          entries = [...entries, { kind: "thinking", id, text: msg.text, done: false, wireKey }];
         }
         return true;
       }
@@ -634,22 +814,32 @@ export function createTranscriptProjection(): TranscriptProjection {
         // Prompts may queue while a turn is live; tools still belong to the
         // oldest open turn, hence FIFO rather than "most recent prompt".
         const batchId = openToolBatches[0] ?? orphanToolBatch;
-        entries = [
-          ...entries,
-          {
-            kind: "tool",
-            id: nextTranscriptId++,
-            toolId: msg.id,
-            name: msg.name,
-            detail: msg.detail,
-            input: msg.input,
-            parentId: msg.parentId,
-            batchId,
-            settled: false,
-            startedAt: readNow(),
-            ...(msg.replay ? { replayed: true } : {}),
-          },
-        ];
+        // A task the engine reported before its call arrived holds the
+        // call's place: the real announcement fills that row in.
+        const placeholder = entries.findIndex(
+          (entry) => entry.kind === "tool" && entry.toolId === msg.id && entry.synthetic,
+        );
+        const announced: ToolEntry = {
+          kind: "tool",
+          id: placeholder >= 0 ? (entries[placeholder] as ToolEntry).id : nextTranscriptId++,
+          toolId: msg.id,
+          name: msg.name,
+          detail: msg.detail,
+          input: msg.input,
+          parentId: msg.parentId,
+          ...(msg.actions?.length ? { actions: msg.actions } : {}),
+          batchId,
+          settled: false,
+          startedAt: placeholder >= 0 ? (entries[placeholder] as ToolEntry).startedAt : readNow(),
+          ...(msg.replay ? { replayed: true } : {}),
+        };
+        if (placeholder >= 0) {
+          const updated = [...entries];
+          updated[placeholder] = announced;
+          entries = updated;
+        } else {
+          entries = [...entries, announced];
+        }
         return true;
       }
       case "tool_update": {
@@ -659,33 +849,149 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...entry,
                 ...(msg.detail !== undefined ? { detail: msg.detail } : {}),
                 ...(msg.input !== undefined ? { input: msg.input } : {}),
+                ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : {}),
               }
             : entry,
         );
         return true;
       }
       case "tool_output_delta": {
+        // Once a replacement snapshot exists for the row, the legacy prefix
+        // is redundant — the snapshot is the whole truth of what was seen.
         entries = entries.map((entry) =>
-          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined
+          entry.kind === "tool" && entry.toolId === msg.id && entry.output === undefined && !entry.live
             ? { ...entry, streamed: (entry.streamed ?? "") + msg.text }
             : entry,
         );
         return true;
       }
+      case "tool_output_snapshot": {
+        // Newest revision wins; a replayed or reordered older snapshot can
+        // never overwrite fresher state, and a settled row ignores stragglers.
+        const live: LiveOutputView = {
+          head: msg.head,
+          ...(msg.tail !== undefined ? { tail: msg.tail } : {}),
+          ...(msg.omittedBytes !== undefined ? { omittedBytes: msg.omittedBytes } : {}),
+          revision: msg.revision,
+        };
+        if (!toolEntry(msg.id)) {
+          const prior = orphans.get(msg.id);
+          if (!prior?.output && msg.revision > (prior?.live?.revision ?? 0)) {
+            rememberOrphan(msg.id, { live, parentId: msg.parentId }, Boolean(msg.replay));
+          }
+          return true;
+        }
+        entries = entries.map((entry) =>
+          entry.kind === "tool" &&
+          entry.toolId === msg.id &&
+          entry.output === undefined &&
+          msg.revision > (entry.live?.revision ?? 0)
+            ? { ...entry, streamed: undefined, live }
+            : entry,
+        );
+        return true;
+      }
       case "tool_result": {
+        const outcome = {
+          output: msg.output,
+          truncatedBytes: msg.truncatedBytes,
+          isError: msg.isError,
+          ...(msg.tail !== undefined ? { tail: msg.tail } : {}),
+          ...(msg.omittedBytes !== undefined ? { omittedBytes: msg.omittedBytes } : {}),
+          ...(msg.exitCode !== undefined ? { exitCode: msg.exitCode } : {}),
+          ...(msg.durationMs !== undefined ? { durationMs: msg.durationMs } : {}),
+        };
+        if (!toolEntry(msg.id)) {
+          // Never silently ignore an outcome because its opening row was
+          // evicted: hold it, and show it once the turn or replay closes.
+          rememberOrphan(msg.id, { ...outcome, live: undefined, parentId: msg.parentId }, Boolean(msg.replay));
+          return true;
+        }
         entries = entries.map((entry) =>
           entry.kind === "tool" && entry.toolId === msg.id
             ? {
                 ...entry,
-                output: msg.output,
+                ...outcome,
                 // The authoritative output subsumes the streamed copy —
                 // release it (PR #80 review).
                 streamed: undefined,
-                truncatedBytes: msg.truncatedBytes,
-                isError: msg.isError,
+                live: undefined,
               }
             : entry,
         );
+        return true;
+      }
+      case "task_update": {
+        // The engine's word on a task, keyed by the anchor every lane groups
+        // by; newest wins. A task with no announcing call of its own (a
+        // background job, or a spawn evicted from replay) gets a placeholder
+        // anchor so its state and report have a row to live on — the real
+        // announcement, if it ever arrives, fills that row in.
+        // Engines do not repeat durable fields on every frame (a completed
+        // task_updated after a report-bearing notification; a Codex wait
+        // without the message seen earlier): the report, its retention
+        // facts, the duration, and the identity carry over; the state and
+        // the transient current action are the newest frame's (PR #120
+        // review).
+        const prior = tasks.get(msg.id);
+        const lifecycle: TaskLifecycle = {
+          state: msg.state,
+          ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
+          ...(msg.agentType !== undefined ? { agentType: msg.agentType } : prior?.agentType !== undefined ? { agentType: prior.agentType } : {}),
+          ...(msg.action !== undefined ? { action: msg.action } : {}),
+          ...(msg.report !== undefined
+            ? {
+                report: msg.report,
+                ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
+                ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
+              }
+            : prior?.report !== undefined
+              ? {
+                  report: prior.report,
+                  ...(prior.reportTail !== undefined ? { reportTail: prior.reportTail } : {}),
+                  ...(prior.reportOmittedBytes !== undefined ? { reportOmittedBytes: prior.reportOmittedBytes } : {}),
+                }
+              : {}),
+          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined ? { elapsedMs: prior.elapsedMs } : {}),
+          ...(msg.replay ? { replayed: true } : {}),
+        };
+        tasks = new Map(tasks).set(msg.id, lifecycle);
+        if (!toolEntry(msg.id)) {
+          // An outcome that arrived before this anchor (its opening was
+          // evicted) belongs to it: the placeholder is born settled with
+          // that outcome instead of the orphan being lost (PR #120 review).
+          const pending = orphans.get(msg.id);
+          if (pending) orphans = new Map([...orphans].filter(([id]) => id !== msg.id));
+          entries = [
+            ...entries,
+            {
+              kind: "tool",
+              id: nextTranscriptId++,
+              toolId: msg.id,
+              name: msg.label ?? "task",
+              detail: msg.label,
+              parentId: msg.parentId,
+              batchId: openToolBatches[0] ?? orphanToolBatch,
+              settled: pending?.output !== undefined,
+              startedAt: readNow(),
+              synthetic: true,
+              ...(msg.replay || pending?.replayed ? { replayed: true } : {}),
+              ...(pending?.output !== undefined
+                ? {
+                    output: pending.output,
+                    ...(pending.tail !== undefined ? { tail: pending.tail } : {}),
+                    ...(pending.omittedBytes !== undefined ? { omittedBytes: pending.omittedBytes } : {}),
+                    ...(pending.truncatedBytes !== undefined ? { truncatedBytes: pending.truncatedBytes } : {}),
+                    isError: pending.isError,
+                    ...(pending.exitCode !== undefined ? { exitCode: pending.exitCode } : {}),
+                    ...(pending.durationMs !== undefined ? { durationMs: pending.durationMs } : {}),
+                  }
+                : pending?.live
+                  ? { live: pending.live }
+                  : {}),
+            },
+          ];
+        }
         return true;
       }
       case "turn_end": {
@@ -693,9 +999,25 @@ export function createTranscriptProjection(): TranscriptProjection {
         streamingId = null;
         subtextIds.clear();
         const batchId = openToolBatches.shift() ?? orphanToolBatch--;
+        const childParents = new Set(
+          entries.flatMap((entry) => (entry.kind === "tool" || entry.kind === "subtext") && entry.parentId ? [entry.parentId] : []),
+        );
         entries = orphanAnchorless(entries).map((entry) => {
           if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
           if (entry.kind === "tool" && entry.batchId === batchId) {
+            // A child call of a task the engine still reports running is
+            // cross-turn activity: the root's turn end says nothing about
+            // it (round 3).
+            if (entry.parentId && entry.output === undefined && tasks.get(entry.parentId)?.state === "running") return entry;
+            const isTask = tasks.has(entry.toolId) || childParents.has(entry.toolId);
+            if (isTask && entry.output === undefined) {
+              // A task outlives its call's turn by design (a background job,
+              // a child still working): turn_end must not call it
+              // interrupted or successful. Without ANY engine word on it,
+              // its state is honestly unknown.
+              if (!tasks.has(entry.toolId)) tasks = new Map(tasks).set(entry.toolId, { state: "unknown" });
+              return { ...entry, settled: true, streamed: undefined, live: undefined };
+            }
             return {
               ...entry,
               settled: true,
@@ -705,25 +1027,28 @@ export function createTranscriptProjection(): TranscriptProjection {
               // copy is released either way (PR #80 review).
               ...(entry.output === undefined
                 ? {
-                    output: entry.streamed
-                      ? `${entry.streamed}\n(interrupted — no result)`
-                      : "(interrupted — no result)",
+                    ...interruptedOutcome(entry),
                     isError: true,
                   }
                 : {}),
               streamed: undefined,
+              live: undefined,
             };
           }
           return entry;
         });
+        materializeOrphans(readNow, true);
         return true;
       }
       case "error": {
         // A terminal error ends the turn without a turn_end (the adapter-crash
-        // path): anchorless narration is just as orphaned here. A
-        // request-scoped error (terminal: false) ends nothing — same reading
-        // as turn-busy and the daemon's session state.
+        // path): anchorless narration is just as orphaned here, and an open
+        // reasoning row is done — it must not keep pulsing "Thinking…" over
+        // an idle shell (PR #120 review). A request-scoped error (terminal:
+        // false) ends nothing — same reading as turn-busy and the daemon's
+        // session state.
         streamingId = null;
+        if (msg.terminal !== false) foldThinking();
         entries = [
           ...(msg.terminal === false ? entries : orphanAnchorless(entries)),
           {
@@ -793,7 +1118,20 @@ export function createTranscriptProjection(): TranscriptProjection {
         orphanToolBatch = -1;
         tailIntents.push("reset-tail");
         entries = [];
+        tasks = new Map();
+        orphans = new Map();
         return true;
+      }
+      case "replay_complete": {
+        // History is delivered: outcomes whose openings were evicted get
+        // their explicit rows now, and evicted older history is said once,
+        // at the top, in the shell's own voice.
+        let touched = materializeOrphans(readNow, false);
+        if (msg.evicted && !entries.some((entry) => entry.kind === "notice" && entry.text === EVICTED_HISTORY_NOTICE)) {
+          entries = [{ kind: "notice", id: nextTranscriptId++, text: EVICTED_HISTORY_NOTICE, noticeKind: "info" }, ...entries];
+          touched = true;
+        }
+        return touched || changed;
       }
 
       // Shell state, connection plumbing, and per-viewport request replies do
@@ -805,7 +1143,6 @@ export function createTranscriptProjection(): TranscriptProjection {
       case "permission_request":
       case "permission_resolved":
       case "session_created":
-      case "replay_complete":
       case "shell_cwd":
       case "agents":
       case "folder_picked":
@@ -840,7 +1177,7 @@ export function createTranscriptProjection(): TranscriptProjection {
       for (const message of messages) {
         if (applyMessage(message, readNow, tailIntents)) changed = true;
       }
-      if (changed) snapshot = buildSnapshot(entries, snapshot);
+      if (changed) snapshot = buildSnapshot(entries, tasks, snapshot);
       return { snapshot, tailIntents };
     },
   };

@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../../protocol";
 import { RENDER_GUIDANCE } from "../../render-guidance";
-import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "../types";
+import { type AgentSession, capOutput, emitPromptOptions, errText, outputFields, toolDetail } from "../types";
+import { routineActions } from "../routine-actions";
 import {
   MIRAFOLD_MCP,
   generativeUIMsg,
@@ -703,12 +704,14 @@ export class GeminiCliSession implements AgentSession {
           this.pendingRenders.set(id, { tool: name.slice(MCP_PREFIX.length), params });
         } else {
           this.announced.add(id);
+          const actions = routineActions("gemini-cli", name, params);
           this.emit({
             type: "tool_use",
             name,
             detail: toolDetail(params),
             id,
             input: params,
+            ...(actions ? { actions } : {}),
           });
         }
         break;
@@ -729,22 +732,18 @@ export class GeminiCliSession implements AgentSession {
             id,
             input: pending.params,
           });
-          const capped = capOutput(String(ev["output"] ?? ""));
           this.emit({
             type: "tool_result",
-            output: capped.text,
-            truncatedBytes: capped.truncatedBytes,
+            ...outputFields(capOutput(String(ev["output"] ?? ""))),
             isError: ev["status"] === "error",
             id,
           });
           break;
         }
         if (!this.announced.delete(id)) break;
-        const capped = capOutput(String(ev["output"] ?? ""));
         this.emit({
           type: "tool_result",
-          output: capped.text,
-          truncatedBytes: capped.truncatedBytes,
+          ...outputFields(capOutput(String(ev["output"] ?? ""))),
           isError: ev["status"] === "error",
           id,
         });

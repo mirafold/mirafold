@@ -57,6 +57,28 @@ type ClientByType = { [T in ClientMsg["type"]]: Extract<ClientMsg, { type: T }> 
 const WIRE: WireByType = {
   text_delta: { type: "text_delta", text: "hello world" },
   tool_output_delta: { type: "tool_output_delta", id: "t1", text: "partial output\n" },
+  tool_output_snapshot: {
+    type: "tool_output_snapshot",
+    id: "t1",
+    revision: 3,
+    head: "first lines\n",
+    tail: "last lines\n",
+    omittedBytes: 4096,
+    parentId: "task1",
+  },
+  task_update: {
+    type: "task_update",
+    id: "task1",
+    state: "completed",
+    label: "find auth entry points",
+    agentType: "Explore",
+    action: "Grep",
+    report: "Two entry points found.",
+    reportTail: "…and the cookie mint.",
+    reportOmittedBytes: 10,
+    elapsedMs: 4200,
+    parentId: "task0",
+  },
   prompt_options: {
     type: "prompt_options",
     options: [
@@ -88,12 +110,14 @@ const WIRE: WireByType = {
     id: "t1",
     input: { command: "ls -la" },
     parentId: "task1",
+    actions: [{ kind: "list", target: "." }],
   },
   tool_update: {
     type: "tool_update",
     id: "t1",
     detail: "src/a.ts",
     input: { changes: [{ path: "src/a.ts", kind: "update" }] },
+    elapsedMs: 1500,
   },
   tool_result: {
     type: "tool_result",
@@ -102,6 +126,10 @@ const WIRE: WireByType = {
     id: "t1",
     truncatedBytes: 128,
     parentId: "task1",
+    tail: "last.txt",
+    omittedBytes: 120,
+    exitCode: 0,
+    durationMs: 42,
   },
   permission_request: { type: "permission_request", tool: "Bash", detail: "rm -rf build", id: "p1" },
   permission_resolved: { type: "permission_resolved", id: "p1", allow: true },
@@ -116,9 +144,10 @@ const WIRE: WireByType = {
     replayPending: true,
     demo: false,
     fallback: false,
+    capabilities: { liveOutput: true, thinking: true, tasks: true },
   },
   shell_cwd: { type: "shell_cwd", cwd: "/home/u/proj/src" },
-  replay_complete: { type: "replay_complete" },
+  replay_complete: { type: "replay_complete", evicted: true },
   agents: {
     type: "agents",
     agents: [

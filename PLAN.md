@@ -4835,6 +4835,333 @@ production merge, or publication belongs to this phase.
 
 ---
 
+## Phase TF — Transcript fidelity and readability (opened 2026-09-15; Kyle-directed: "Let's do this" on `mirafold-transcript-fidelity-spec.md`; branch `feature/transcript-fidelity` → `next`)
+
+The spec (prepared 2026-09-15, kept outside the repo in Kyle's Downloads) is
+the contract: R1–R8, phases TF0–TF6. This section records progress, evidence,
+decisions, and limits. Delivery boundary: a verified local candidate on one
+feature branch; push and PR only on Kyle's explicit ask (his git rule);
+never a merge, tag, version bump, or release.
+
+### TF0 — Executable baseline (✅ 2026-09-15)
+
+- **TF0.1 authority + source.** Base `next` = `d3ec718` (== `origin/next`;
+  `main` = `f1e1fdb`); working tree clean except the untracked, unrelated
+  `decks/` folder (left alone). No open PRs; no branch in review; latest
+  release v0.9.1. OIC.3 above is merged as PR #119 but still unchecked in
+  its own section — noted, deliberately not folded into this feature.
+- **TF0.2 toolchain.** Node v22.23.1, yarn 1.22.22, playwright-core 1.61.1,
+  `/usr/bin/google-chrome` 152, managed chromium/firefox/webkit present.
+  `rg` is not installed, so the unit gate runs through a Node file walk with
+  the spec's five dotenv-fixture exclusions (`server/project-env.test.ts`,
+  `server/project-env-safety.test.ts`, `server/render-image.test.ts`,
+  `server/sessions/workspace/git/git.test.ts`,
+  `server/sessions/workspace/filesystem/fs-folder-tree.test.ts`). Baseline:
+  `yarn typecheck` clean; unit gate 1,243/1,243 across 123 files. No dotenv
+  file or template was opened.
+- **TF0.3 provider evidence** (approved interfaces only: installed binaries,
+  published schemas, shipped SDK types — no credential files):
+
+  | Provider · version | Exposed | Absent (verified) | Unverified |
+  | --- | --- | --- | --- |
+  | Claude Agent SDK 0.3.201 (`claude` 2.1.272) | `tool_progress` (tool_use_id, elapsed_time_seconds — no stdout); system subtypes `task_started` (task_id, tool_use_id?, description, subagent_type?, skip_transcript?), `task_progress` (usage.duration_ms, last_tool_name?, summary?), `task_notification` (status completed/failed/stopped, summary), `task_updated` (patch.status/error) | live tool stdout | that `task_started.tool_use_id` is the Agent spawn id child calls carry as `parent_tool_use_id` (contracted by the types; no live run) |
+  | Codex app-server 0.153.4 | `commandExecution.commandActions` (read/listFiles/search/unknown), `exitCode`, `durationMs`, `processId`; `item/mcpToolCall/progress` {message}; `item/commandExecution/terminalInteraction` {stdin, processId}; `collabAgentToolCall.agentsStates` {status, message}; `subAgentActivity.kind` started/interacted/interrupted/completed | a `thread/subscribe` request (the schema has only `thread/unsubscribe`, `thread/read`, `thread/items/list`); `process/outputDelta`/`process/exited` belong to a client's own `process/spawn` (never issued) | whether a child thread's `item/*` notifications reach the parent connection (needs a live spawning run; today the adapter drops other-thread notifications) |
+  | Gemini CLI 0.58.0 headless | `JsonStreamEventType` = init, message, tool_use, tool_result, error, result; built-ins `read_file`, `read_many_files`, `glob`, `list_directory`, `grep_search`, `run_shell_command` | thinking, live output, task lane, exit codes (the "thought" path is the ACP surface, not stream-json) | — |
+  | OpenCode 1.18.29 | the bash tool republishes `metadata.output` (the whole output so far) while `status: running`; an interrupted tool keeps `metadata.interrupted + output` on its error state; task parts carry `metadata.sessionId/parentSessionId`; child `session.status busy` | — | — |
+
+  Live provider runs were not performed: they spend Kyle's accounts.
+  Fixtures prove the adapter/browser contract for each shape; they do not
+  prove the installed engine emits it.
+
+### TF1 — Display facts and bounded evidence (✅ 2026-09-15)
+
+- **TF1.1** additive contracts in `server/protocol.ts`: `tool_use.actions`
+  (engine-verified read/list/search), `tool_update.elapsedMs`,
+  `tool_result.tail/omittedBytes/exitCode/durationMs`, new
+  `tool_output_snapshot` (replacement, monotonic `revision`), new
+  `task_update` (running/completed/failed/interrupted/unknown + bounded
+  report), `replay_complete.evicted`, `session_created.capabilities`
+  (`server/adapters/capabilities.ts`). Consumers first: checkpoint schema,
+  ring, tail, protocol fixtures, projection.
+- **TF1.2** `capOutput` keeps a UTF-8-safe head and tail (head gets the odd
+  byte); `output` stays the head so pre-TF clients see what they always
+  did; `omittedBytes` counts only what this cap dropped.
+- **TF1.3a–c** `server/adapters/live-output.ts`: per-call head/tail
+  accumulator, 250 ms throttle with immediate final flush at settlement,
+  legacy bounded delta prefix kept for old clients, `replace()` for
+  engines that republish the whole output; the ring retains one snapshot
+  and one task_update per id.
+- **TF1.4** Codex: `commandActions` → `actions` only when every parsed
+  action is read/list/search; `exitCode`/`durationMs` as facts beside the
+  unchanged `isError` rule; MCP call `durationMs`.
+
+### TF2 — Provider task and progress information (✅ 2026-09-15)
+
+- **TF2.1** Claude: `TaskOutput`/`TaskStop` are ordinary rows with
+  inspectable results; checklist CRUD still folds.
+- **TF2.2** Claude: `task_started/progress/notification/updated` →
+  `task_update` on the spawn's `tool_use_id` (or a task-scoped anchor);
+  `skip_transcript` tasks stay hidden; `tool_progress` → `tool_update.elapsedMs`.
+- **TF2.3** Codex: MCP progress lines and the agent's own stdin ride the
+  running row's live output; `process/*` stays ledgered with the corrected
+  reason.
+- **TF2.4** Codex: a spawn's child is `running` from `item/started`; every
+  `agentsStates` entry updates the same anchor with the FULL message as its
+  report; `subAgentActivity` kinds map to lifecycle. Child inner activity
+  is declared unavailable (`capabilities.childActivity: false`), not
+  fabricated.
+- **TF2.5** OpenCode: running `metadata.output` → replacement snapshots
+  (suffix-only forwarding, reset on a non-extension); interrupted output
+  kept ahead of the error; task parts carry lifecycle and the report;
+  child busy/error map to running/failed.
+- **TF2.6** Gemini: exact-name classification; nothing invented for the
+  absent surfaces.
+
+**Checkpoint TF1+TF2 (2026-09-15):** `yarn typecheck` clean; unit gate
+1,271/1,271 (five dotenv-fixture files excluded, as recorded above). New
+Tier-1 coverage: `live-output.test.ts`, `routine-actions.test.ts`, head/tail
+`capOutput` boundaries (multibyte at both seams, zero and tiny budgets),
+ring compaction of snapshots/task updates, checkpoint admission of every
+new frame, Codex command facts and streaming order, Claude task lifecycle
+and unswallowed TaskOutput/TaskStop, OpenCode snapshots/interruption/task
+lifecycle, Gemini exact-name classification, the hello's capabilities and
+the `evicted` replay flag. Committed as one coherent checkpoint.
+
+### TF3 — Transcript projection (✅ 2026-09-15)
+
+- **TF3.1** commentary/length absorption removed (`isShortNarration` and
+  the 2-line/160-char heuristic are gone); prose of any phase or length is a
+  boundary and its own readable row; phase still styles commentary.
+- **TF3.2** `groupToolActivity` groups only completed, error-free, exit-0
+  calls the engine classified (`actions`); commands, edits, failures, a
+  nonzero exit, a running call, a turn change, and every message end the
+  group; interior reasoning rides inside in order. The group's row reads
+  "Read 8 files · 3 searches" with a bounded target selection.
+- **TF3.3** task lifecycle: `task_update` drives the deck (newest wins); a
+  task with no announcing call gets a placeholder anchor the real
+  announcement fills in; `turn_end` never marks a reported-running task
+  done/interrupted, and a spawn with NO engine word at turn end reads
+  `unknown`; report-first data with head/tail retention.
+- **TF3.4** replay loss explicit: results/snapshots for evicted openings
+  become "(earlier call)" rows at turn end or replay end; a full replay past
+  eviction inserts one shell notice at the top.
+- Disclosure keys are wire identity (`tool:<id>`, `think:seq:<n>`,
+  `fold:<anchor>`, `deck:<id>`).
+
+### TF4 — Compact browser experience (✅ 2026-09-15; browser gates below)
+
+- **TF4.1** thinking collapses from its first delta to a "Thinking" control
+  (button, `aria-expanded`); commentary keeps normal contrast.
+- **TF4.2** `ToolBlock`: running/exit/duration facts on the row, a bounded
+  three-line preview for commands, head → omission notice → tail in the
+  expansion, edit change counts, orphan and zero-budget wording; "live
+  output unavailable for this agent" when the adapter declares none.
+- **TF4.3** decks: engine state word (running/done/failed/interrupted/no
+  result reported), inferred states marked, report first then activity,
+  "does not report a task's own calls" for Codex.
+- **TF4.4** `show details` / `hide details` in the status bar; viewport-local
+  (`sessionStorage`, per session); explicit choices win over the mode and
+  survive settlement, grouping, replay, and a switch away and back; a group
+  or deck opens to reveal an explicitly opened descendant.
+- **TF4.5** following unchanged (`use-follow-tail`); a task finishing shows
+  a compact note in the activity line for 12 s; a fully completed plan
+  (todo-list render, every item completed) does the same.
+- **TF4.6** `RENDER_GUIDANCE` and the Codex addendum no longer demand a
+  structured core in every answer; tool instructions, safety, charts, and
+  action semantics unchanged.
+- Found and fixed during the browser gate: the "inferred" state word's
+  reduced opacity failed axe's 4.5:1 contrast (SA.1) — now marked by style
+  and title, not contrast.
+
+### TF5 — Realistic runs (scenario matrix ✅ 2026-09-15; review below)
+
+- **TF5.1** six new mock scenarios (`exploration-flood`, `failure-recovery`,
+  `parallel-work`, `noisy-process`, `gemini-shaped`, `painting-permission`;
+  `tool-activity` reshaped to R2) and `server/testing/e2e/transcript-fidelity.e2e.ts`
+  covering all eight spec scenarios in headless Chrome against the built
+  daemon: 8/8 green. Scenario 6 (recovery) uses `SESSION_BUFFER_MAX_BYTES`
+  inside the measured window `[65,410, 65,520]` where the capped result
+  survives and its opening row evicts; the notice and the "(earlier call)"
+  record both render. Existing suites adjusted for the new contract:
+  `shell-effects.e2e.ts` (R2 group instead of the old fold; the remark is a
+  visible row) and `resilience.e2e.ts` (the deck comes back already open —
+  disclosure survives the replay).
+- Defects found by the scenarios and fixed: the client ingress discarded
+  `replay_complete` after delivering held history (the projection never
+  saw `evicted`); the inferred-state word failed contrast (SA.1).
+- **TF5.2** live provider comparison NOT performed (would spend Kyle's
+  accounts; needs his explicit go). Unverified, not absent.
+- **TF5.3** independent read-only reviewer (subagent) over
+  `git diff d3ec718 -- server web/src` against R1–R8.
+
+  **TF5.3 review findings (independent read-only subagent, 2026-09-15) and
+  dispositions — all six fixed, each with a regression check:**
+  1. Medium — Codex moved the "(exit N)" note into the TAIL for over-cap
+     output, so a pre-TF client (which never sees `tail`) read a large
+     failing run as clean. Fixed: the note stays on the head; test.
+  2. Medium — `commandActions` was uncapped at the adapter while the
+     checkpoint decoder caps `actions` at 1,000, so one pathological command
+     could make a saved session unrestorable. Fixed: >200 parsed actions →
+     no classification (`MAX_COMMAND_ACTIONS`); test.
+  3. Low/medium — Claude dropped the task-id mapping at `task_notification`,
+     so a later `task_updated` minted a second, unlabeled task row. Fixed:
+     finished tasks stay mapped (oldest finished evicted when full); test.
+     Residual (unverified ordering, recorded not fixed): a `task_updated`
+     arriving BEFORE `task_started` would anchor on a task-scoped id and
+     not adopt the later `tool_use_id`.
+  4. Low — orphaned results were appended at the bottom, reordering
+     history. Fixed: they sit at the top after the eviction notice; test.
+  5. Low — a dead URL session's disclosure choices could be carried into
+     and saved under its fallback replacement. Fixed: the same guard the
+     pins use.
+  6. Low — Codex re-reports every child's state on each collab call, so the
+     activity note repeated. Fixed: Shell notes a task only on a state
+     transition (bounded map).
+  Reviewer's clean areas: LiveOutput bounds/timers, UTF-8 seams, ring
+  accounting and `historyEvicted`, additive compatibility and the decoder,
+  turn_end/task handling, grouping rule, trust boundary (every engine
+  string is a text node), capabilities vs. actual emissions.
+
+### TF6 — Verify and hand off (✅ local candidate 2026-09-15; push/PR await Kyle)
+
+- **TF6.1 docs:** `docs/ADAPTERS.md` (I4 rewritten; capability table rows
+  for tool records, live output, task lifecycle, subagent lane; TS.8 and
+  TS.11 revised; new "Bounded, honest evidence" and "Declared
+  capabilities" sections), `README.md` (the compact transcript and
+  `show details`), this Phase TF section. No doc promises full logs, calls
+  every nonzero exit a success, or says commentary folds or subagent prose
+  is dropped.
+- **TF6.2 final gates on `bd520ca`** (source == the built `dist` /
+  `dist-server`; every browser gate ran through the isolated daemon harness
+  on the BUILT bundle, Chrome 152 via playwright-core 1.61.1, managed
+  chromium/firefox/webkit for the matrix):
+  - `yarn typecheck` — clean.
+  - Unit gate — 1,288/1,288 across 128 files (five dotenv-fixture files
+    excluded: `server/project-env.test.ts`,
+    `server/project-env-safety.test.ts`, `server/render-image.test.ts`,
+    `server/sessions/workspace/git/git.test.ts`,
+    `server/sessions/workspace/filesystem/fs-folder-tree.test.ts`).
+  - Tier-2 (`yarn build:server` + `.itest.ts`, `--test-concurrency=1`,
+    `fs-folder-tree.itest.ts` excluded) — 185/185 on `2c2e85c`; server
+    sources are byte-identical on `bd520ca` (only web files and PNG
+    baselines changed after), so the result stands.
+  - Tier-3 (`yarn build` + every `.e2e.ts`) — 153/153 on `bd520ca`, one
+    contiguous run.
+  - UI matrix (`yarn test:ui:built`: managed browsers + Ubuntu visual
+    baselines) — 11/11 on `bd520ca`; five baselines regenerated after
+    inspecting each diff (status bar only).
+  - NOT run: `yarn test:live` (spends provider accounts), remote CI (needs
+    a push), `scripts/packaged-pass.mjs` (a release artifact, out of scope).
+- **TF6.3 delivery:** four signed commits on `feature/transcript-fidelity`
+  (`974930f`, `3c487f9`, `2c2e85c`, `bd520ca`) from `next` @ `d3ec718`.
+  NOT pushed, no PR — Kyle's git rule: a push and a PR are each his
+  explicit ask. Nothing touched `main`, no tag, version, or release.
+  Prerequisite to the PR: Kyle says "push" / "open the PR"; the branch then
+  needs the current-head CI and the automated review comments read and
+  answered before he decides on the merge.
+
+**PR #120 (opened 2026-09-15 on Kyle's ask; CI green on `bada70f`: DCO,
+Tier 1, Tier 2+3, Cloudflare Pages).** The Codex reviewer posted nine P2
+findings; each was verified against the code and all nine were legitimate
+and fixed, with a regression check per class:
+1. Partial task updates lost the report/duration (projection replaced the
+   lifecycle whole; the ring replaced the retained update). Fixed: durable
+   fields carry over under the newest state in both; `action` stays
+   transient. Tests in projection and ring suites.
+2. OpenCode task stopped by the user read `failed`. Fixed: `interrupted`
+   from `metadata.interrupted`; test.
+3. Claude `task_updated` error over the cap dropped its tail. Fixed:
+   `reportTail`/`reportOmittedBytes` forwarded; test.
+4. Routine-tool lookup indexed a prototype-bearing table with an
+   engine-chosen name (`constructor` would throw). Fixed: own-property
+   lookup; test.
+5. Change counting bounded per string, not in aggregate. Fixed: aggregate
+   character and item budgets; test.
+6. Task completions were not announced to screen readers. Fixed: the same
+   note is spoken through the announcer; browser assertion on the polite
+   region.
+7. A terminal `error` left the thinking row "Thinking…" and pulsing.
+   Fixed: a terminal error settles it (the old expectation revised: the
+   turn is over); test.
+8. A replayed result before its task anchor was lost when the placeholder
+   was created. Fixed: the placeholder is born with the outcome, and a
+   pending outcome settles an existing anchor; test.
+9. `skip_transcript` task ids were forgotten at the notification, so a late
+   `task_updated` could surface. Fixed: hidden for the session (bounded);
+   test.
+
+**PR #120 round 2 (`5efaed5`, CI green; re-review requested with
+`@codex review`).** Eleven comments: four re-posted the round-1 findings
+at their new positions (each verified fixed in the diff); one dismissed
+with reason; six new, all legitimate, fixed:
+- Dismissed: "the legacy `output` prefix halves from 64 KB to 32 KB for
+  pre-TF clients" — true, and the spec's own contract (R7: head and tail
+  share ONE budget). The defect was my wire comment claiming an old client
+  "sees what it always saw"; `protocol.ts` and ADAPTERS.md now say the head
+  is half the budget.
+- OpenCode `background: true` task parts: the launcher's settlement no
+  longer reads as completion; the child's own `session.idle` does; test.
+- Codex `taskLabels` bounded by the anchor table.
+- OutputZone: disclosure choices carry the session they were loaded for;
+  the save runs only when they match the current key (no stale write in
+  the switch commit).
+- Claude: terminal `task_updated` patches mark the mapping evictable.
+- Shell: task/plan note ledgers reset per session; plan completion noted
+  on the transition only.
+
+**PR #120 round 3 (`fac10a0`, CI green).** Seven new findings, all
+verified and fixed with a regression check per class:
+- `LiveOutput` kept the whole output as comparison state on the append
+  path; now only replacement streams keep bounded metadata (length + a
+  4 KB tail).
+- OpenCode's turn-end clear reset a running background child's snapshot
+  revisions (later snapshots read as stale); root turn end now keeps
+  parented tracks.
+- The projection interrupted a still-running task's child calls at the
+  parent's `turn_end`; they now stay running.
+- A live-only orphan was settled as interrupted at `replay_complete`; it
+  now stays running until a real terminal boundary.
+- A failed OpenCode background child's late idle overwrote the failure with
+  `completed`; terminal tasks leave the background set.
+- `formatDuration` could print "1m 60s"; `Write` counted the trailing
+  newline as a line.
+
+**PR #120 round 4 (`1381931`, CI green).** Three findings, all verified
+and fixed with a regression check each: the note ledgers were cleared on a
+same-session resume (now only when the session id changes); one Codex
+collab result could fan out an unbounded total of child reports (now one
+report budget and at most 500 state updates per result, the rest logged);
+live thinking deltas lost their `seq` in the browser batch so a row's
+disclosure key differed from its replay (the merged delta keeps the first
+seq; live and replayed rows now derive one key).
+
+**PR #120 round 5 (`fbe0470`, CI green).** Four findings, all verified
+and fixed with a regression check each: an orphaned child outcome whose
+parent deck was evicted too was hidden by the nested-row rule (now shown
+at the root); a completion note on screen was carried into a fallback
+session (cleared with the ledgers); the ring kept a call's last snapshot
+beside its final result (the result now retires it); Claude/OpenCode task
+identity strings were unclamped (200/64 code points, control-visible).
+
+**PR #120 round 6 (`c76fde5`, CI green: DCO, Tier 1, Tier 2+3, Cloudflare
+Pages).** The Codex re-review completed with NO new findings. Review tally
+over the PR: 29 findings across five rounds, 28 fixed with a regression
+check each, one dismissed with a recorded reason (the half-budget legacy
+head is the spec's contract; the misleading comment was corrected). Every
+push was gated locally first (typecheck, dotenv-safe unit, Tier-2, the
+affected browser suites on the built bundle). The PR stays open for Kyle's
+merge decision.
+
+**Residuals (recorded, not hidden):** Codex child-thread inner activity —
+unverified whether app-server 0.153.4 delivers other-thread notifications
+on the parent connection (no live spawning run); declared absent in
+`capabilities` and said so in the deck. Claude `task_started` /
+`parent_tool_use_id` identity is contracted by the SDK types, not observed
+live. Live per-provider comparison (TF5.2) not performed. Reasoning titles:
+no engine exposes one on these surfaces, so the label is "Thinking".
+
+---
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

@@ -597,6 +597,28 @@ test("F.3 honest model: a concrete init model is kept even if stats.models is pr
   s.close();
 });
 
+test("TF2.6: built-in reads and searches classify by exact name; shell commands and unknowns do not", async () => {
+  fixture("tf26.jsonl", [
+    { type: "init", model: "gemini-2.5-pro" },
+    { type: "tool_use", tool_name: "read_file", tool_id: "r1", parameters: { absolute_path: "/w/a.ts" } },
+    { type: "tool_result", tool_id: "r1", status: "success", output: "content" },
+    { type: "tool_use", tool_name: "run_shell_command", tool_id: "c1", parameters: { command: "ls" } },
+    { type: "tool_result", tool_id: "c1", status: "success", output: "a\nb" },
+    { type: "result", stats: { input_tokens: 1, output_tokens: 1 } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.find((m) => m.type === "tool_use" && m.id === "r1")!.actions, [{ kind: "read", target: "/w/a.ts" }]);
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "c1")!.actions, undefined);
+  // The headless stream carries no exit code, no live output, no thinking:
+  // nothing is invented for them.
+  const shell = msgs.find((m) => m.type === "tool_result" && m.id === "c1")!;
+  assert.deepEqual([shell.exitCode, shell.durationMs], [undefined, undefined]);
+  assert.ok(!msgs.some((m) => m.type === "tool_output_delta" || m.type === "tool_output_snapshot" || m.type === "thinking_delta" || m.type === "task_update"));
+  s.close();
+});
+
 test("capOutput applies at the adapter seam", async () => {
   fixture("huge.jsonl", [
     { type: "tool_use", tool_name: "run_shell_command", tool_id: "h1", parameters: { command: "cat log" } },

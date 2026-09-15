@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentName, PromptOption } from "@protocol";
+import type { AgentCapabilities, AgentName, PromptOption } from "@protocol";
+import { loadDetailsMode, saveDetailsMode } from "../transcript/disclosure-store";
 import { ActivityLine, activityLabel } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
@@ -108,7 +109,34 @@ export function Shell() {
     agent?: AgentName;
     model?: string;
     demo?: boolean;
+    capabilities?: AgentCapabilities;
   }>({});
+  // The transcript's detail mode (Phase TF R6): viewport-local, per
+  // session, restored from this tab's storage on attach and never sent
+  // anywhere. Compact until the reader asks for details.
+  const [detailsMode, setDetailsMode] = useState(false);
+  const toggleDetails = useCallback(() => {
+    setDetailsMode((on) => {
+      const next = !on;
+      if (meta.sessionId) saveDetailsMode(meta.sessionId, next);
+      return next;
+    });
+  }, [meta.sessionId]);
+  // A task the engine reported finished while the reader may be looking
+  // elsewhere: a compact note in the current-activity area for a moment,
+  // never a repaint of the deck above (Phase TF R5).
+  const [taskNote, setTaskNote] = useState<{ text: string; failed: boolean } | null>(null);
+  const taskNoteTimer = useRef<number | undefined>(undefined);
+  // The last state noted per task: a poll that re-reports a child's
+  // unchanged state (Codex re-sends every thread's state on each collab
+  // call) must not re-announce it (review 2026-09-15). Bounded.
+  const notedTaskStates = useRef(new Map<string, string>());
+  // Checklist paintings that were already complete, by render id, so a
+  // republished complete plan does not re-announce (round 2).
+  const completedPlans = useRef(new Set<string>());
+  // The session the ledgers belong to: a same-session resume keeps them
+  // (replayed frames are not live and never repopulate them — round 4).
+  const ledgerSession = useRef<string | undefined>(undefined);
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
   // Replaced whole whenever the adapter reports a changed catalog.
@@ -250,6 +278,14 @@ export function Shell() {
   // Screen-reader announcements — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
+  const noteCompletion = useCallback((text: string, failed: boolean) => {
+    setTaskNote({ text, failed });
+    window.clearTimeout(taskNoteTimer.current);
+    taskNoteTimer.current = window.setTimeout(() => setTaskNote(null), 12_000);
+    // The visible note is aria-hidden chrome; the same fact is spoken once,
+    // like a turn boundary (PR #120 review).
+    announce(text, failed);
+  }, [announce]);
   // Every turn transition goes through here: reduce, adopt, then speak the
   // announcements the reducer decided on.
   const applyTurn = useCallback(
@@ -304,12 +340,49 @@ export function Shell() {
             agent: m.agent,
             model: m.model,
             demo: m.demo,
+            capabilities: m.capabilities,
           });
+          setDetailsMode(loadDetailsMode(m.sessionId));
+          // Task and plan ids are session-scoped: a DIFFERENT session starts
+          // a fresh ledger (round 2); a resume of the same one keeps it.
+          if (ledgerSession.current !== m.sessionId) {
+            ledgerSession.current = m.sessionId;
+            notedTaskStates.current.clear();
+            completedPlans.current.clear();
+            // A note still on screen belongs to the previous session (round 5).
+            window.clearTimeout(taskNoteTimer.current);
+            setTaskNote(null);
+          }
           setNotices((n) => ({
             ...n,
             agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
+        } else if (m.type === "task_update" && live) {
+          const noted = notedTaskStates.current;
+          const changed = noted.get(m.id) !== m.state;
+          if (changed) {
+            if (noted.size >= 2_000) noted.delete(noted.keys().next().value as string);
+            noted.set(m.id, m.state);
+          }
+          if (changed && m.state !== "running") {
+            const what = m.label ?? "a task";
+            const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
+            noteCompletion(`${what} ${word}`, m.state === "failed");
+          }
+        } else if (m.type === "render" && live && m.component === "todo-list") {
+          // A KNOWN completion signal — the shell's own checklist component
+          // with every item done — never an inference from agent-authored
+          // markup (Phase TF R5); noted on the transition only.
+          const complete = planCompleted(m.props);
+          const was = completedPlans.current.has(m.id);
+          if (complete && !was) {
+            if (completedPlans.current.size >= 2_000) completedPlans.current.delete(completedPlans.current.values().next().value as string);
+            completedPlans.current.add(m.id);
+            noteCompletion("plan complete", false);
+          } else if (!complete && was) {
+            completedPlans.current.delete(m.id);
+          }
         } else if (m.type === "shell_cwd") {
           setMeta((current) => ({ ...current, shellCwd: m.cwd }));
         } else if (m.type === "refused") {
@@ -560,9 +633,12 @@ export function Shell() {
                 sessionKey={meta.sessionId}
                 onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
+                details={detailsMode}
+                capabilities={meta.capabilities}
+                agent={meta.agent}
               />
             </div>
-            <ActivityLine busy={busy} label={activityLabel(activity)} />
+            <ActivityLine busy={busy} label={activityLabel(activity)} note={taskNote} />
             <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
@@ -643,6 +719,8 @@ export function Shell() {
               workspaceOpen={folderTreeOpen || diffPanelOpen}
               workspaceDisabled={!meta.sessionId}
               onToggleWorkspace={toggleWorkspace}
+              details={detailsMode}
+              onToggleDetails={meta.sessionId ? toggleDetails : undefined}
             />
           </div>
         </div>
@@ -758,4 +836,13 @@ function ActivityBar({
       </button>
     </div>
   );
+}
+
+/** The checklist painting's props say the plan is done: at least one item,
+ *  every one completed. Only this shell-known component carries that
+ *  signal; arbitrary paintings and artifacts never do. */
+export function planCompleted(props: Record<string, unknown>): boolean {
+  const todos = props["todos"];
+  if (!Array.isArray(todos) || todos.length === 0) return false;
+  return todos.every((t) => typeof t === "object" && t !== null && (t as { status?: unknown }).status === "completed");
 }

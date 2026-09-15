@@ -198,11 +198,21 @@ test("attach history publishes once at its boundary despite frames and timers be
     assert.deepEqual(batches, [], "partial history must not become visible");
   }
   ingress.accept({ type: "replay_complete" });
-  assert.deepEqual(batches, [history]);
+  // The marker rides at the end of its batch (Phase TF: the projection acts on it).
+  assert.deepEqual(batches, [[...history, { type: "replay_complete" }]]);
   ingress.accept({ type: "text_delta", text: " live continuation" });
   assert.equal(batches.length, 1);
   runtime.runFrame();
   assert.deepEqual(batches[1], [{ type: "text_delta", text: " live continuation" }]);
+});
+
+test("PR #120 round 4: a merged live delta keeps its first seq, so a reasoning row's key matches its replay", () => {
+  const queue: QueuedDelta[] = [];
+  queueDelta(queue, { type: "thinking_delta", text: "a", seq: 41 });
+  queueDelta(queue, { type: "thinking_delta", text: "b", seq: 42 });
+  assert.deepEqual(queue, [{ type: "thinking_delta", text: "ab", seq: 41 }]);
+  queueDelta(queue, { type: "text_delta", text: "c", seq: 43, phase: "final" });
+  assert.equal(queue[1]?.seq, 43);
 });
 
 test("an interrupted replay keeps its prefix on resume and discards it on a full reset", () => {

@@ -95,51 +95,48 @@ test("provider completions open before submit, transcript click focuses, and set
         true,
       );
 
-      // Successful provider activity becomes one terminal-sized record LIVE,
-      // while the turn still runs: the finished calls fold as "working", the
-      // call in flight stays its own pulsing row beneath. A failure remains
-      // visible at top level, and narration between commands (Codex's
-      // cadence — thinking, or a short spoken remark) rides inside the fold
-      // instead of shattering it into singletons.
+      // Routine engine work (the reads and searches the engine classified)
+      // becomes one terminal-sized record LIVE, while the turn still runs;
+      // commands stay their own rows with their outcomes, the call in flight
+      // pulses beneath, a failure remains visible, and the agent's remark
+      // between commands is a readable row (Phase TF R1/R2/R3).
       await prompt.fill("show transcript compact tool activity");
       await prompt.press("Enter");
       await page2.locator(".stop-btn").waitFor();
-      // Mid-turn, during the scenario's deliberately slow third call.
-      const runningRow = page2.locator(".tool-group .tool-block.is-running");
+      // Mid-turn, during the scenario's deliberately slow lint call.
+      const runningRow = page2.locator(".tool-group .tool-block.is-running", { hasText: "yarn lint" });
       await runningRow.waitFor({ timeout: 10_000 });
-      await page2.locator(".tool-activity-group.tool-activity-live").waitFor();
-      assert.match(
-        await page2.locator(".tool-activity-label").innerText(),
-        /working · 2 actions/,
-        "the finished calls fold while the turn is still running",
-      );
       assert.match(await runningRow.innerText(), /yarn lint/, "the running call is the visible row");
-      // Expand the running call by hand; that choice must survive its move
-      // into the fold once it finishes.
+      assert.match(await runningRow.locator(".tool-state").innerText(), /running/);
+      const group = page2.locator(".tool-activity-group");
+      assert.equal(await group.count(), 1, "the routine reads and search grouped while the turn runs");
+      assert.match(await group.locator(".tool-activity-summary").innerText(), /Read 2 files · 1 search/);
+      // Expand the running call by hand; that choice must survive settlement.
       await runningRow.locator(".tool-head").click();
       assert.equal(await runningRow.locator(".tool-body").count(), 1);
 
       await page2.locator(".stop-btn").waitFor({ state: "detached" });
       assert.equal(await page2.locator(".tool-activity-group").count(), 1);
-      assert.equal(await page2.locator(".tool-activity-live").count(), 0, "a settled fold is no longer live");
-      // The fold's count speaks of ACTIONS only — absorbed narration
-      // (thinking and remarks riding inside the fold) must never inflate it.
-      assert.match(
-        await page2.locator(".tool-activity-label").innerText(),
-        /worked · 3 actions/,
-        "the fold label must count tool calls only, not absorbed narration",
-      );
-      assert.equal(await page2.locator(".tool-group").count(), 1);
-      assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      assert.equal(await page2.locator(".tool-activity-live").count(), 0, "a settled group is no longer live");
+      assert.match(await page2.locator(".tool-activity-label").innerText(), /worked · 3 actions/);
+      // Three commands stand as their own rows: typecheck, lint, the failure.
+      assert.equal(await page2.locator(".tool-group .tool-block").count(), 3);
+      const failing = page2.locator(".tool-group .tool-block.is-error");
+      assert.match(await failing.innerText(), /No matching test file/);
       assert.equal(
-        await page2.locator(".thinking-block", { hasText: "Weighing which check" }).count(),
+        await page2.locator(".thinking-block", { hasText: "Thinking" }).count(),
         0,
-        "interleaved narration leaked outside the settled fold",
+        "the reasoning between two routine calls rides inside the group, not loose",
       );
       assert.equal(
         await page2.locator(".turn-assistant", { hasText: "running lint next" }).count(),
-        0,
-        "a short remark between commands leaked outside the fold as prose",
+        1,
+        "the agent's remark between commands is a readable row, never absorbed",
+      );
+      assert.equal(
+        await page2.locator(".tool-block", { hasText: "yarn lint" }).locator(".tool-body").count(),
+        1,
+        "the user's expand must survive the call's settlement",
       );
       await page2.locator(".tool-activity-head").click();
       assert.equal(
@@ -148,24 +145,12 @@ test("provider completions open before submit, transcript click focuses, and set
         "a transcript control click was redirected to the prompt",
       );
       assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 3);
+      const thinkingInGroup = page2.locator(".tool-activity-calls .thinking-block");
+      assert.equal(await thinkingInGroup.count(), 1, "the group's expansion replays the reasoning in place");
+      await thinkingInGroup.locator(".thinking-head").click();
+      assert.match(await thinkingInGroup.locator(".thinking-text").innerText(), /Weighing which check/);
       assert.equal(
-        await page2.locator(".tool-activity-calls .thinking-block", { hasText: "Weighing which check" }).count(),
-        1,
-        "the fold's expansion must replay the interleaved narration in place",
-      );
-      assert.equal(
-        await page2.locator(".tool-activity-calls .tool-activity-narration", { hasText: "running lint next" }).count(),
-        1,
-        "the fold's expansion must replay the absorbed remark in place, as plain text",
-      );
-      const lintInFold = page2.locator(".tool-activity-calls .tool-block", { hasText: "yarn lint" });
-      assert.equal(
-        await lintInFold.locator(".tool-body").count(),
-        1,
-        "the user's expand must survive the call's move into the fold",
-      );
-      assert.equal(
-        await page2.locator(".tool-activity-calls .tool-block", { hasText: "yarn typecheck" }).locator(".tool-body").count(),
+        await page2.locator(".tool-block", { hasText: "yarn typecheck" }).locator(".tool-body").count(),
         0,
         "an untouched call stays collapsed",
       );

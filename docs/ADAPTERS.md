@@ -54,13 +54,18 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
 - **I4 — Provider-native transcript fidelity.** Forward the provider state its
   own terminal makes useful (thinking, tool arguments/results, diffs,
   subagent progress, usage), but do not turn raw adapter/SDK churn into extra
-  top-level transcript. The client keeps in-flight work and failures visible,
-  then folds only contiguous runs of a settled turn's successful tool activity
-  into expandable records with the complete normalized details. A failure,
-  in-flight call, batch change, or non-tool transcript row is a hard boundary,
-  so compaction never changes chronology. A subagent's text/thinking
-  monologue remains dropped while its **tool calls** carry `parentId`, matching
-  terminals that do not interleave subagent prose into the main transcript.
+  top-level transcript. The client keeps every message, every command, every
+  edit, every failure, and every in-flight call visible as its own row, and
+  groups only contiguous runs of **routine** work — reads, listings, and
+  searches the ENGINE classified as such (`tool_use.actions`), completed
+  without error or a nonzero exit — into one expandable record with the
+  complete retained details in original order (Phase TF, R2). Prose of any
+  length or phase is a boundary, never absorbed; a failure can never
+  disappear into a success group; a batch (turn) change is a boundary too.
+  Reasoning is collapsed from its first delta and reachable on demand (R1).
+  A subagent's text/thinking rides its deck via `parentId` (Phase SA) and its
+  lifecycle rides `task_update` (Phase TF, R4) — a finished spawn, wait, or
+  poll call is never read as the child finishing.
 - **I5 — Wire discipline.** Adapters only ever ADD to what travels on existing
   message types; existing `WireMsg` shapes never change. Adding a provider adds
   one value to the `AgentName` union — an additive wire change, allowed.
@@ -264,8 +269,10 @@ them. The rules, for the next adapter author:
 | Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` + `/agent` (build/plan/custom) + the engine's own `/command` catalog (badged `source:"opencode"`) | implemented `/model` | scripted supported catalog |
 | Text streaming granularity | token-level (`includePartialMessages`) | token-level (`item/agentMessage/delta`), held only from a code fence on so a hand-written chart still converts | token-level: a true delta channel (`message.part.delta`) plus snapshot accrual | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ✅ (`reasoning` parts) | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
-| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; error output capped by `capOutput` like success) | ✅ | ✅ |
-| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ⚠ partial (TS.9): collab calls (`spawn_agent`/`wait`/`send_message`…) are engine-named rows carrying the prompt and each child's state; a child's lifecycle (`subAgentActivity`) narrates under its spawn row via `parentId`; the child's INNER calls and prose still need per-thread `app-server` subscriptions the adapter does not open | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
+| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs; `Read`/`Glob`/`Grep`/`LS`/`NotebookRead` classify as routine by exact name (`actions`) | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` WITHOUT an exit code maps to `isError` — a command that ran keeps `isError: false` and carries its own `exitCode` and `durationMs` as facts, badged "exit N" on the row, matching the Codex TUI; the engine's parsed `commandActions` classify a command as routine only when EVERY action is a read/listing/search) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; `read`/`glob`/`list`/`grep` classify by exact name; error output capped by `capOutput` like success; an interrupted tool keeps its observed output ahead of the error) | ✅ (`read_file`/`read_many_files`/`glob`/`list_directory`/`grep_search` classify by exact name; no exit codes or durations exist on the headless stream) | ✅ |
+| Live output of a running call (`tool_output_delta` + `tool_output_snapshot`; Phase TF R7) | ❌ the SDK streams no tool stdout — `tool_progress` carries elapsed seconds only, forwarded as `tool_update.elapsedMs`, never shown as output | ✅ `item/commandExecution/outputDelta`, plus `item/mcpToolCall/progress` lines and the agent's own `terminalInteraction` stdin (marked `‹stdin›`) — through the shared bounded `LiveOutput` accumulator | ✅ the bash tool's running `metadata.output` (the whole output so far, verified in 1.18.29) → suffix-only forwarding as replacement snapshots | ❌ absent on the headless stream (`capabilities.liveOutput: false` — the row says "live output unavailable" instead of implying silence means nothing happened) | ✅ scripted snapshots |
+| Task lifecycle (`task_update`; Phase TF R4) | ✅ `task_started`/`task_progress`/`task_notification`/`task_updated` on the spawn's `tool_use_id` (a task the SDK ties to no call gets a task-scoped anchor; `skip_transcript` tasks stay hidden); `TaskOutput`/`TaskStop` are ordinary rows with inspectable results | ✅ a spawn's child is `running` from `item/started`; every `agentsStates` entry (spawn, wait, send…) updates the same anchor with the FULL message as the report; `subAgentActivity` kinds map to running/completed/interrupted | ✅ the task part's lifecycle: child `session.status busy` → running; the part settling → completed (report = its output) / failed; a child `session.error` → failed | ❌ no task lane | ✅ scripted |
+| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ⚠ partial (TS.9 / TF0.3): collab calls (`spawnAgent`/`wait`/`sendMessage`…) are engine-named rows carrying the prompt and each child's state; a child's lifecycle narrates under its spawn row via `parentId` and drives its task state; the child's INNER calls and prose are NOT delivered — app-server 0.153.4 has no `thread/subscribe` request (only `thread/unsubscribe`, `thread/read`, `thread/items/list`), the adapter drops notifications for other thread ids, and whether they even arrive on the parent connection is unverified without a live spawning run. Declared `capabilities.childActivity: false`, so the deck says so instead of showing an empty lane as "working" | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
 | Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ✅ full round-trip: `item/*/requestApproval` → the bar → `{decision}` / granted profile; fail-closed on timeout/close; PLUS a folder-trust ask before the first `thread/start` | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only the injected render-server entry carries `trust: true` | ✅ (`dangerous` keyword) |
 | Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |
@@ -372,27 +379,58 @@ duplicate raw row. A failed or unsynthesizable render call is still engine
 activity: every adapter falls back to an ordinary `tool_use` + error/result
 row so the attempted action and failure cannot disappear.
 
-**Narration is not the answer (TS.8).** `text_delta.phase` (additive)
-carries the engine's own classification of its prose: Codex declares every
-message `commentary` (interim narration — 7 of 8 of its messages) or
-`final_answer`. The browser treats commentary as narration — it folds into
-the turn's activity record when tools follow it and is drawn dim when
-nothing does — and gives the final answer its own full-weight row; engines
-that declare nothing fall back to the length heuristic. Codex's written
-`plan` streams as commentary too.
+**Narration is not the answer (TS.8, revised by Phase TF R1).**
+`text_delta.phase` (additive) carries the engine's own classification of its
+prose: Codex declares every message `commentary` (interim narration — 7 of 8
+of its messages) or `final_answer`. The browser keeps BOTH as readable rows
+in chronological order — commentary in modest secondary styling at normal
+contrast, the final answer at full weight — and never absorbs a message into
+a tool group on the strength of its phase or its length (the pre-TF fold and
+its two-line/160-character heuristic are gone). Codex's written `plan`
+streams as commentary too.
 
 Both coalescing seams treat `phase` as part of a prose lane and preserve it:
 the daemon's 33 ms replay-ring window and the browser's animation-frame queue
 can merge commentary with commentary, never commentary with a final answer.
 
-**Live tool updates (TS.11).** `tool_output_delta` (additive) carries a running
-command's textual output as it arrives — the terminal prints it live — for the
-row `tool_use` announced; the row's head shows the last line, its body the
-stream so far, and `tool_result` still closes it with the engine's capped
-output. Codex feeds it from `item/commandExecution/outputDelta`. Both
-coalescing seams batch this stream by `(tool id, parentId)`, and the adapter's
-ceiling is the same UTF-8 byte budget as final tool output—never JavaScript
-character count.
+**Live tool updates (TS.11, extended by Phase TF R7).** Two additive
+messages carry a running call's output: `tool_output_delta` — the bounded
+legacy prefix, batched by `(tool id, parentId)` at both coalescing seams and
+capped at the same UTF-8 byte budget as final output, kept for clients that
+predate snapshots — and `tool_output_snapshot`, a REPLACEMENT of everything
+observed so far (a fixed head, the newest tail, the omitted middle counted,
+a monotonic `revision`) sent at most four times a second per call with an
+immediate final flush before the result. Every streaming adapter goes
+through `server/adapters/live-output.ts`; the ring retains one snapshot per
+call; a viewport ignores a snapshot whose revision is not newer than what it
+holds. A collapsed command row previews the last three non-empty lines; its
+expansion shows head, an explicit omission notice, and tail; `tool_result`
+still closes it with the engine's authoritative output, and an interrupted
+call keeps its last snapshot as evidence.
+
+**Bounded, honest evidence (Phase TF R7).** `capOutput` keeps a UTF-8-safe
+HEAD and TAIL of a large result within the budget (`TOOL_OUTPUT_CAP_BYTES`,
+64,000 by default; the head gets the odd byte): `tool_result.output` is the
+head — the same field a pre-TF client reads, now half the budget long rather
+than all of it (a deliberate trade: one budget, both ends of the evidence) —
+`truncatedBytes` still counts every byte past it, and
+`tail` / `omittedBytes` carry the trailing text and the dropped middle. The
+counts are of what THIS cap dropped — never a guess at what the engine
+already truncated. Task reports use the same shape (`report`,
+`reportTail`, `reportOmittedBytes`). The replay ring keeps its existing
+count and byte caps; a full replay past evicted history carries
+`replay_complete.evicted`, and an outcome whose opening row was evicted
+becomes an explicit "(earlier call)" record rather than vanishing. There is
+no complete-history promise and no log archive.
+
+**Declared capabilities (Phase TF R8).** `session_created.capabilities`
+(`server/adapters/capabilities.ts`) states per adapter whether live output,
+thinking, task lifecycle, and a task's own child activity can appear. A
+`false` is a verified absence at the adapter's interface, recorded above,
+so the shell can say "live output unavailable for this agent" or "this
+agent does not report a task's own calls" instead of implying that silence
+means nothing happened. An available event that stays unmapped is unfinished
+work, never a capability limit.
 
 Current Codex does not emit the deprecated `item/fileChange/outputDelta`.
 Its stable `item/started` / `item/completed` file-change items carry structured

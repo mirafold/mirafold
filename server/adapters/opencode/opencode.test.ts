@@ -255,6 +255,139 @@ test("tool lifecycle: running announces, completed resolves, output is capped", 
   session.close();
 });
 
+test("TF2.5: a running tool's republished metadata.output becomes replacement snapshots; nothing duplicates", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { command: "make", description: "build" };
+  const running = (output: string) =>
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "running", input, metadata: { output } } });
+  feed(running(""), running("step 1\n"), running("step 1\n"), running("step 1\nstep 2\n"));
+  feed(snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "completed", input, output: "step 1\nstep 2\n", title: "make" } }), idle());
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "tool_output_delta").map((m) => m.text), ["step 1\n", "step 2\n"]);
+  const snaps = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "t1");
+  assert.ok(snaps.length >= 1);
+  assert.equal(snaps.at(-1)!.head, "step 1\nstep 2\n");
+  const order = msgs.filter((m) => m.id === "t1").map((m) => m.type);
+  assert.equal(order.at(-1), "tool_result");
+  assert.ok(!msgs.some((m) => m.type === "task_update"), "a plain tool is not a task");
+  session.close();
+});
+
+test("TF2.5: an interrupted tool keeps the output it produced ahead of the error text", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { command: "sleep 99", description: "wait" };
+  feed(
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "running", input, metadata: { output: "started\n" } } }),
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "error", input, error: "Tool execution aborted", metadata: { output: "started\n", interrupted: true } } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "t1")!;
+  assert.deepEqual([result.isError, result.output], [true, "started\n\nTool execution aborted"]);
+  session.close();
+});
+
+test("TF2.5: the spawn part carries the child's lifecycle — busy is running, settlement is completed with the report", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "probe child", prompt: "run it", subagent_type: "general" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta, title: "probe child" } }),
+    { type: "session.created", properties: { info: { id: "ses_kid", parentID: SES } } },
+    { type: "session.status", properties: { sessionID: "ses_kid", status: { type: "busy" } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: { ...meta, truncated: false }, output: "<task_result>\nCHILD DONE\n</task_result>" } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.map((m) => [m.id, m.state, m.label, m.agentType, m.report]), [
+    ["sp1", "running", "probe child", "general", undefined],
+    ["sp1", "running", "probe child", "general", undefined],
+    ["sp1", "completed", "probe child", "general", "<task_result>\nCHILD DONE\n</task_result>"],
+  ]);
+  assert.deepEqual(msgs.find((m) => m.type === "tool_use" && m.id === "sp1")!.actions, undefined);
+  session.close();
+});
+
+test("PR #120 review round 2: a background launcher's settlement is not the child finishing; the child's idle is", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "watch the build", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => m.state), ["running", "running"], "the launcher's settlement keeps the task running");
+  feed({ type: "session.status", properties: { sessionID: "ses_bg", status: { type: "busy" } } });
+  feed(idle("ses_bg"));
+  assert.equal(msgs.filter((m) => m.type === "task_update").at(-1)!.state, "completed", "the child's own idle completes it");
+  session.close();
+});
+
+test("PR #120 round 3: a failed background child stays failed through a later idle; its running call keeps streaming across the root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "bg", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    // The child's own command streams while the root turn ends.
+    { type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\n" } } } } },
+    idle(),
+  );
+  await awaitTurnEnd();
+  feed({ type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\ntwo\n" } } } } });
+  // Snapshots are throttled (250 ms): wait for the second one.
+  await waitFor(() => msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").length >= 2, "second child snapshot", 3_000);
+  const revisions = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").map((m) => m.revision);
+  assert.deepEqual(revisions, [1, 2], "the child's snapshot revisions continue across the root turn end");
+  feed({ type: "session.error", properties: { sessionID: "ses_bg", error: { data: { message: "child exploded" } } } });
+  feed(idle("ses_bg"));
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "sp1").map((m) => m.state);
+  assert.equal(states.at(-1), "failed", "a late idle cannot turn the failure into success");
+  session.close();
+});
+
+test("PR #120 review: a task part stopped by the user reads interrupted, not failed", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "long job", prompt: "run it" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "error", input, error: "aborted", metadata: { ...meta, interrupted: true, output: "partial" } } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => [m.state, m.report]), [["running", undefined], ["interrupted", "partial\naborted"]]);
+  session.close();
+});
+
+test("TF2.5: a child session error fails its task without ending the root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "probe child", prompt: "run it" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.error", properties: { sessionID: "ses_kid", error: { data: { message: "child exploded" } } } },
+  );
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 0, "the root turn is still open");
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => [m.state, m.report]), [["running", undefined], ["failed", "child exploded"]]);
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
 test("OpenCode write/edit calls use the shared code and diff painter shapes", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");
