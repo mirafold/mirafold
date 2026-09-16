@@ -1994,3 +1994,57 @@ test("a background child's announced part and prompt role survive a new root tur
   assert.ok(!msgs.some((m) => m.type === "text_delta" && /background thing/.test(m.text)), "the child's prompt echo never replays as its narration");
   session.close();
 });
+
+// Release review 0.10.0 (fix round): a child's final snapshot can trail its
+// terminal word; releasing its records on the spot re-announced that row.
+// And retained child records must not eat the root turn's own allowance.
+test("a settled child's straggler snapshot is not re-announced, and retained child records leave the root turn its full cap", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "ls" }, output: "a" } },
+    }),
+    // The engine's terminal word on the child, then the straggler: the same
+    // completed snapshot delivered once more.
+    ev("session.idle", { sessionID: "ses_bg" }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "ls" }, output: "a" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "the straggler did not re-announce");
+  assert.equal(msgs.filter((m) => m.type === "tool_result" && m.id === "pc1").length, 1);
+  // A still-running second child floods the child table to its cap during
+  // this turn; the next root turn's own parts must still be tracked.
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m2", id: "prt_bg2", type: "tool", tool: "task", callID: "c2",
+        state: { status: "completed", input: { description: "bg child 2" }, output: "started in background", metadata: { sessionId: "ses_bg2", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg2", info: { id: "ses_bg2", parentID: SES } }),
+  );
+  await prompt("meanwhile…");
+  const flood = [];
+  for (let i = 0; i < 2_000; i++) {
+    flood.push(ev("message.part.updated", { sessionID: "ses_bg2", part: { sessionID: "ses_bg2", messageID: "mb", id: `flood-${i}`, type: "text", text: "x" } }));
+  }
+  feed(...flood, ev("message.part.updated", { sessionID: SES, part: { sessionID: SES, messageID: "m3", id: "root-part", type: "text", text: "the root still speaks" } }), idle());
+  await awaitTurnEnd(2);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && !m.parentId && /root still speaks/.test(m.text)), "root prose is tracked despite a full child table");
+  session.close();
+});

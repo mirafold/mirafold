@@ -3955,6 +3955,15 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   message roles, so a background child's next snapshot re-announced its row
   and its prompt echo replayed as narration (root-owned records only; a
   child's records go with its terminal word). Gates: typecheck, unit, Tier 2.
+  **Fix PR #125's own review (four findings, all legitimate, fixed):** a
+  child's final snapshot can trail its terminal word, so its records are
+  released at the next root-turn boundary (the root's own straggler rule),
+  not on the spot; retained child records counted against the root turn's
+  per-turn cap and could starve it (root and child records are capped
+  separately); a restarted task still showed the anchor call's earlier
+  output as "report so far" (`lifecycle.restarted` suppresses the fallback
+  until this attempt reports); its live clock kept the first attempt's
+  start (the anchor's `startedAt` refreshes on restart). Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 

@@ -34,6 +34,10 @@ export type TaskLifecycle = {
   reportOmittedBytes?: number;
   elapsedMs?: number;
   replayed?: boolean;
+  /** Running again after a terminal word, with no report of its own yet:
+   *  the anchor call's earlier output is the previous attempt's, not this
+   *  one's (release review, 0.10.0). */
+  restarted?: boolean;
 };
 
 export type SubagentState = "running" | "done" | "failed" | "interrupted" | "unknown";
@@ -138,7 +142,7 @@ export function subagentSummary(
         ...(lifecycle.reportTail !== undefined ? { tail: lifecycle.reportTail } : {}),
         ...(lifecycle.reportOmittedBytes !== undefined ? { omittedBytes: lifecycle.reportOmittedBytes } : {}),
       }
-    : task.output
+    : task.output && !lifecycle?.restarted
       ? {
           text: task.output,
           ...(task.tail !== undefined ? { tail: task.tail } : {}),

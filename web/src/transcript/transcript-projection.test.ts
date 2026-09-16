@@ -596,8 +596,18 @@ test("release review 0.10.0: a task running again after a terminal word is a new
     { type: "task_update", id: "t1", state: "failed", report: "quota exceeded", elapsedMs: 9 },
   );
   assert.deepEqual(rowsOf(failed, "subagent-deck")[0]!.lifecycle, { state: "failed", label: "d", report: "quota exceeded", elapsedMs: 9 });
-  const restarted = apply(projection, { type: "task_update", id: "t1", state: "running" });
-  assert.deepEqual(rowsOf(restarted, "subagent-deck")[0]!.lifecycle, { state: "running", label: "d" }, "running again carries the identity, not the failure");
+  // The anchor call itself settled with the launcher's output (an OpenCode
+  // task call, a Codex collab call): not this attempt's report either.
+  apply(projection, { type: "tool_result", id: "t1", output: "launched, first attempt" });
+  // The restart lands five seconds later on the clock: the anchor's start
+  // must move to it, or the live elapsed counter shows the first attempt's age.
+  const restarted = projection.apply([{ type: "task_update", id: "t1", state: "running" }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(restarted, "subagent-deck")[0]!;
+  assert.deepEqual(deck.lifecycle, { state: "running", label: "d", restarted: true }, "running again carries the identity, not the failure");
+  assert.equal(deck.summary.report, undefined, "the anchor's earlier output is not shown as this attempt's report");
+  assert.equal(deck.task.startedAt, NOW + 5_000, "the live clock restarts with the attempt");
+  const still = apply(projection, { type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(rowsOf(still, "subagent-deck")[0]!.summary.report, undefined, "and stays hidden until this attempt reports");
   const done = apply(projection, { type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
   assert.deepEqual(rowsOf(done, "subagent-deck")[0]!.lifecycle, { state: "completed", label: "d", report: "second time lucky" });
   // A partial frame while still running keeps carrying, as before.

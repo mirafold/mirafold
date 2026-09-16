@@ -126,11 +126,18 @@ export class OpenCodeEventMapper {
     // straggler snapshot arriving just after idle must
     // still find its track — a fresh default would re-emit its whole text.
     // Root-owned records only: a background child's parts and roles stay
-    // until its own terminal word (`forgetLane`), or its next snapshot
-    // would re-announce an already-announced row and its prompt echo would
-    // replay as narration.
-    for (const [id, track] of [...this.parts]) if (track.lane === undefined) this.parts.delete(id);
-    for (const [id, entry] of [...this.roles]) if (entry.lane === undefined) this.roles.delete(id);
+    // past its terminal word, or its next snapshot would re-announce an
+    // already-announced row and its prompt echo would replay as narration.
+    // A settled child's records go at THIS boundary — the same straggler
+    // rule the root's records get (a final snapshot can trail the idle).
+    for (const [id, track] of [...this.parts]) {
+      if (track.lane === undefined || this.settledLanes.has(track.lane)) this.parts.delete(id);
+    }
+    for (const [id, entry] of [...this.roles]) {
+      if (entry.lane === undefined || this.settledLanes.has(entry.lane)) this.roles.delete(id);
+    }
+    this.settledLanes.clear();
+    this.recount();
     // The narration budget is turn-scoped; the lane's session-edge maps are
     // deliberately NOT cleared here — see their declaration (a background
     // child outlives its turn and must stay routable).
@@ -288,8 +295,16 @@ export class OpenCodeEventMapper {
     // Roles are tracked for CHILD messages too: a child's user-role
     // message is the task prompt, and its parts must never replay as the
     // subagent's own narration — the same echo rule the root obeys.
-    if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
-      this.roles.set(String(info["id"]), { role: info["role"], ...(lane !== "root" ? { lane } : {}) });
+    // Root and child records are capped separately: retained child records
+    // must never exhaust a root turn's own allowance (release review).
+    if (typeof info["role"] === "string" && !this.roles.has(String(info["id"]))) {
+      const child = lane !== "root";
+      if ((child ? this.childRoles : this.rootRoles) < MAX_PARTS_PER_TURN) {
+        this.roles.set(String(info["id"]), { role: info["role"], ...(child ? { lane } : {}) });
+        if (child) this.childRoles++;
+        else this.rootRoles++;
+      }
+    }
     // Usage and model stay the ROOT conversation's: the status bar counts
     // the session's own context weight.
     if (lane !== "root") return;
@@ -342,18 +357,37 @@ export class OpenCodeEventMapper {
   private track(partID: string, kind: PartKind, lane?: string): PartTrack | undefined {
     let track = this.parts.get(partID);
     if (!track) {
-      if (this.parts.size >= MAX_PARTS_PER_TURN) return undefined;
+      // Root and child parts are capped separately (see onMessage).
+      if ((lane ? this.childParts : this.rootParts) >= MAX_PARTS_PER_TURN) return undefined;
       track = { kind, emitted: 0, ...(lane ? { lane } : {}) };
       this.parts.set(partID, track);
+      if (lane) this.childParts++;
+      else this.rootParts++;
     }
     return track;
   }
 
-  /** A child settled: everything it owned in the per-part and per-message
-   *  tables goes with it (the tables are otherwise root-turn-scoped). */
+  // Root-owned vs child-owned record counts, so each side keeps its own
+  // allowance; recounted at every root-turn boundary.
+  private rootParts = 0;
+  private childParts = 0;
+  private rootRoles = 0;
+  private childRoles = 0;
+  private recount() {
+    this.rootParts = 0;
+    this.childParts = 0;
+    for (const track of this.parts.values()) track.lane === undefined ? this.rootParts++ : this.childParts++;
+    this.rootRoles = 0;
+    this.childRoles = 0;
+    for (const entry of this.roles.values()) entry.lane === undefined ? this.rootRoles++ : this.childRoles++;
+  }
+
+  // Lanes the engine has settled; their records are released at the next
+  // root-turn boundary, not on the spot — a final snapshot can trail the
+  // terminal word, and treating it as new would re-announce the row.
+  private settledLanes = new Set<string>();
   private forgetLane(lane: string) {
-    for (const [id, track] of [...this.parts]) if (track.lane === lane) this.parts.delete(id);
-    for (const [id, entry] of [...this.roles]) if (entry.lane === lane) this.roles.delete(id);
+    this.settledLanes.add(lane);
   }
 
   private onPartSnapshot(p: Record<string, unknown>) {

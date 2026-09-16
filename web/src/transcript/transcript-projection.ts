@@ -938,8 +938,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         // earlier report and duration are not carried into it (release
         // review, 0.10.0).
         const restarted = msg.state === "running" && prior !== undefined && prior.state !== "running";
+        // The "new attempt" mark holds until this attempt reports something
+        // of its own, so the anchor call's earlier output is not shown as
+        // its report meanwhile.
+        const fresh = msg.report === undefined && msg.state === "running" && (restarted || prior?.restarted === true);
         const lifecycle: TaskLifecycle = {
           state: msg.state,
+          ...(fresh ? { restarted: true } : {}),
           ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
           ...(msg.agentType !== undefined ? { agentType: msg.agentType } : prior?.agentType !== undefined ? { agentType: prior.agentType } : {}),
           ...(msg.action !== undefined ? { action: msg.action } : {}),
@@ -960,6 +965,15 @@ export function createTranscriptProjection(): TranscriptProjection {
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
+        if (restarted) {
+          // A new attempt's clock starts now; a live restart of a replayed
+          // anchor is live from here on.
+          entries = entries.map((entry) =>
+            entry.kind === "tool" && entry.toolId === msg.id
+              ? { ...entry, startedAt: readNow(), ...(msg.replay ? {} : { replayed: undefined }) }
+              : entry,
+          );
+        }
         if (!toolEntry(msg.id)) {
           // An outcome that arrived before this anchor (its opening was
           // evicted) belongs to it: the placeholder is born settled with
