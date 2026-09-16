@@ -636,6 +636,59 @@ export function createTranscriptProjection(): TranscriptProjection {
     return true;
   };
 
+  /** The terminal part of a turn's end, shared by `turn_end` and a terminal
+   *  `error` (the adapter-crash path ends the turn WITHOUT a turn_end —
+   *  release review 0.10.0): the open prose row is done, the turn's tool
+   *  batch settles (in-flight calls interrupted, a still-running task's
+   *  calls left alone), and outcomes for calls never announced get their
+   *  rows. A turn_end trailing the error shifts an empty batch list into a
+   *  fresh orphan batch nothing is filed under, so it changes nothing. */
+  const settleTurn = (readNow: () => number) => {
+    const id = streamingId;
+    streamingId = null;
+    subtextIds.clear();
+    const batchId = openToolBatches.shift() ?? orphanToolBatch--;
+    const childParents = new Set(
+      entries.flatMap((entry) => (entry.kind === "tool" || entry.kind === "subtext") && entry.parentId ? [entry.parentId] : []),
+    );
+    entries = orphanAnchorless(entries).map((entry) => {
+      if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
+      if (entry.kind === "tool" && entry.batchId === batchId) {
+        // A child call of a task the engine still reports running is
+        // cross-turn activity: the root's turn end says nothing about
+        // it (round 3).
+        if (entry.parentId && entry.output === undefined && tasks.get(entry.parentId)?.state === "running") return entry;
+        const isTask = tasks.has(entry.toolId) || childParents.has(entry.toolId);
+        if (isTask && entry.output === undefined) {
+          // A task outlives its call's turn by design (a background job,
+          // a child still working): turn_end must not call it
+          // interrupted or successful. Without ANY engine word on it,
+          // its state is honestly unknown.
+          if (!tasks.has(entry.toolId)) tasks = new Map(tasks).set(entry.toolId, { state: "unknown" });
+          return { ...entry, settled: true, streamed: undefined, live: undefined };
+        }
+        return {
+          ...entry,
+          settled: true,
+          // A pending call at turn end was interrupted. Keep it expanded
+          // and explicit instead of folding it as successful activity —
+          // and keep the output observed before the stop; the streamed
+          // copy is released either way (PR #80 review).
+          ...(entry.output === undefined
+            ? {
+                ...interruptedOutcome(entry),
+                isError: true,
+              }
+            : {}),
+          streamed: undefined,
+          live: undefined,
+        };
+      }
+      return entry;
+    });
+    materializeOrphans(readNow, true);
+  };
+
   const applyMessage = (
     msg: ZoneMsg,
     readNow: () => number,
@@ -1058,49 +1111,7 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "turn_end": {
-        const id = streamingId;
-        streamingId = null;
-        subtextIds.clear();
-        const batchId = openToolBatches.shift() ?? orphanToolBatch--;
-        const childParents = new Set(
-          entries.flatMap((entry) => (entry.kind === "tool" || entry.kind === "subtext") && entry.parentId ? [entry.parentId] : []),
-        );
-        entries = orphanAnchorless(entries).map((entry) => {
-          if (entry.kind === "text" && entry.id === id) return { ...entry, done: true };
-          if (entry.kind === "tool" && entry.batchId === batchId) {
-            // A child call of a task the engine still reports running is
-            // cross-turn activity: the root's turn end says nothing about
-            // it (round 3).
-            if (entry.parentId && entry.output === undefined && tasks.get(entry.parentId)?.state === "running") return entry;
-            const isTask = tasks.has(entry.toolId) || childParents.has(entry.toolId);
-            if (isTask && entry.output === undefined) {
-              // A task outlives its call's turn by design (a background job,
-              // a child still working): turn_end must not call it
-              // interrupted or successful. Without ANY engine word on it,
-              // its state is honestly unknown.
-              if (!tasks.has(entry.toolId)) tasks = new Map(tasks).set(entry.toolId, { state: "unknown" });
-              return { ...entry, settled: true, streamed: undefined, live: undefined };
-            }
-            return {
-              ...entry,
-              settled: true,
-              // A pending call at turn end was interrupted. Keep it expanded
-              // and explicit instead of folding it as successful activity —
-              // and keep the output observed before the stop; the streamed
-              // copy is released either way (PR #80 review).
-              ...(entry.output === undefined
-                ? {
-                    ...interruptedOutcome(entry),
-                    isError: true,
-                  }
-                : {}),
-              streamed: undefined,
-              live: undefined,
-            };
-          }
-          return entry;
-        });
-        materializeOrphans(readNow, true);
+        settleTurn(readNow);
         return true;
       }
       case "error": {
@@ -1110,10 +1121,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         // an idle shell (PR #120 review). A request-scoped error (terminal:
         // false) ends nothing — same reading as turn-busy and the daemon's
         // session state.
+        if (msg.terminal !== false) {
+          foldThinking();
+          settleTurn(readNow);
+        }
         streamingId = null;
-        if (msg.terminal !== false) foldThinking();
         entries = [
-          ...(msg.terminal === false ? entries : orphanAnchorless(entries)),
+          ...entries,
           {
             kind: "text",
             id: nextTranscriptId++,

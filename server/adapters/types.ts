@@ -313,10 +313,15 @@ export class SubagentProseBudget {
     return kept + SUBAGENT_PROSE_ELIDED(this.cap);
   }
 
-  /** Turn boundary: spawns don't outlive their turn, so the ledger resets. */
-  clear() {
-    this.used.clear();
-    this.capped.clear();
+  /** Turn boundary: the ledger resets, except for `keep` — the lanes of
+   *  children that outlive the turn (a spawn with no wait). The allowance
+   *  is per SUBAGENT, not per root turn: a fresh one every turn would let a
+   *  looping background child grow the transcript past the documented
+   *  bound, one elision marker per turn (release review 0.10.0). */
+  clear(keep?: Iterable<string>) {
+    const kept = new Set(keep ?? []);
+    for (const key of [...this.used.keys()]) if (!kept.has(key)) this.used.delete(key);
+    for (const key of [...this.capped]) if (!kept.has(key)) this.capped.delete(key);
   }
 }
 
