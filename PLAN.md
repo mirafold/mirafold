@@ -4045,6 +4045,23 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   `typePrompt` and `fillTranscript` wait for the echoed user row before
   the idle wait (probe 4/4 after). Plausibly the same window behind the
   growth e2e's `gap=510` (its prompt loop uses the same pair) — not proven.
+  PR #125 merged into next (`77ee6b8`); next merged into the release branch
+  (`6b2e556`), #124 re-reviewed. **Release review round B (three findings,
+  fixed on `fix/release-review-0.10.0-b`):** a terminal `error` without a
+  `turn_end` (the adapter-crash path the mock scripts) closed prose but left
+  the turn's tool batch open, so in-flight calls stayed running until some
+  later `turn_end` and the next prompt's calls were filed behind the dead
+  batch (the projection's turn settlement is now one helper shared by both;
+  a trailing `turn_end` after the error is a no-op); a live `task_update`
+  with state `unknown` reached the fallback word "ended" and the shell
+  announced a task over that may still run (unknown is recorded, never
+  spoken); both Codex (`endTurn`) and OpenCode (`startTurn`) cleared the
+  per-subagent narration budget at the root-turn boundary while a
+  background child's lane stayed routable, granting a looping child a fresh
+  64 kB allowance and another elision marker every turn (the budget now
+  keeps the lanes of children still running: Codex's `runningChildren`
+  anchors, OpenCode's busy + unsettled background lanes). Five regression
+  tests, each mutation-checked.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock

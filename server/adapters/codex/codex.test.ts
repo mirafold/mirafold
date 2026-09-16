@@ -2930,3 +2930,30 @@ test("a zero live-output budget still says the ceiling was hit, once (review 202
     .map((m) => m.text);
   assert.deepEqual(deltas, [streamCapMarker(0)], "exactly one marker, no output bytes");
 });
+
+// Release review 0.10.0 (fix round B): endTurn cleared the narration budget
+// while the background child's bookkeeping survived, so every later root
+// turn granted the same still-running child a fresh allowance and marker.
+test("a background child's narration cap holds across the root turn's end", async () => {
+  const anchor = "codex-agent:CHILD";
+  const activity = (i: number): Notification => [
+    "item/completed",
+    { item: { type: "subAgentActivity", id: `w${i}`, kind: "working", agentThreadId: "CHILD", agentPath: "p".repeat(96) } },
+  ];
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    for (let i = 0; i < 800; i++) ctx.notify(...activity(i));
+    ctx.complete("completed"); // the parent did not wait
+    await waitForTurnEnds(msgs, 1);
+    for (let i = 800; i < 1600; i++) ctx.notify(...activity(i));
+    ctx.notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor);
+  assert.equal(lines.filter((m) => m.text.includes("narration cap reached")).length, 1, "one marker for the child's lifetime");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, `the lane stays byte-bounded across the turn boundary (${total})`);
+  s.close();
+});

@@ -31,3 +31,13 @@ test("the ledger is bounded, oldest out first", () => {
   assert.equal(noted.has(`t${TASK_LEDGER_CAP + 4}`), true);
   assert.equal(recordTaskState(noted, `t${TASK_LEDGER_CAP + 4}`, "running"), false, "same state is not a change");
 });
+
+// Release review 0.10.0 (fix round B): `unknown` reached the fallback word
+// "ended", and the shell announced a task over that may still be running.
+test("an unknown state is remembered but says nothing — the contract calls it no lifecycle evidence", () => {
+  const noted = new Map<string, string>();
+  assert.equal(taskNoteFor(noted, { id: "t1", state: "running", label: "x" }), null);
+  assert.equal(taskNoteFor(noted, { id: "t1", state: "unknown", label: "x" }), null, "no 'ended' note");
+  assert.equal(noted.get("t1"), "unknown", "still recorded");
+  assert.deepEqual(taskNoteFor(noted, { id: "t1", state: "completed", label: "x" }), { text: "x finished", failed: false }, "a later real terminal state notes");
+});

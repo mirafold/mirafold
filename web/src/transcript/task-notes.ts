@@ -24,9 +24,10 @@ export function taskNoteFor(
   frame: { id: string; state: string; label?: string; replay?: boolean },
 ): { text: string; failed: boolean } | null {
   const changed = recordTaskState(noted, frame.id, frame.state);
-  if (!changed || frame.replay || frame.state === "running") return null;
+  // `unknown` is the contract's "no lifecycle evidence": remembered for the
+  // ledger, never spoken as an ending (release review 0.10.0).
+  if (!changed || frame.replay || frame.state === "running" || frame.state === "unknown") return null;
   const what = frame.label ?? "a task";
-  const word =
-    frame.state === "completed" ? "finished" : frame.state === "failed" ? "failed" : frame.state === "interrupted" ? "was interrupted" : "ended";
+  const word = frame.state === "completed" ? "finished" : frame.state === "failed" ? "failed" : "was interrupted";
   return { text: `${what} ${word}`, failed: frame.state === "failed" };
 }

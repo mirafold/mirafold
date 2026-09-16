@@ -195,7 +195,15 @@ export class CodexEventMapper {
     this.turnLast = undefined;
     this.checklist.reset();
     this.fileChangeSnapshots.clear();
-    this.subagentProse.clear();
+    // A background child's narration allowance is the child's, not the
+    // turn's: it survives with the child's bookkeeping below and goes at the
+    // boundary after the child settles (release review 0.10.0).
+    this.subagentProse.clear(
+      [...this.runningChildren].flatMap((thread) => {
+        const anchor = this.subagentAnchor.get(thread);
+        return anchor ? [anchor] : [];
+      }),
+    );
     // A child announced this turn may outlive it (a spawn with no wait): its
     // bookkeeping survives until the engine's terminal word on that thread,
     // so its later items still ride the lane instead of surfacing as root
