@@ -254,6 +254,8 @@ export type RegistryOptions = {
   /** The delta-merge window; 0 = no merging (tests that drive broadcast()
    *  by hand and inspect state between calls pass 0). */
   deltaCoalesceMs?: number;
+  /** The replay ring's message cap; tests shrink it to force eviction. */
+  ringCountCap?: number;
   store?: SessionCheckpointStore;
   idleTimeoutMs?: number;
   /** Test seam: the classify-before-create flow needs an entry whose session
@@ -278,6 +280,7 @@ export class SessionRegistry {
   // config. The agent is chosen here, not hardcoded downstream.
   private backend: Backend;
   private deltaCoalesceMs: number;
+  private ringCountCap: number | undefined;
   private store?: SessionCheckpointStore;
   private idleTimeoutMs: number;
   private makeSession: typeof createSession;
@@ -285,6 +288,7 @@ export class SessionRegistry {
   constructor(options: RegistryOptions = {}) {
     this.backend = options.backend ?? resolveBackend();
     this.deltaCoalesceMs = options.deltaCoalesceMs ?? DELTA_COALESCE_MS;
+    this.ringCountCap = options.ringCountCap;
     this.store = options.store;
     this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
     this.makeSession = options.makeSession ?? createSession;
@@ -332,6 +336,7 @@ export class SessionRegistry {
       ring: new ReplayRing({
         coalesceMs: this.deltaCoalesceMs,
         deliver: (msg) => this.deliver(entry, msg),
+        ...(this.ringCountCap !== undefined ? { countCap: this.ringCountCap } : {}),
       }),
       viewports: new Set(),
       remoteViewports: new Set(),
@@ -638,6 +643,15 @@ export class SessionRegistry {
    * With `afterSeq` (pre-validated via canResume) only the unseen tail is
    * replayed — the reconnecting viewport keeps its state, no repaint.
    */
+  /** Older history has already fallen off this session's ring: the first
+   *  retained seq is past 1 (or nothing is retained though seqs were issued).
+   *  A full replay must say so rather than pass a truncated head off as the
+   *  whole session (Phase TF R7). */
+  historyEvicted(entry: SessionEntry): boolean {
+    const first = entry.ring.buffer[0]?.seq;
+    return first !== undefined ? first > 1 : entry.ring.nextSeq > 1;
+  }
+
   attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
     for (const msg of entry.ring.replayAfter(afterSeq)) viewport(msg);

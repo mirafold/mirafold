@@ -6,6 +6,8 @@ import fs, { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, statSyn
 import { syncBuiltinESMExports } from "node:module";
 import type { WireMsg } from "../../protocol";
 import { GeminiCliSession, geminiRenderMcpConfig } from "./gemini-cli";
+import { GEMINI_AUTH_SETTING } from "./gemini-auth";
+import { createSession } from "../index";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../../security/workspace-trust";
 import { MIRAFOLD_MCP, renderMcpCommand } from "../render-mcp-cmd";
@@ -34,7 +36,7 @@ before(() => {
     // would hold the stdout pipe open and the adapter's `close` never fires.
     // FAKE_ARGS_LOG records the latest spawn's argv (one arg per ---ARG---
     // separator) for the -m / guidance-injection assertions.
-    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && { printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"; printf \'ENV_TRUST=%s\\nENV_RUN_AS_NODE=%s\\n\' "$GEMINI_CLI_TRUST_WORKSPACE" "${ELECTRON_RUN_AS_NODE-unset}" >> "$FAKE_ARGS_LOG"; }\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
+    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && { printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"; printf \'ENV_TRUST=%s\\nENV_RUN_AS_NODE=%s\\nENV_AUTH=%s\\nENV_API=%s\\nENV_GOOGLE=%s\\n\' "$GEMINI_CLI_TRUST_WORKSPACE" "${ELECTRON_RUN_AS_NODE-unset}" "$MIRAFOLD_GEMINI_AUTH_TYPE" "${GEMINI_API_KEY:+set}" "${GOOGLE_API_KEY:+set}" >> "$FAKE_ARGS_LOG"; }\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
   process.env.MIRAFOLD_GEMINI_BIN = stub;
@@ -81,6 +83,90 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   const s = new GeminiCliSession({ workspaceDir: mkdtempSync(path.join(tmp, "ws-")), ...opts });
   return { s, ...attach(s) };
 }
+
+test("selected Gemini credentials survive alternating sessions in one workspace, including the factory", async () => {
+  const saved = { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_API_KEY: process.env.GOOGLE_API_KEY };
+  process.env.GEMINI_API_KEY = "test-gemini-key";
+  process.env.GOOGLE_API_KEY = "test-google-key";
+  const workspaceDir = mkdtempSync(path.join(tmp, "shared-auth-"));
+  const api = makeSession({ workspaceDir, kind: "api-key" });
+  const signedInSession = createSession({ agent: "gemini-cli", kind: "subscription", live: true }, { cwd: workspaceDir }) as GeminiCliSession;
+  const signedIn = { s: signedInSession, ...attach(signedInSession) };
+  try {
+    for (const [index, selected] of [api, signedIn, api, signedIn].entries()) {
+      const log = path.join(tmp, `chosen-auth-${index}.txt`);
+      process.env.FAKE_ARGS_LOG = log;
+      selected.s.pushPrompt("hello");
+      await selected.awaitTurnEnd(index < 2 ? 1 : 2);
+      const recorded = readFileSync(log, "utf8");
+      assert.match(recorded, /ENV_TRUST=true/);
+      if (selected === signedIn) {
+        assert.match(recorded, /ENV_AUTH=oauth-personal/);
+        assert.match(recorded, /ENV_API=\nENV_GOOGLE=\n/);
+      } else {
+        assert.match(recorded, /ENV_AUTH=gemini-api-key/);
+        assert.match(recorded, /ENV_API=set\nENV_GOOGLE=set\n/);
+      }
+    }
+    assert.equal(JSON.parse(readFileSync(path.join(workspaceDir, ".gemini", "settings.json"), "utf8")).security.auth.selectedType, GEMINI_AUTH_SETTING);
+  } finally {
+    api.s.close();
+    signedIn.s.close();
+    delete process.env.FAKE_ARGS_LOG;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("a first-action model lookup prepares the selected-auth setting before launching its catalog", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmp, "catalog-auth-"));
+  let lookedUp = false;
+  const { s, awaitTurnEnd } = makeSession({
+    workspaceDir,
+    kind: "subscription",
+    listModels: async () => {
+      const cfg = JSON.parse(readFileSync(path.join(workspaceDir, ".gemini", "settings.json"), "utf8"));
+      assert.equal(cfg.security.auth.selectedType, GEMINI_AUTH_SETTING);
+      lookedUp = true;
+      return { currentModelId: "auto", models: [{ id: "auto", displayName: "Auto", description: "" }] };
+    },
+  });
+  try {
+    s.pushPrompt("/model");
+    await awaitTurnEnd();
+    assert.equal(lookedUp, true, "the catalog must have read the prepared settings");
+  } finally {
+    s.close();
+  }
+});
+
+test("unavailable Google sign-in retains the provider error, offers explicit API fallback, and permits retry", async () => {
+  process.env.FAKE_STDERR = "IneligibleTierError: this account has no access";
+  process.env.FAKE_EXIT = "41";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession({ kind: "subscription" });
+  try {
+    s.pushPrompt("hello");
+    await awaitTurnEnd();
+    assert.equal(turnEnds(), 1);
+    assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /IneligibleTierError/);
+    const notes = msgs.filter((m) => m.type === "notice");
+    assert.equal(notes.length, 1);
+    assert.match(notes[0].text, /new Gemini CLI session with a Gemini API key/);
+    assert.match(notes[0].text, /does not switch to API billing automatically/);
+    assert.equal(s.resumeId, undefined);
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+    s.pushPrompt("retry");
+    await awaitTurnEnd(2);
+    assert.equal(msgs.filter((m) => m.type === "error").length, 1);
+  } finally {
+    s.close();
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+  }
+});
 
 test("recovery and discovery: Gemini resumes the saved id and advertises only its implemented /model", async () => {
   const argsLog = path.join(tmp, "resume-args.txt");
@@ -202,7 +288,7 @@ test("a pre-existing settings.json — broken or valid — is untouched at const
   a.pushPrompt("hello");
   await aAwaitTurnEnd();
   const afterTurn = JSON.parse(readFileSync(file, "utf8"));
-  assert.equal(afterTurn.security.auth.selectedType, "gemini-api-key");
+  assert.equal(afterTurn.security.auth.selectedType, GEMINI_AUTH_SETTING);
   assert.equal(afterTurn.mcpServers[MIRAFOLD_MCP].command, RENDER_MCP_COMMAND);
   assert.equal(readFileSync(`${file}.mirafold-backup`, "utf8"), garbage, "backup lands once the rewrite is earned");
   a.close();
@@ -223,7 +309,7 @@ test("a pre-existing settings.json — broken or valid — is untouched at const
   assert.equal(bAfterTurn.theirs, 1);
   assert.equal(bAfterTurn.mcpServers.own.command, "x", "the user's own entry survives the merge");
   assert.equal(bAfterTurn.mcpServers[MIRAFOLD_MCP].command, RENDER_MCP_COMMAND);
-  assert.equal(bAfterTurn.security.auth.selectedType, "gemini-api-key");
+  assert.equal(bAfterTurn.security.auth.selectedType, GEMINI_AUTH_SETTING);
   assert.throws(() => readFileSync(`${file2}.mirafold-backup`), "valid JSON never gets a backup");
   b.close();
 });
@@ -508,6 +594,28 @@ test("F.3 honest model: a concrete init model is kept even if stats.models is pr
   s.pushPrompt("go");
   await awaitTurnEnd();
   assert.equal(msgs.find((m) => m.type === "usage")!.model, "gemini-2.5-pro"); // init wins
+  s.close();
+});
+
+test("TF2.6: built-in reads and searches classify by exact name; shell commands and unknowns do not", async () => {
+  fixture("tf26.jsonl", [
+    { type: "init", model: "gemini-2.5-pro" },
+    { type: "tool_use", tool_name: "read_file", tool_id: "r1", parameters: { absolute_path: "/w/a.ts" } },
+    { type: "tool_result", tool_id: "r1", status: "success", output: "content" },
+    { type: "tool_use", tool_name: "run_shell_command", tool_id: "c1", parameters: { command: "ls" } },
+    { type: "tool_result", tool_id: "c1", status: "success", output: "a\nb" },
+    { type: "result", stats: { input_tokens: 1, output_tokens: 1 } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.find((m) => m.type === "tool_use" && m.id === "r1")!.actions, [{ kind: "read", target: "/w/a.ts" }]);
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "c1")!.actions, undefined);
+  // The headless stream carries no exit code, no live output, no thinking:
+  // nothing is invented for them.
+  const shell = msgs.find((m) => m.type === "tool_result" && m.id === "c1")!;
+  assert.deepEqual([shell.exitCode, shell.durationMs], [undefined, undefined]);
+  assert.ok(!msgs.some((m) => m.type === "tool_output_delta" || m.type === "tool_output_snapshot" || m.type === "thinking_delta" || m.type === "task_update"));
   s.close();
 });
 
@@ -956,7 +1064,7 @@ test("an untrusted workspace asks the user before anything runs, then proceeds o
       "the resolution is announced so every viewport drops its bar",
     );
     const afterAllow = JSON.parse(readFileSync(settingsFile, "utf8"));
-    assert.equal(afterAllow.security.auth.selectedType, "gemini-api-key");
+    assert.equal(afterAllow.security.auth.selectedType, GEMINI_AUTH_SETTING);
     assert.equal(
       afterAllow.mcpServers[MIRAFOLD_MCP].command,
       RENDER_MCP_COMMAND,
@@ -1092,7 +1200,7 @@ test("a repository cannot route the invalid-JSON backup through a planted symlin
     const backups = readdirSync(dir).filter((n) => /^settings\.json\.mirafold-backup\.\d+$/.test(n));
     assert.equal(backups.length, 1, "one timestamped backup beside the file");
     assert.equal(readFileSync(path.join(dir, backups[0]!), "utf8"), planted);
-    assert.equal(JSON.parse(readFileSync(path.join(dir, "settings.json"), "utf8")).security.auth.selectedType, "gemini-api-key");
+    assert.equal(JSON.parse(readFileSync(path.join(dir, "settings.json"), "utf8")).security.auth.selectedType, GEMINI_AUTH_SETTING);
   } finally {
     s.close();
     rmSync(ws, { recursive: true, force: true });

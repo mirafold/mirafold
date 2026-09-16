@@ -284,13 +284,18 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
 
     const atBottom = await geom();
     await page2.keyboard.press("PageUp");
+    // One PageUp moves ~87% of the viewport (192 px of the 220 px this
+    // layout leaves the scroller). The old "> 200 px from the bottom" only
+    // held because the permission bar's arrival used to leave the reader
+    // 52 px above the tail; the tail follow now re-pins on that resize
+    // (2026-09-15), so the bar is well past the follow slack, not a page.
     await page2.waitForFunction(
       ({ top }) => {
         const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollTop < top - 100 &&
-            el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+            el.scrollHeight - el.scrollTop - el.clientHeight > 100,
         );
       },
       atBottom,

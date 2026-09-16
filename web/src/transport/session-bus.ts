@@ -48,7 +48,7 @@ export interface SessionBus {
    *  component can drop a reply that isn't the one it's currently waiting
    *  on. The whole-tree fs_list is retired from the client; the daemon still
    *  answers it for older bundles (the version-skew floor). */
-  requestFsListdir(path: string): string;
+  requestFsListdir(path: string, continuation?: string): string;
   requestFsChanges(): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
@@ -163,9 +163,9 @@ export function createSessionBus(): SessionBus {
     },
     // folder tree/Changes requests. Ids are minted here (the sendBang shape) and
     // returned so each shell surface correlates the one reply it gets.
-    requestFsListdir(path: string): string {
+    requestFsListdir(path: string, continuation?: string): string {
       const id = mintId("fsl");
-      socket.send({ type: "fs_listdir", id, path });
+      socket.send({ type: "fs_listdir", id, path, ...(continuation ? { continuation } : {}) });
       return id;
     },
     requestFsChanges(): string {

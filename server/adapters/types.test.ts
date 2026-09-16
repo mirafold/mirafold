@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { agentBin, capOutput, envWithout, installedAgentBin, toolDetail } from "./types";
+import { agentBin, capOutput, envWithout, installedAgentBin, outputFields, splitBudget, toolDetail } from "./types";
 
 // The default cap is 64 KB (TOOL_OUTPUT_CAP_BYTES), read at module load.
 const CAP = 64_000;
@@ -104,20 +104,70 @@ test("capOutput leaves exactly-at-cap text untouched", () => {
   assert.equal(Buffer.byteLength(r.text, "utf8"), CAP);
 });
 
-test("capOutput truncates over-cap ASCII and reports the elided byte count", () => {
+test("capOutput keeps a head and a tail of an over-cap result; the middle is counted, not implied (TF1.2)", () => {
   const total = 100_000;
-  const r = capOutput("a".repeat(total));
-  assert.equal(Buffer.byteLength(r.text, "utf8"), CAP);
-  assert.equal(r.truncatedBytes, total - CAP);
+  const input = "H".repeat(50_000) + "T".repeat(50_000);
+  const r = capOutput(input);
+  const { head, tail } = splitBudget(CAP);
+  assert.equal(Buffer.byteLength(r.text, "utf8"), head);
+  assert.equal(r.text, "H".repeat(head));
+  assert.equal(r.tail, "T".repeat(tail));
+  // A pre-TF client sees the head and every byte past it as elided.
+  assert.equal(r.truncatedBytes, total - head);
+  // A TF client sees exactly the middle that fell between head and tail.
+  assert.equal(r.omittedBytes, total - head - tail);
+  assert.equal(head + tail, CAP);
 });
 
-test("capOutput cuts on a byte boundary, replacing a straddling multibyte char", () => {
-  // 63999 ASCII bytes + a 3-byte '€': the cap at byte 64000 falls inside '€'.
-  const input = "a".repeat(CAP - 1) + "€";
+test("capOutput keeps the trailing failure line — the verdict is at the end", () => {
+  const body = "log line\n".repeat(20_000);
+  const verdict = "FAIL: 2 tests failed";
+  const r = capOutput(body + verdict);
+  assert.ok(r.tail?.endsWith(verdict));
+  assert.ok(!r.text.includes(verdict));
+});
+
+test("capOutput never splits a character at either seam (TF1.2 multibyte boundary)", () => {
+  const { head, tail } = splitBudget(CAP);
+  // '€' is 3 bytes: place one straddling the head seam and one straddling the tail seam.
+  const input = "a".repeat(head - 1) + "€" + "x".repeat(10_000) + "€" + "b".repeat(tail - 1);
   const r = capOutput(input);
-  // The partial lead byte decodes to U+FFFD rather than crashing.
-  assert.equal(r.text.at(-1), "�");
-  assert.equal(r.truncatedBytes, Buffer.byteLength(input, "utf8") - CAP); // = 2
+  assert.ok(!r.text.includes("�") && !r.tail!.includes("�"));
+  assert.equal(Buffer.byteLength(r.text, "utf8"), head - 1); // the straddling '€' is dropped whole
+  assert.equal(Buffer.byteLength(r.tail!, "utf8"), tail - 1); // and so is the one at the tail seam
+  assert.equal(r.tail, "b".repeat(tail - 1));
+  const total = Buffer.byteLength(input, "utf8");
+  assert.equal(r.omittedBytes, total - (head - 1) - (tail - 1));
+  assert.equal(r.truncatedBytes, total - (head - 1));
+  assert.ok(r.omittedBytes! >= 0);
+});
+
+test("capOutput at a zero budget retains nothing but still counts what was dropped", () => {
+  const r = capOutput("hello world", 0);
+  assert.deepEqual(r, { text: "", truncatedBytes: 11, omittedBytes: 11 });
+});
+
+test("capOutput at tiny budgets stays valid: no negative counts, no malformed text", () => {
+  for (const cap of [1, 2, 3, 4, 5, 7]) {
+    const r = capOutput("€€€€€€", cap); // 18 bytes of 3-byte chars
+    assert.ok(!r.text.includes("�") && !(r.tail ?? "").includes("�"), `cap ${cap}`);
+    assert.ok(Buffer.byteLength(r.text, "utf8") + Buffer.byteLength(r.tail ?? "", "utf8") <= cap, `cap ${cap} budget`);
+    assert.ok(r.omittedBytes! >= 0 && r.truncatedBytes! >= 0, `cap ${cap} counts`);
+    assert.equal(
+      Buffer.byteLength(r.text, "utf8") + Buffer.byteLength(r.tail ?? "", "utf8") + r.omittedBytes!,
+      18,
+      `cap ${cap} accounting`,
+    );
+  }
+});
+
+test("outputFields spells the tool_result contract: exact results carry no counts", () => {
+  assert.deepEqual(outputFields(capOutput("small")), { output: "small" });
+  const big = outputFields(capOutput("x".repeat(CAP + 10)));
+  assert.equal(big.output.length, splitBudget(CAP).head);
+  assert.equal(big.tail!.length, splitBudget(CAP).tail);
+  assert.equal(big.omittedBytes, 10);
+  assert.equal(big.truncatedBytes, 10 + splitBudget(CAP).tail);
 });
 
 test("toolDetail returns the first present salient key in precedence order", () => {

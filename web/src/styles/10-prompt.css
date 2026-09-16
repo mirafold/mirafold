@@ -492,3 +492,28 @@
 .permission-modal-detail {
   unicode-bidi: isolate;
 }
+
+/* Phase TF R5: a task the engine reported finished, noted compactly in the
+   current-activity area — the reader learns of it without the deck above
+   repainting under them. */
+.activity-note {
+  color: var(--fg-dim);
+}
+
+.activity-note-failed {
+  color: var(--error);
+}
+
+/* The completion note outside a turn: the activity line's look without its
+   glyph — and without its class, which means "a turn is in flight". */
+.activity-note-line {
+  margin-top: 8px;
+  padding: 0 15px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  animation: rise 0.16s ease-out both;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

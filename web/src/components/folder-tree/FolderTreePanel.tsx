@@ -16,7 +16,7 @@ import { useFolderTree } from "./use-folder-tree";
 type FolderTreePanelProps = {
   open: boolean;
   subscribe: (listener: (message: ZoneMsg) => void) => () => void;
-  requestListdir: (path: string) => string;
+  requestListdir: (path: string, continuation?: string) => string;
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
@@ -163,7 +163,7 @@ export function FolderTreePanel({
   sessionKey,
   fileOpenRequest,
 }: FolderTreePanelProps) {
-  const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFolderTree({
+  const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree, loadMore } = useFolderTree({
     open,
     subscribe,
     requestListdir,
@@ -314,7 +314,7 @@ export function FolderTreePanel({
           {rootOpen &&
             (rootState?.phase === "error" && !rootListing ? (
               <div className="folder-tree-empty folder-tree-error">{rootState.error}</div>
-            ) : rootListing && rootListing.entries.length === 0 ? (
+            ) : rootState?.phase !== "error" && rootListing && rootListing.entries.length === 0 && !rootListing.truncated && !rootListing.continuation ? (
               <div className="folder-tree-empty">(no files)</div>
             ) : rootListing ? (
               <div role="tree" aria-label="Working tree">
@@ -324,6 +324,7 @@ export function FolderTreePanel({
                   store={store}
                   expanded={expanded}
                   onToggleDir={toggleDir}
+                  onLoadMore={loadMore}
                   onOpenFile={(path, status) =>
                     // A changed file leads with its diff — that's what you want
                     // to see; an unchanged file has only content.

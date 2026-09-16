@@ -118,6 +118,14 @@ export type SessionMsgBody =
   // Edit/Write inputs as diffs/code, the rest as JSON. `parentId`, when set,
   // is the Task tool_use id this call belongs to — a subagent's call, which
   // the client nests under its owning Task row.
+  // `actions` (optional/additive, Phase TF): the engine's own verified
+  // classification of what this call does — a read, a listing, a search —
+  // so the browser can group ordinary routine work ("Read 8 files · 3
+  // searches"). Only when the ENGINE says so (Codex's parsed
+  // `commandActions`) or the adapter maps a known built-in by exact name
+  // (Read/Grep/Glob and their peers); a command of unknown or mixed purpose
+  // carries none and stays a command. Display-only: never a claim that the
+  // call was safe or succeeded. Old clients ignore it.
   | {
       type: "tool_use";
       name: string;
@@ -125,6 +133,12 @@ export type SessionMsgBody =
       id: string;
       input?: Record<string, unknown>;
       parentId?: string;
+      actions?: ToolAction[];
+      // Optional/additive (release review, 0.10.0): for a subagent's call,
+      // the parent task's attempt number at the time (see task_update),
+      // stamped by the replay ring — so a call replayed out of order with
+      // its task's frame is still known to belong to the current attempt.
+      attempt?: number;
     }
   // An in-place refresh of an announced tool row. Some engines publish a
   // running call's structured input as successive authoritative snapshots
@@ -132,16 +146,35 @@ export type SessionMsgBody =
   // carry the final patch. Fields that are absent stay unchanged; fields
   // that are present replace the row's value. Old clients ignore this
   // additive message and still receive the eventual tool_result.
+  // `elapsedMs` (optional/additive, Phase TF): the ENGINE's own running
+  // clock for the call (Claude's tool_progress), so a replayed row can say
+  // how long the engine reports it has run. It is not output.
+  // `parentId` (optional/additive, PR #122): set when the updated row is a
+  // subagent's, so a late patch snapshot from a background child is never
+  // read as root-turn activity.
   | {
       type: "tool_update";
       id: string;
       detail?: string;
       input?: Record<string, unknown>;
+      elapsedMs?: number;
+      parentId?: string;
     }
   // `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting
   // silently. Optional/additive. `parentId` rides here too, exactly as on
   // tool_use.
+  // Phase TF additions, all optional/additive. Retention keeps a HEAD and a
+  // TAIL of a large result within ONE budget (TOOL_OUTPUT_CAP_BYTES, split
+  // half and half): `output` is the head — the same field an older client
+  // reads, now half the budget long rather than all of it, with
+  // `truncatedBytes` still counting every byte past it honestly — `tail`
+  // is the retained trailing text, and `omittedBytes` is the middle that
+  // was dropped between them, reported so the browser says so instead of
+  // implying complete evidence. `exitCode` is the
+  // command's own exit status when the engine reports one — a fact,
+  // independent of `isError` (Codex reports a nonzero probe as a completed
+  // command); `durationMs` is the engine's measured duration.
   | {
       type: "tool_result";
       output: string;
@@ -149,6 +182,10 @@ export type SessionMsgBody =
       id: string;
       truncatedBytes?: number;
       parentId?: string;
+      tail?: string;
+      omittedBytes?: number;
+      exitCode?: number;
+      durationMs?: number;
     }
   // Streamed output of a RUNNING tool call (optional/additive, TS.11): the
   // terminal prints command output as it arrives; this carries those bytes
@@ -156,6 +193,54 @@ export type SessionMsgBody =
   // closes the row with the engine's authoritative, capped output. Old
   // clients ignore it. `parentId` rides exactly as on tool_use.
   | { type: "tool_output_delta"; id: string; text: string; parentId?: string }
+  // A REPLACEMENT snapshot of a running call's output (optional/additive,
+  // Phase TF): the bounded head and the latest tail of everything observed
+  // so far, with the omitted middle counted. Each snapshot supersedes the
+  // previous one for the same `id` — the ring retains only the newest, a
+  // viewport ignores any whose `revision` is not newer than what it holds,
+  // and the legacy `tool_output_delta` prefix above keeps flowing (bounded)
+  // for clients that predate this message. The later tool_result is still
+  // authoritative; an interrupted call keeps its last snapshot as evidence.
+  | {
+      type: "tool_output_snapshot";
+      id: string;
+      revision: number;
+      head: string;
+      tail?: string;
+      omittedBytes?: number;
+      parentId?: string;
+    }
+  // The lifecycle of an engine TASK — a subagent, a background job —
+  // independent of the tool call that started it (optional/additive, Phase
+  // TF). `id` is the opaque anchor every lane groups by (the spawn's wire
+  // id: a finished spawn/wait/poll call is not the child finishing). `state`
+  // is the engine's own report, never inferred from call settlement;
+  // `unknown` means the engine gave no lifecycle evidence. `report` is the
+  // task's retained final report (capped like tool output, `reportTail` /
+  // `reportOmittedBytes` as on tool_result); `action` is what it is doing
+  // now; `label` / `agentType` name it in the engine's own words. Old
+  // clients ignore it and keep deriving the deck from the spawn call.
+  | {
+      type: "task_update";
+      id: string;
+      state: "running" | "completed" | "failed" | "interrupted" | "unknown";
+      label?: string;
+      agentType?: string;
+      action?: string;
+      report?: string;
+      reportTail?: string;
+      reportOmittedBytes?: number;
+      elapsedMs?: number;
+      parentId?: string;
+      // Optional/additive (release review, 0.10.0): which ATTEMPT this
+      // frame belongs to — present from the first restart on (2, then 3…),
+      // stamped by the replay ring at each terminal-to-running transition
+      // and carried on every later frame of that attempt. A viewport that
+      // missed the boundary (a full replay, a tail resume) still sees the
+      // attempt change and starts the new attempt clean: no old report or
+      // duration, a fresh clock, the old attempt's open calls retired.
+      attempt?: number;
+    }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`
   // (optional/additive): set when the ASKER is a subagent — the same opaque
@@ -273,10 +358,19 @@ export type ViewportMsgBody =
       replayPending?: true;
       demo?: boolean;
       fallback?: boolean;
+      // Optional/additive (Phase TF): what this session's agent CAN report,
+      // declared by its adapter, so the shell can say "live output
+      // unavailable" for an engine that never streams it instead of
+      // implying silence means nothing happened. Absent = unknown (older
+      // daemon): the shell makes no capability claim either way.
+      capabilities?: AgentCapabilities;
     }
   // Per-viewport boundary after attach history, including an empty replay.
   // Never sequenced or retained: it describes delivery, not session content.
-  | { type: "replay_complete" }
+  // `evicted` (optional/additive, Phase TF): on a FULL replay, the ring had
+  // already dropped older history before this attach — the shell says so
+  // instead of presenting a truncated head as the whole session.
+  | { type: "replay_complete"; evicted?: true }
   // Current bang-shell state for already-attached viewports. This is a
   // replaceable snapshot, not transcript history: it is never sequenced,
   // replayed, or persisted as a message. A fresh attach gets the same value
@@ -301,12 +395,13 @@ export type ViewportMsgBody =
   // `version` (optional/additive) — the daemon's package version, for the
   // status bar and bug reports.
   // `blocked` per agent entry (optional/additive): true means a prohibited
-  // subscription credential is present (an Anthropic/Gemini login, which
-  // their terms don't allow in a third-party app) — the picker shows the
+  // subscription credential is present (currently an Anthropic login) —
+  // provider-policy.ts owns that decision. The picker shows the
   // API-key fix instead of a demo or a dead badge. Old clients ignore it and
   // see `live: false`. `detail` (optional/additive): a "what's behind this
-  // row" label for a LIVE agent — its local endpoint or configured model —
-  // so a local-model user sees their setup was picked up.
+  // row" label for a LIVE agent — its local endpoint, configured model, or
+  // credential availability guidance. Gemini sign-in guidance rides here
+  // so older browser bundles also display it before the user chooses.
   // `backends` per agent entry (optional/additive): EVERY way that agent
   // could run — each detected credential (no precedence collapse) plus each
   // running local model server the agent's API dialect can drive, discovered
@@ -425,6 +520,9 @@ export type ViewportMsgBody =
       id: string;
       path: string;
       entries: FsDirEntry[];
+      // Opaque, single-use continuation of this connection/session/directory
+      // listing. Older clients still see truncated; absent means no next page.
+      continuation?: string;
       truncated?: boolean;
       error?: string;
     }
@@ -774,7 +872,7 @@ export type ClientMsg =
   // fs_list/fs_tree stay untouched beside this — the app bundle and a
   // user's daemon can be version-skewed, so the whole-tree pair is the
   // compatibility floor, never removed here.
-  | { type: "fs_listdir"; id: string; path: string }
+  | { type: "fs_listdir"; id: string; path: string; continuation?: string }
   // File drag-and-drop input: a dropped file's bytes, chunked.
   // `begin` declares a sanitized display name and the exact total size (the
   // cap check runs before any byte arrives); `chunk.data` is base64, each
@@ -791,6 +889,23 @@ export type ClientMsg =
   // the server re-caps per connection and treats the text as untrusted:
   // logged only, never broadcast, never echoed back into any surface.
   | { type: "client_error"; message: string; clientVersion?: string };
+
+/** One verified classification of a tool call's purpose (`tool_use.actions`).
+ *  `target` is the path or query the engine parsed, display-only. */
+export type ToolAction = { kind: "read" | "list" | "search"; target?: string };
+
+/** What an agent's adapter can report on the wire — honest capability
+ *  differences, declared per adapter, never assumed by shared code. */
+export type AgentCapabilities = {
+  /** The adapter forwards a running command's output as it arrives. */
+  liveOutput: boolean;
+  /** The adapter forwards the model's reasoning (`thinking_delta`). */
+  thinking: boolean;
+  /** The adapter reports task/subagent lifecycle (`task_update`). */
+  tasks: boolean;
+  /** A task's own inner calls and prose arrive under its spawn record. */
+  childActivity?: boolean;
+};
 
 /** Why remote access is off (`agents.relayOff`) — declared once here. */
 export type RelayOffReason = NonNullable<

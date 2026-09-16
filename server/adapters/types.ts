@@ -184,12 +184,85 @@ export const PERMISSION_TIMEOUT_MS = envInt("PERMISSION_TIMEOUT_MS", 60_000);
 // Agent-neutral — any adapter's tool output flows through it.
 export const OUTPUT_CAP_BYTES = envInt("TOOL_OUTPUT_CAP_BYTES", 64_000);
 
-export function capOutput(text: string): { text: string; truncatedBytes?: number } {
+/** A large result keeps its HEAD and its TAIL (Phase TF): a failing test's
+ *  verdict is at the end, a build's first error at the start. `text` is the
+ *  head — what a pre-TF client sees, with `truncatedBytes` counting every
+ *  byte past it exactly as before; `tail` is the retained trailing text and
+ *  `omittedBytes` the middle dropped between the two. A result within the
+ *  budget is exact (no tail, no counts). The counts are of bytes THIS cap
+ *  dropped — never a guess at what the engine may already have cut. */
+export type CappedOutput = {
+  text: string;
+  truncatedBytes?: number;
+  tail?: string;
+  omittedBytes?: number;
+};
+
+export function capOutput(text: string, capBytes = OUTPUT_CAP_BYTES): CappedOutput {
   const total = Buffer.byteLength(text, "utf8");
-  if (total <= OUTPUT_CAP_BYTES) return { text };
-  // Decode a byte-bounded slice; a trailing partial char becomes U+FFFD.
-  const kept = new TextDecoder().decode(Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP_BYTES));
-  return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
+  if (total <= capBytes) return { text };
+  const bytes = Buffer.from(text, "utf8");
+  const { head, tail } = splitBudget(capBytes);
+  const kept = utf8Prefix(bytes, head);
+  const keptTail = utf8Suffix(bytes, tail);
+  const headBytes = Buffer.byteLength(kept, "utf8");
+  const tailBytes = Buffer.byteLength(keptTail, "utf8");
+  return {
+    text: kept,
+    truncatedBytes: total - headBytes,
+    ...(keptTail ? { tail: keptTail } : {}),
+    omittedBytes: total - headBytes - tailBytes,
+  };
+}
+
+/** The tool_result fields a capped output maps onto — every adapter emits
+ *  results through this so the head/tail contract has one spelling. */
+export function outputFields(capped: CappedOutput): {
+  output: string;
+  truncatedBytes?: number;
+  tail?: string;
+  omittedBytes?: number;
+} {
+  return {
+    output: capped.text,
+    ...(capped.truncatedBytes !== undefined ? { truncatedBytes: capped.truncatedBytes } : {}),
+    ...(capped.tail !== undefined ? { tail: capped.tail } : {}),
+    ...(capped.omittedBytes !== undefined ? { omittedBytes: capped.omittedBytes } : {}),
+  };
+}
+
+/** Head and tail byte budgets of one cap: the head gets the odd byte. */
+export function splitBudget(capBytes: number): { head: number; tail: number } {
+  const cap = Math.max(0, Math.floor(capBytes));
+  const head = Math.ceil(cap / 2);
+  return { head, tail: cap - head };
+}
+
+/** Decode the longest complete-character UTF-8 prefix within a byte budget.
+ *  A slice must not split a character or grow back over the budget as U+FFFD. */
+export function utf8Prefix(bytes: Buffer, maxBytes: number): string {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const limit = Math.min(bytes.length, Math.max(0, maxBytes));
+  for (let end = limit; end >= Math.max(0, limit - 3); end--) {
+    try {
+      return decoder.decode(bytes.subarray(0, end));
+    } catch {
+      // A UTF-8 scalar is at most four bytes; back up to its leading byte.
+    }
+  }
+  return "";
+}
+
+/** Decode the longest complete-character UTF-8 suffix within a byte budget:
+ *  the window's leading continuation bytes (the rest of a character that
+ *  started before it) are skipped, never decoded as U+FFFD. */
+export function utf8Suffix(bytes: Buffer, maxBytes: number): string {
+  const budget = Math.min(bytes.length, Math.max(0, maxBytes));
+  if (budget === 0) return "";
+  let start = bytes.length - budget;
+  // 0b10xxxxxx marks a continuation byte; at most three lead into a scalar.
+  while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
+  return new TextDecoder().decode(bytes.subarray(start));
 }
 
 // Per-subagent narration budget — bounds what any ONE subagent's prose
@@ -240,10 +313,15 @@ export class SubagentProseBudget {
     return kept + SUBAGENT_PROSE_ELIDED(this.cap);
   }
 
-  /** Turn boundary: spawns don't outlive their turn, so the ledger resets. */
-  clear() {
-    this.used.clear();
-    this.capped.clear();
+  /** Turn boundary: the ledger resets, except for `keep` — the lanes of
+   *  children that outlive the turn (a spawn with no wait). The allowance
+   *  is per SUBAGENT, not per root turn: a fresh one every turn would let a
+   *  looping background child grow the transcript past the documented
+   *  bound, one elision marker per turn (release review 0.10.0). */
+  clear(keep?: Iterable<string>) {
+    const kept = new Set(keep ?? []);
+    for (const key of [...this.used.keys()]) if (!kept.has(key)) this.used.delete(key);
+    for (const key of [...this.capped]) if (!kept.has(key)) this.capped.delete(key);
   }
 }
 

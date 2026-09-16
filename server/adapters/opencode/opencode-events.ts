@@ -1,7 +1,9 @@
-import type { SessionMsg } from "../../protocol";
-import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "../types";
+import type { SessionMsg, ToolAction } from "../../protocol";
+import { capOutput, outputFields, toolDetail, SubagentProseBudget, type TodoItem } from "../types";
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "../render-mcp-cmd";
-import { ChecklistPainter, UnknownKindReporter, displayPath } from "../wire-helpers";
+import { ChecklistPainter, UnknownKindReporter, displayPath, inertToken } from "../wire-helpers";
+import { LiveOutput } from "../live-output";
+import { routineActions } from "../routine-actions";
 import type { OpenCodeEvent } from "./opencode-client";
 import { OPENCODE_IGNORED_PARTS, opencodeEventIgnored } from "./opencode-ledger";
 import { createLogger } from "../../log";
@@ -22,6 +24,11 @@ type PartKind = "text" | "reasoning" | "tool" | "other";
 
 type PartTrack = {
   kind: PartKind;
+  // The deck this part rides (undefined = the root). A child's parts and
+  // roles outlive the root turn they started in — a background child keeps
+  // streaming after the user starts another turn — so a root turn's reset
+  // clears only root-owned records (release review, 0.10.0).
+  lane?: string;
   // Characters already sent as deltas — the final part snapshot repeats the
   // full text, so emission is always "the suffix beyond this mark". Handles
   // both live streams (delta events) and buffered parts (snapshot only).
@@ -45,7 +52,7 @@ export class OpenCodeEventMapper {
   // prompt — guidance prefix included — replays into the transcript as
   // text_delta. message.updated always precedes a message's parts (live
   // captures), so an unknown role is treated as assistant.
-  private roles = new Map<string, string>();
+  private roles = new Map<string, { role: string; lane?: string }>();
   // Per assistant message, latest token/cost report — summed at idle into the
   // turn's one `usage`. Cleared each startTurn so only this turn counts.
   private turnUsage = new Map<string, TurnTokens>();
@@ -67,6 +74,18 @@ export class OpenCodeEventMapper {
   private sessionParents = new Map<string, string>();
   private spawnParts = new Map<string, string>();
   private subagentProse = new SubagentProseBudget();
+  // A running tool's republished `metadata.output` (the bash tool's whole
+  // output so far, verified in the 1.18.29 binary — TF0.3) becomes bounded
+  // replacement snapshots; `replace` forwards only the new suffix.
+  private readonly live: LiveOutput;
+  // Spawn part id → the engine's own description of the task, repeated on
+  // every update (replay keeps only the newest). Session-lifetime, like the
+  // lane maps, and bounded by the same insert-time cap.
+  private taskIdentity = new Map<string, { label?: string; agentType?: string }>();
+  // Spawn part ids whose child runs in the background: their completion is
+  // the child's own idle, never the launcher's settlement. Session-lifetime
+  // like the lane maps, bounded the same way.
+  private backgroundTasks = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -96,6 +115,7 @@ export class OpenCodeEventMapper {
   ) {
     this.unknown = new UnknownKindReporter(options.emit, "OpenCode", (m) => log.warn(m));
     this.checklist = new ChecklistPainter(options.emit);
+    this.live = new LiveOutput({ emit: options.emit });
   }
 
   startTurn() {
@@ -105,12 +125,31 @@ export class OpenCodeEventMapper {
     // the maps otherwise grow unboundedly over a long session, but a
     // straggler snapshot arriving just after idle must
     // still find its track — a fresh default would re-emit its whole text.
-    this.parts.clear();
-    this.roles.clear();
-    // The narration budget is turn-scoped; the lane's session-edge maps are
+    // Root-owned records only: a background child's parts and roles stay
+    // past its terminal word, or its next snapshot would re-announce an
+    // already-announced row and its prompt echo would replay as narration.
+    // A settled child's records go at THIS boundary — the same straggler
+    // rule the root's records get (a final snapshot can trail the idle).
+    for (const [id, track] of [...this.parts]) {
+      if (track.lane === undefined || this.settledLanes.has(track.lane)) this.parts.delete(id);
+    }
+    for (const [id, entry] of [...this.roles]) {
+      if (entry.lane === undefined || this.settledLanes.has(entry.lane)) this.roles.delete(id);
+    }
+    // The narration allowance is per SUBAGENT: a lane whose child is still
+    // busy or announced as background keeps its used budget across root
+    // turns (a fresh one every turn would let a looping child grow the
+    // transcript past the documented bound); a settled lane releases it at
+    // this boundary, with its records. The lane's session-edge maps are
     // deliberately NOT cleared here — see their declaration (a background
     // child outlives its turn and must stay routable).
-    this.subagentProse.clear();
+    const keep = new Set<string>([
+      ...[...this.busyByLane].flatMap(([lane, busy]) => (busy.size > 0 ? [lane] : [])),
+      ...[...this.backgroundTasks].filter((lane) => !this.settledLanes.has(lane)),
+    ]);
+    this.settledLanes.clear();
+    this.recount();
+    this.subagentProse.clear(keep);
   }
 
   /** Which lane a session's traffic belongs to: "root" for the session this
@@ -133,6 +172,8 @@ export class OpenCodeEventMapper {
   endTurn() {
     this.checklist.reset();
     this.lastStatus = undefined;
+    // A background child's running call outlives the root turn (round 3).
+    this.live.clear({ keepChildren: true });
   }
 
   handle(event: OpenCodeEvent) {
@@ -147,10 +188,26 @@ export class OpenCodeEventMapper {
       case "message.part.delta":
         this.onPartDelta(p);
         break;
-      case "session.status":
-        if (this.options.isOurs(p["sessionID"]) && this.statusType(p) === "busy")
-          this.status("thinking");
+      case "session.status": {
+        if (this.options.isOurs(p["sessionID"])) {
+          if (this.statusType(p) === "busy") this.status("thinking");
+          break;
+        }
+        // A CHILD session going busy is that task running, in the engine's
+        // own words (TF2.5); its completion is the task part's settlement.
+        if (this.statusType(p) === "busy") {
+          const lane = this.laneOf(p["sessionID"]);
+          if (lane && lane !== "root") {
+            // A lane whose task had settled and runs again (a descendant
+            // going busy after the child idled) must complete again on its
+            // last idle: it re-enters the idle-completes set (round 6).
+            if (this.settledOnce.has(lane)) this.backgroundTasks.add(lane);
+            this.noteLaneSession(lane, String(p["sessionID"]), true);
+            this.emitTask(lane, "running");
+          }
+        }
         break;
+      }
       case "todo.updated":
         if (this.options.isOurs(p["sessionID"])) this.onTodos(p["todos"]);
         break;
@@ -192,14 +249,38 @@ export class OpenCodeEventMapper {
         // `sessionID` can be absent on transport-level errors; treat those as
         // ours rather than swallow them. A KNOWN child's error is NOT the
         // root turn's death — it surfaces honestly as the spawn part's error
-        // result on the parent stream.
-        if (p["sessionID"] !== undefined && !this.options.isOurs(p["sessionID"])) break;
+        // result on the parent stream, and as that task failing (TF2.5).
+        if (p["sessionID"] !== undefined && !this.options.isOurs(p["sessionID"])) {
+          const lane = this.laneOf(p["sessionID"]);
+          if (lane && lane !== "root") {
+            // Terminal: a later idle must not read the failure as success
+            // (round 3).
+            this.backgroundTasks.delete(lane);
+            this.noteLaneSession(lane, String(p["sessionID"]), false);
+            this.emitTask(lane, "failed", capOutput(sessionErrorText(p)));
+          }
+          break;
+        }
         this.options.emit({ type: "error", message: `OpenCode error: ${sessionErrorText(p)}` });
         this.options.endTurn();
         break;
       }
-      case "session.idle":
-        if (!this.options.isOurs(p["sessionID"])) break;
+      case "session.idle": {
+        if (!this.options.isOurs(p["sessionID"])) {
+          // A BACKGROUND child's launcher part settled long ago; the child's
+          // own idle is the engine's word that its work finished (PR #120
+          // review round 2).
+          const lane = this.laneOf(p["sessionID"]);
+          if (lane && lane !== "root") this.noteLaneSession(lane, String(p["sessionID"]), false);
+          // The lane is done only when nothing routed to it is still busy: a
+          // child idling while its grandchild works is not the task
+          // finishing (round 10); the last descendant's idle completes it.
+          if (lane && lane !== "root" && this.backgroundTasks.has(lane) && (this.busyByLane.get(lane)?.size ?? 0) === 0) {
+            this.backgroundTasks.delete(lane);
+            this.emitTask(lane, "completed");
+          }
+          break;
+        }
         // The session decides whether THIS idle ends the active turn — a
         // stale idle from an interrupt-abandoned turn must not end the next
         // one, and usage flushes inside the end path so it can never land
@@ -207,6 +288,7 @@ export class OpenCodeEventMapper {
         // the fleet status "working").
         this.options.onEngineIdle();
         break;
+      }
       default:
         if (!opencodeEventIgnored(event.type)) this.unknown.report("event", event.type);
     }
@@ -233,8 +315,16 @@ export class OpenCodeEventMapper {
     // Roles are tracked for CHILD messages too: a child's user-role
     // message is the task prompt, and its parts must never replay as the
     // subagent's own narration — the same echo rule the root obeys.
-    if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
-      this.roles.set(String(info["id"]), info["role"]);
+    // Root and child records are capped separately: retained child records
+    // must never exhaust a root turn's own allowance (release review).
+    if (typeof info["role"] === "string" && !this.roles.has(String(info["id"]))) {
+      const child = lane !== "root";
+      if ((child ? this.childRoles : this.rootRoles) < MAX_PARTS_PER_TURN) {
+        this.roles.set(String(info["id"]), { role: info["role"], ...(child ? { lane } : {}) });
+        if (child) this.childRoles++;
+        else this.rootRoles++;
+      }
+    }
     // Usage and model stay the ROOT conversation's: the status bar counts
     // the session's own context weight.
     if (lane !== "root") return;
@@ -284,14 +374,65 @@ export class OpenCodeEventMapper {
   // cap a new part is dropped — its text isn't relayed; a real turn never
   // approaches this, so only a flood degrades, and to silence, never to a
   // corrupt shared counter.
-  private track(partID: string, kind: PartKind): PartTrack | undefined {
+  private track(partID: string, kind: PartKind, lane?: string): PartTrack | undefined {
     let track = this.parts.get(partID);
     if (!track) {
-      if (this.parts.size >= MAX_PARTS_PER_TURN) return undefined;
-      track = { kind, emitted: 0 };
+      // Root and child parts are capped separately (see onMessage).
+      if ((lane ? this.childParts : this.rootParts) >= MAX_PARTS_PER_TURN) return undefined;
+      track = { kind, emitted: 0, ...(lane ? { lane } : {}) };
       this.parts.set(partID, track);
+      if (lane) this.childParts++;
+      else this.rootParts++;
     }
     return track;
+  }
+
+  // Root-owned vs child-owned record counts, so each side keeps its own
+  // allowance; recounted at every root-turn boundary.
+  private rootParts = 0;
+  private childParts = 0;
+  private rootRoles = 0;
+  private childRoles = 0;
+  private recount() {
+    this.rootParts = 0;
+    this.childParts = 0;
+    for (const track of this.parts.values()) track.lane === undefined ? this.rootParts++ : this.childParts++;
+    this.rootRoles = 0;
+    this.childRoles = 0;
+    for (const entry of this.roles.values()) entry.lane === undefined ? this.rootRoles++ : this.childRoles++;
+  }
+
+  // Lanes the engine has settled; their records are released at the next
+  // root-turn boundary, not on the spot — a final snapshot can trail the
+  // terminal word, and treating it as new would re-announce the row. A lane
+  // with a descendant session still busy (a grandchild routes to its nearest
+  // stream-visible ancestor's deck) is not settled until that descendant
+  // goes quiet too (PR #125 round 5).
+  private settledLanes = new Set<string>();
+  private settleWanted = new Set<string>();
+  private busyByLane = new Map<string, Set<string>>();
+  private noteLaneSession(lane: string, sessionID: string, busy: boolean) {
+    let set = this.busyByLane.get(lane);
+    if (busy) {
+      if (!set) this.busyByLane.set(lane, (set = new Set()));
+      if (set.size < MAX_PARTS_PER_TURN) set.add(sessionID);
+      this.settledLanes.delete(lane);
+      return;
+    }
+    if (!set) return;
+    set.delete(sessionID);
+    if (set.size === 0) {
+      this.busyByLane.delete(lane);
+      if (this.settleWanted.delete(lane)) this.settledLanes.add(lane);
+    }
+  }
+  // Lanes whose task settled at least once: busy again later (even after a
+  // root turn consumed the settled marker) means idle completes it again.
+  private settledOnce = new Set<string>();
+  private forgetLane(lane: string) {
+    if (this.settledOnce.size < MAX_PARTS_PER_TURN) this.settledOnce.add(lane);
+    if ((this.busyByLane.get(lane)?.size ?? 0) > 0) this.settleWanted.add(lane);
+    else this.settledLanes.add(lane);
   }
 
   private onPartSnapshot(p: Record<string, unknown>) {
@@ -302,7 +443,7 @@ export class OpenCodeEventMapper {
     const parentId = lane === "root" ? undefined : lane;
     const partID = String(part["id"]);
     const type = String(part["type"]);
-    const fromUser = this.roles.get(String(part["messageID"])) === "user";
+    const fromUser = this.roles.get(String(part["messageID"]))?.role === "user";
     switch (type) {
       case "step-start":
         // A child's step boundaries never steer the root activity line.
@@ -310,14 +451,14 @@ export class OpenCodeEventMapper {
         break;
       case "text": {
         if (fromUser) break; // the prompt's own echo — never replayed as output
-        const track = this.track(partID, "text");
+        const track = this.track(partID, "text", parentId);
         if (track) this.emitTextSuffix(track, String(part["text"] ?? ""), parentId);
         break;
       }
       case "reasoning": {
         if (fromUser) break;
         if (!parentId) this.status("thinking");
-        const track = this.track(partID, "reasoning");
+        const track = this.track(partID, "reasoning", parentId);
         if (!track) break;
         // A delta that beat this snapshot registered the part as "text";
         // the snapshot is authoritative — correct the lane for the rest of
@@ -339,10 +480,10 @@ export class OpenCodeEventMapper {
     if (lane === undefined) return;
     const parentId = lane === "root" ? undefined : lane;
     if (p["field"] !== "text") return;
-    if (this.roles.get(String(p["messageID"])) === "user") return;
+    if (this.roles.get(String(p["messageID"]))?.role === "user") return;
     // Deltas can beat the part's first snapshot; an unknown part defaults to
     // text (reasoning parts snapshot before streaming in the live capture).
-    const track = this.track(String(p["partID"]), "text");
+    const track = this.track(String(p["partID"]), "text", parentId);
     const delta = String(p["delta"] ?? "");
     if (!track || !delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
@@ -371,7 +512,7 @@ export class OpenCodeEventMapper {
   }
 
   private onToolPart(partID: string, part: Record<string, unknown>, parentId?: string) {
-    const track = this.track(partID, "tool");
+    const track = this.track(partID, "tool", parentId);
     if (!track) return;
     track.kind = "tool";
     const tool = String(part["tool"] ?? "");
@@ -406,33 +547,91 @@ export class OpenCodeEventMapper {
     }
     const presented = presentOpenCodeTool(tool, input, this.options.workspaceDir);
     if (status === "running" || status === "completed" || status === "error")
-      this.announceTool(track, partID, presented.tool, presented.input, parentId);
+      this.announceTool(track, partID, presented.tool, presented.input, parentId, routineActions("opencode", tool, input));
     if (track.finished) return;
+    const meta = (state["metadata"] ?? {}) as Record<string, unknown>;
+    const isTask = !parentId && typeof meta["sessionId"] === "string";
+    // A `background: true` task part is only the LAUNCHER: its settlement
+    // says the child was started, not that it finished (the OC.3 fixture
+    // shows child asks and prose long after `started in background`).
+    const background = isTask && meta["background"] === true;
+    if (background && this.backgroundTasks.size < MAX_PARTS_PER_TURN) this.backgroundTasks.add(partID);
+    if (status === "running") {
+      // The bash tool republishes its whole output so far as it runs.
+      if (typeof meta["output"] === "string") this.live.replace(partID, meta["output"], parentId);
+      if (isTask) this.emitTask(partID, "running", undefined, input);
+      return;
+    }
     if (status === "completed") {
       track.finished = true;
-      const { text, truncatedBytes } = capOutput(String(state["output"] ?? ""));
+      this.live.settle(partID);
+      const capped = capOutput(String(state["output"] ?? ""));
       this.options.emit({
         type: "tool_result",
-        output: text,
+        ...outputFields(capped),
         id: partID,
-        ...(truncatedBytes ? { truncatedBytes } : {}),
         ...(parentId ? { parentId } : {}),
       });
+      if (isTask && !background) this.emitTask(partID, "completed", capped, input);
+      else if (background) this.emitTask(partID, "running", undefined, input);
     } else if (status === "error") {
       track.finished = true;
+      this.live.settle(partID);
       // Error text is engine/tool output too — same honest cap as success
       // (ADAPTERS.md: EVERY tool output passes capOutput — an uncapped error
-      // string would land whole in the replay ring).
-      const { text, truncatedBytes } = capOutput(String(state["error"] ?? "tool failed"));
+      // string would land whole in the replay ring). An interrupted tool
+      // keeps the output it had produced (the engine stores it on the error
+      // state's metadata) ahead of the error text.
+      const error = String(state["error"] ?? "tool failed");
+      const interrupted = meta["interrupted"] === true;
+      const observed = interrupted && typeof meta["output"] === "string" && meta["output"] ? `${meta["output"]}\n` : "";
+      const capped = capOutput(observed + error);
       this.options.emit({
         type: "tool_result",
-        output: text,
+        ...outputFields(capped),
         isError: true,
         id: partID,
-        ...(truncatedBytes ? { truncatedBytes } : {}),
         ...(parentId ? { parentId } : {}),
       });
+      // A task the user stopped is interrupted, not failed (PR #120 review).
+      if (isTask) {
+        this.backgroundTasks.delete(partID);
+        this.emitTask(partID, interrupted ? "interrupted" : "failed", capped, input);
+      }
     }
+  }
+
+  /** A task's lifecycle on its spawn part (TF2.5): the engine's own word —
+   *  a child session busy, the task part settling — never inferred from the
+   *  parent turn. The report is the part's own output, bounded. */
+  private emitTask(
+    id: string,
+    state: Extract<SessionMsg, { type: "task_update" }>["state"],
+    report?: ReturnType<typeof capOutput>,
+    input?: Record<string, unknown>,
+  ) {
+    if (input && !this.taskIdentity.has(id) && this.taskIdentity.size < MAX_PARTS_PER_TURN) {
+      const label = typeof input["description"] === "string" && input["description"] ? inertToken(input["description"], 200) : undefined;
+      const agentType = typeof input["subagent_type"] === "string" && input["subagent_type"] ? inertToken(input["subagent_type"], 64) : undefined;
+      if (label || agentType) this.taskIdentity.set(id, { label, agentType });
+    }
+    const identity = this.taskIdentity.get(id);
+    this.options.emit({
+      type: "task_update",
+      id,
+      state,
+      ...(identity?.label ? { label: identity.label } : {}),
+      ...(identity?.agentType ? { agentType: identity.agentType } : {}),
+      ...(report?.text ? { report: report.text } : {}),
+      ...(report?.tail !== undefined ? { reportTail: report.tail } : {}),
+      ...(report?.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
+    });
+    // The engine's terminal word on the child releases what it owned — at
+    // the next root-turn boundary; running again before then keeps it.
+    if (state === "running") {
+      this.settledLanes.delete(id);
+      this.settleWanted.delete(id);
+    } else if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
   }
 
   private announceTool(
@@ -441,6 +640,7 @@ export class OpenCodeEventMapper {
     tool: string,
     input: Record<string, unknown>,
     parentId?: string,
+    actions?: ToolAction[],
   ) {
     if (track.announced) return;
     track.announced = true;
@@ -453,6 +653,7 @@ export class OpenCodeEventMapper {
       id: partID,
       input,
       ...(parentId ? { parentId } : {}),
+      ...(actions ? { actions } : {}),
     });
   }
 
@@ -487,13 +688,11 @@ export class OpenCodeEventMapper {
     // An unknown render tool or a failed call: fall back to the honest tool
     // record rather than silently dropping what the agent did.
     this.announceTool(track, partID, tool, input);
-    const { text, truncatedBytes } = capOutput(String(state["error"] ?? state["output"] ?? ""));
     this.options.emit({
       type: "tool_result",
-      output: text,
+      ...outputFields(capOutput(String(state["error"] ?? state["output"] ?? ""))),
       ...(status === "error" ? { isError: true as const } : {}),
       id: partID,
-      ...(truncatedBytes ? { truncatedBytes } : {}),
     });
   }
 

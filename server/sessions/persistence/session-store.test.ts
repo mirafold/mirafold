@@ -251,6 +251,19 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "bang_start", command: "echo ok", id: "b1", silent: true },
     { type: "bang_output", data: "ok\n", id: "b1" },
     { type: "bang_end", id: "b1", exitCode: 0 },
+    // Phase TF: the additive display facts, the replacement snapshot, and
+    // the task lifecycle all persist — a reverted schema would strip a
+    // reload's exit codes, tails, and task states.
+    { type: "tool_use", name: "Shell", detail: "rg foo", id: "t2", input: { command: "rg foo" }, actions: [{ kind: "search", target: "foo" }] },
+    { type: "tool_update", id: "t2", elapsedMs: 1200 },
+    // PR #122: a background child's patch snapshot carries its parentage; a
+    // schema without the field made the registry drop the whole frame.
+    { type: "tool_update", id: "t2", detail: "Updated a.ts", input: { changes: [] }, parentId: "t1" },
+    { type: "tool_output_snapshot", id: "t2", revision: 4, head: "a\n", tail: "z\n", omittedBytes: 99, parentId: "t1" },
+    { type: "tool_result", output: "head", id: "t2", tail: "tail", omittedBytes: 12, exitCode: 1, durationMs: 40 },
+    { type: "task_update", id: "t1", state: "completed", label: "find auth", agentType: "Explore", action: "Grep", report: "done", reportTail: "…", reportOmittedBytes: 1, elapsedMs: 3000, parentId: "t0" },
+    { type: "task_update", id: "t3", state: "running", label: "again", attempt: 2 },
+    { type: "tool_use", name: "Bash", id: "t4", parentId: "t3", attempt: 2 },
   ];
   stored.buffer = bodies.map((body, index) => ({ ...body, seq: index + 1 }) as SessionMsg);
   stored.nextSeq = stored.buffer.length + 1;

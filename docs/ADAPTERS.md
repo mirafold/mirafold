@@ -9,7 +9,7 @@ human or agent, on any model — can extend the provider surface without
 re-deriving the architecture or violating an invariant that only lived in
 someone's head.
 
-Grounded in the shipped code through 2026-08-25 (four providers —
+Grounded in the shipped code through 2026-09-15 (four providers —
 `claude-code`, `codex`, `gemini-cli`, `opencode` — plus `mock`). File
 references are the source of truth if this document and the code ever disagree
 — then fix this document.
@@ -54,13 +54,18 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
 - **I4 — Provider-native transcript fidelity.** Forward the provider state its
   own terminal makes useful (thinking, tool arguments/results, diffs,
   subagent progress, usage), but do not turn raw adapter/SDK churn into extra
-  top-level transcript. The client keeps in-flight work and failures visible,
-  then folds only contiguous runs of a settled turn's successful tool activity
-  into expandable records with the complete normalized details. A failure,
-  in-flight call, batch change, or non-tool transcript row is a hard boundary,
-  so compaction never changes chronology. A subagent's text/thinking
-  monologue remains dropped while its **tool calls** carry `parentId`, matching
-  terminals that do not interleave subagent prose into the main transcript.
+  top-level transcript. The client keeps every message, every command, every
+  edit, every failure, and every in-flight call visible as its own row, and
+  groups only contiguous runs of **routine** work — reads, listings, and
+  searches the ENGINE classified as such (`tool_use.actions`), completed
+  without error or a nonzero exit — into one expandable record with the
+  complete retained details in original order (Phase TF, R2). Prose of any
+  length or phase is a boundary, never absorbed; a failure can never
+  disappear into a success group; a batch (turn) change is a boundary too.
+  Reasoning is collapsed from its first delta and reachable on demand (R1).
+  A subagent's text/thinking rides its deck via `parentId` (Phase SA) and its
+  lifecycle rides `task_update` (Phase TF, R4) — a finished spawn, wait, or
+  poll call is never read as the child finishing.
 - **I5 — Wire discipline.** Adapters only ever ADD to what travels on existing
   message types; existing `WireMsg` shapes never change. Adding a provider adds
   one value to the `AgentName` union — an additive wire change, allowed.
@@ -72,8 +77,8 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
   endpoint is revalidated against the current probe cache and receives neither
   real Anthropic credential variable. A configured Claude destination receives
   only the header-credential mode explicitly bound to that exact endpoint.
-- **I7 — Agent-neutral shared code.** `protocol.ts`, `registry.ts`,
-  `permissions.ts` posture, `capOutput`, `toolDetail`, the render-tool schemas,
+- **I7 — Agent-neutral shared code.** `protocol.ts`, `sessions/registry.ts`,
+  the `security/permissions.ts` posture, `capOutput`, `toolDetail`, the render-tool schemas,
   and everything in `web/` must compile and behave identically with any
   adapter. If a provider needs a branch in shared code, the design is wrong —
   put the behavior in the adapter.
@@ -83,7 +88,7 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
 ```ts
 interface AgentSession {
   pushPrompt(text: string): void;
-  onMessage(cb: (msg: WireMsg) => void): void;
+  onMessage(cb: (msg: SessionMsg) => void): void; // SessionMsg: the session-scoped subset of WireMsg
   interrupt(): void;
   resolvePermission(id: string, allow: boolean): void;
   readonly modelName: string | undefined;
@@ -106,7 +111,7 @@ contract each implementation must satisfy:
 
 **Construction** — takes `{ workspaceDir, model?, resumeId? }` plus whatever
 backend binding the provider needs (Claude: `kind`, `endpoint`, `endpointAuth`;
-Codex: `provider`; see the concrete constructors). `workspaceDir`
+Codex: `kind`, `endpoint`, `provider`; see the concrete constructors). `workspaceDir`
 is the session's real working directory (registry-owned; already validated).
 `model` is the per-agent override from `modelFor()`; `undefined` means inherit
 the agent's own default (I2). `resumeId`, when present, must reopen that exact
@@ -149,9 +154,13 @@ every adapter must honor:
    events the provider surfaces (retry / compaction / rate-limit / refusal).
    `tool_result` may only be emitted for an `id` previously
    announced by a `tool_use`; results for unannounced ids are dropped.
-   Every tool output passes through `capOutput()` (honest, byte-based
-   truncation with `truncatedBytes` reported — never a silent cut) and every
-   `tool_use.detail` through `toolDetail()` (both in `adapters/types.ts`).
+   Every tool output passes through `capOutput()` and is spelled onto the
+   result by `outputFields()` — the head as `output`, plus `tail`,
+   `omittedBytes`, and `truncatedBytes` (honest, byte-based, never a silent
+   cut) — and every `tool_use.detail` through `toolDetail()` (all in
+   `adapters/types.ts`). `exitCode` and `durationMs` ride the result
+   independently of `isError`: a command that ran and exited nonzero is a
+   completed row with its exit annotated, not an error.
 3. Turn end: `usage` (if the provider reports tokens) then **always**
    `turn_end` — including on provider errors (emit `error` first, then
    `turn_end`). A turn that ends without `turn_end` wedges the client's busy
@@ -167,7 +176,7 @@ conversation identity, never a Mirafold-only surrogate. A restored adapter may
 return the supplied id immediately. A new adapter whose id is not resumable
 until engine initialization returns `undefined` first and invokes
 `onResumeId` at the exact readiness event (Claude system/init, Codex
-thread.started, Gemini's first valid stream event). The registry checkpoints
+`thread/started`, Gemini's first valid stream event). The registry checkpoints
 that event synchronously; a later arbitrary tool/text message is not a safe
 substitute.
 
@@ -189,17 +198,22 @@ The registry drops an entire option containing line, direction, or invisible
 display controls rather than rewriting the command value.
 
 **`interrupt()`** — halt the in-flight turn using the provider's own mechanism
-(Claude SDK `interrupt()`, Codex `AbortController`, Gemini child-process kill);
-the session stays warm for the next prompt. Any pending permission requests
+(Claude SDK `interrupt()`; Codex a `turn/interrupt` request with a process
+kill if the turn has not ended within `MIRAFOLD_CODEX_INTERRUPT_GRACE_MS`,
+5 s; OpenCode `POST /session/:id/abort` with the same kind of grace,
+`MIRAFOLD_OPENCODE_INTERRUPT_GRACE_MS`; Gemini child-process kill); the
+session stays warm for the next prompt. Any pending permission requests
 are denied. Must be a no-op when idle.
 
 **`resolvePermission(id, allow)`** — completes a previously emitted
 `permission_request`. Only meaningful for providers whose engine exposes an
-approval surface (today: the Claude Agent SDK via `canUseTool`, OpenCode via
-`permission.asked`, and Gemini's one-time workspace-trust ask); others make
-this a no-op (I3). Deny is the default posture on timeout
-(`PERMISSION_TIMEOUT_MS`, default 60 s; Gemini's trust ask uses its own longer
-`TRUST_PROMPT_TIMEOUT_MS`), disconnect, and interrupt. An
+approval surface (today: the Claude Agent SDK via `canUseTool`, Codex via its
+app-server `item/*/requestApproval` requests, OpenCode via
+`permission.asked`, plus the one-time workspace-trust ask Codex and Gemini
+raise before their first spawn); Gemini's headless stream has no approval
+surface, so there it is a no-op (I3). Deny is the default posture on timeout
+(`PERMISSION_TIMEOUT_MS`, default 60 s; the trust asks use their own longer
+`TRUST_PROMPT_TIMEOUT_MS`, 5 min), disconnect, and interrupt. An
 adapter that emits `permission_request` MUST also emit `permission_resolved
 { id, allow }` for EVERY resolution path — answer, timeout, interrupt — so
 every attached viewport drops its bar the moment the ask dies instead of
@@ -264,15 +278,17 @@ them. The rules, for the next adapter author:
 | Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` + `/agent` (build/plan/custom) + the engine's own `/command` catalog (badged `source:"opencode"`) | implemented `/model` | scripted supported catalog |
 | Text streaming granularity | token-level (`includePartialMessages`) | token-level (`item/agentMessage/delta`), held only from a code fence on so a hand-written chart still converts | token-level: a true delta channel (`message.part.delta`) plus snapshot accrual | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ✅ (`reasoning` parts) | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
-| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; error output capped by `capOutput` like success) | ✅ | ✅ |
-| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ⚠ partial (TS.9): collab calls (`spawn_agent`/`wait`/`send_message`…) are engine-named rows carrying the prompt and each child's state; a child's lifecycle (`subAgentActivity`) narrates under its spawn row via `parentId`; the child's INNER calls and prose still need per-thread `app-server` subscriptions the adapter does not open | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
+| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs; `Read`/`Glob`/`Grep`/`LS`/`NotebookRead` classify as routine by exact name (`actions`) | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` WITHOUT an exit code maps to `isError` — a command that ran keeps `isError: false` and carries its own `exitCode` and `durationMs` as facts, badged "exit N" on the row, matching the Codex TUI; the engine's parsed `commandActions` classify a command as routine only when EVERY action is a read/listing/search) | ✅ (tool parts; built-in `write`/`edit` normalize to the shared `Write` code painter / `Edit` diff painter with workspace-relative paths; `read`/`glob`/`list`/`grep` classify by exact name; error output capped by `capOutput` like success; an interrupted tool keeps its observed output ahead of the error) | ✅ (`read_file`/`read_many_files`/`glob`/`list_directory`/`grep_search` classify by exact name; no exit codes or durations exist on the headless stream) | ✅ |
+| Live output of a running call (`tool_output_delta` + `tool_output_snapshot`; Phase TF R7) | ❌ the SDK streams no tool stdout — `tool_progress` carries elapsed seconds only, forwarded as `tool_update.elapsedMs`, never shown as output | ✅ `item/commandExecution/outputDelta`, plus `item/mcpToolCall/progress` lines and the agent's own `terminalInteraction` stdin (marked `‹stdin›`) — through the shared bounded `LiveOutput` accumulator | ✅ the bash tool's running `metadata.output` (the whole output so far, verified in 1.18.29) → suffix-only forwarding as replacement snapshots | ❌ absent on the headless stream (`capabilities.liveOutput: false` — the row says "live output unavailable" instead of implying silence means nothing happened) | ✅ scripted snapshots |
+| Task lifecycle (`task_update`; Phase TF R4) | ✅ `task_started`/`task_progress`/`task_notification`/`task_updated` on the spawn's `tool_use_id` (a task the SDK ties to no call gets a task-scoped anchor; `skip_transcript` tasks stay hidden); `TaskOutput`/`TaskStop` are ordinary rows with inspectable results | ✅ a spawn's child is `running` from `item/started`; every `agentsStates` entry (spawn, wait, send…) updates the same anchor with the FULL message as the report; `subAgentActivity` kinds map to running/completed/interrupted | ✅ the task part's lifecycle: child `session.status busy` → running; the part settling → completed (report = its output) / failed; a child `session.error` → failed | ❌ no task lane | ✅ scripted |
+| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed. Verified live 2026-09-15 (SDK 0.3.201): `task_started.tool_use_id` IS the Agent call's id and child frames carry it as `parent_tool_use_id` | ✅ full lane (verified live 2026-09-15, app-server 0.153.4, `multi_agent` stable): a spawn surfaces as `subAgentActivity started` (no collab spawn item in this version), which anchors the child on an opaque `codex-agent:<thread>` handle; the child thread's own items — reasoning, prose, commands with `commandActions`/`exitCode` — arrive on the PARENT connection under the child's thread id and ride the lane via `parentId`; its final `agentMessage` is the task's report (retained already capped, released at the engine's terminal word); the parent's `wait` collab call is its own row. Collab calls that DO name receivers keep their collab anchor. A child's `turn/completed` never ends the parent's turn, and a child that outlives the parent's turn (a spawn with no wait) keeps riding the lane until its own completion settles the task. A child's render, image, dynamic-tool, and sleep calls are honest parented records — never a painting; a child's own spawn adopts the grandchild under the same deck (the nearest visible ancestor) with no deck of its own; past a per-session child-item cap further child items are dropped whole and said so once, never promoted to root output; a child's typed stdin, MCP progress, and patch snapshots ride its running rows; a child's approval ask carries its deck's `parentId` and survives the root turn's end (its own timeout bounds it); a child's terminal word flushes its streaming rows first and settles any row it never finished with an honest `(interrupted)` result; a child turn that ends `failed` is a failed task carrying the engine's capped diagnostic (the activity item's later "completed" does not undo it); an app-server exit gives every preserved child a terminal `interrupted` word and denies its open ask; a child's written plan is commentary in its lane; the synthetic anchor is bounded to the checkpoint id budget; nothing is emitted after `close()`. Shared rules for every adapter with background children: subagent traffic after the root `turn_end` never re-marks the session busy/working in either reducer, a subagent-attributed ask survives the root `turn_end` on screen and in the fleet mirror, and `tool_update` carries `parentId` for a child's row (PR #122 review) | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
 | Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ✅ full round-trip: `item/*/requestApproval` → the bar → `{decision}` / granted profile; fail-closed on timeout/close; PLUS a folder-trust ask before the first `thread/start` | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only the injected render-server entry carries `trust: true` | ✅ (`dangerous` keyword) |
-| Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |
+| Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ one `usage` per turn from `thread/tokenUsage/updated` (the delta of the thread totals; output = `outputTokens` + `reasoningOutputTokens`; no cached-token field is read) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |
 | Interrupt | SDK `interrupt()` | `turn/interrupt`; discovered-local turns also use it at the configurable eight-minute outer deadline | `POST /session/:id/abort`; the grace deadline starts independently of that finite HTTP call. If idle misses the deadline, fork the conversation to a new engine-session id before the next prompt so a late old idle cannot end it; bounded fork failure degrades to a disclosed fresh session | kill child process | clear timers |
 | Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | required subprocess stdio MCP via `-c mcp_servers.*` on the app-server spawn (`render-mcp.ts`); `thread/start` rejects before inference on failure | subprocess stdio MCP via the **`OPENCODE_CONFIG_CONTENT` env var** (additive merge; no file the user owns is read, written, or created); startup waits for `GET /mcp` to report it connected | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
 | Model override env | `DEFAULT_MODEL` | `CODEX_MODEL` | `OPENCODE_MODEL` (`provider/model`; a bare id can't name a provider so it pins nothing) | `GEMINI_MODEL` | — |
-| Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL` | `OPENAI_API_KEY` \|\| `$CODEX_HOME/auth.json` (ChatGPT login) | binary present: a stored `auth.json` → `api-key`, else the free Zen gateway → `gateway`; the TRUE per-provider kind is classified at session start from the running engine's catalog | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` (individual-account Google login stopped serving Gemini CLI requests in 2026) | none → mock is the fallback for every agent |
+| Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL`; a `~/.claude/.credentials.json` login is detected only so the picker can name the fix — provider policy blocks it | in order: a non-`openai` default `model_provider` in `$CODEX_HOME/config.toml` → `local`; `OPENAI_API_KEY` → `api-key`; `$CODEX_HOME/auth.json` (ChatGPT login) → `subscription` | binary present: a stored `auth.json` → `api-key`, else the free Zen gateway → `gateway`; the TRUE per-provider kind is classified at session start from the running engine's catalog | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` \|\| `$GEMINI_CLI_HOME/.gemini/oauth_creds.json` (home prefix defaults to the user home; existence only, native CLI checks account access) | none → mock is the fallback for every agent |
 
 Known asymmetries, accepted deliberately (each is I3 at work, not debt):
 Gemini has no thinking stream, pays a process spawn per turn, and its
@@ -299,7 +315,7 @@ adapter event-delivery stall. Ollama was pre-filling the full Codex prompt on
 CPU, then Qwen was generating a long reasoning item, held until completion. `CodexSession` therefore preserves the user's reasoning
 default, exposes the Codex/Ollama-proven `none` extension only on a discovered
 local endpoint, and places an eight-minute outer bound around those turns. The
-bound aborts through the same `AbortController` as an interrupt and emits one
+bound goes through the same `interrupt()` path as a user stop and emits one
 actionable error before the required single `turn_end`; configured providers
 and first-party sessions receive neither override nor deadline. The deadline
 is `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (`0` disables it).
@@ -372,27 +388,63 @@ duplicate raw row. A failed or unsynthesizable render call is still engine
 activity: every adapter falls back to an ordinary `tool_use` + error/result
 row so the attempted action and failure cannot disappear.
 
-**Narration is not the answer (TS.8).** `text_delta.phase` (additive)
-carries the engine's own classification of its prose: Codex declares every
-message `commentary` (interim narration — 7 of 8 of its messages) or
-`final_answer`. The browser treats commentary as narration — it folds into
-the turn's activity record when tools follow it and is drawn dim when
-nothing does — and gives the final answer its own full-weight row; engines
-that declare nothing fall back to the length heuristic. Codex's written
-`plan` streams as commentary too.
+**Narration is not the answer (TS.8, revised by Phase TF R1).**
+`text_delta.phase` (additive) carries the engine's own classification of its
+prose: Codex declares every message `commentary` (interim narration — 7 of 8
+of its messages) or `final_answer`. The browser keeps BOTH as readable rows
+in chronological order — commentary in modest secondary styling at normal
+contrast, the final answer at full weight — and never absorbs a message into
+a tool group on the strength of its phase or its length (the pre-TF fold and
+its two-line/160-character heuristic are gone). Codex's written `plan`
+streams as commentary too.
 
 Both coalescing seams treat `phase` as part of a prose lane and preserve it:
 the daemon's 33 ms replay-ring window and the browser's animation-frame queue
 can merge commentary with commentary, never commentary with a final answer.
 
-**Live tool updates (TS.11).** `tool_output_delta` (additive) carries a running
-command's textual output as it arrives — the terminal prints it live — for the
-row `tool_use` announced; the row's head shows the last line, its body the
-stream so far, and `tool_result` still closes it with the engine's capped
-output. Codex feeds it from `item/commandExecution/outputDelta`. Both
-coalescing seams batch this stream by `(tool id, parentId)`, and the adapter's
-ceiling is the same UTF-8 byte budget as final tool output—never JavaScript
-character count.
+**Live tool updates (TS.11, extended by Phase TF R7).** Two additive
+messages carry a running call's output: `tool_output_delta` — the bounded
+legacy prefix, batched by `(tool id, parentId)` at both coalescing seams and
+capped at the same UTF-8 byte budget as final output, kept for clients that
+predate snapshots — and `tool_output_snapshot`, a REPLACEMENT of everything
+observed so far (a fixed head, the newest tail, the omitted middle counted,
+a monotonic `revision`) sent at most four times a second per call with an
+immediate final flush before the result. Every streaming adapter goes
+through `server/adapters/live-output.ts`; the ring retains one snapshot per
+call; a viewport ignores a snapshot whose revision is not newer than what it
+holds. A collapsed command row previews the last three non-empty lines; its
+expansion shows head, an explicit omission notice, and tail; `tool_result`
+still closes it with the engine's authoritative output, and an interrupted
+call keeps its last snapshot as evidence.
+
+**Bounded, honest evidence (Phase TF R7).** `capOutput` keeps a UTF-8-safe
+HEAD and TAIL of a large result within the budget (`TOOL_OUTPUT_CAP_BYTES`,
+64,000 by default; the head gets the odd byte): `tool_result.output` is the
+head — the same field a pre-TF client reads, now half the budget long rather
+than all of it (a deliberate trade: one budget, both ends of the evidence) —
+`truncatedBytes` still counts every byte past it, and
+`tail` / `omittedBytes` carry the trailing text and the dropped middle. The
+counts are of what THIS cap dropped — never a guess at what the engine
+already truncated. Task reports use the same shape (`report`,
+`reportTail`, `reportOmittedBytes`). A task that runs AGAIN after a terminal
+word is a new attempt: the replay ring drops the old report and duration
+from the retained frame and stamps `task_update.attempt` (2, 3, …) on every
+frame of the new attempt, so a viewport that missed the boundary still
+starts it clean — no old report, a fresh clock, the old attempt's open calls
+retired. The replay ring keeps its existing
+count and byte caps; a full replay past evicted history carries
+`replay_complete.evicted`, and an outcome whose opening row was evicted
+becomes an explicit "(earlier call)" record rather than vanishing. There is
+no complete-history promise and no log archive.
+
+**Declared capabilities (Phase TF R8).** `session_created.capabilities`
+(`server/adapters/capabilities.ts`) states per adapter whether live output,
+thinking, task lifecycle, and a task's own child activity can appear. A
+`false` is a verified absence at the adapter's interface, recorded above,
+so the shell can say "live output unavailable for this agent" or "this
+agent does not report a task's own calls" instead of implying that silence
+means nothing happened. An available event that stays unmapped is unfinished
+work, never a capability limit.
 
 Current Codex does not emit the deprecated `item/fileChange/outputDelta`.
 Its stable `item/started` / `item/completed` file-change items carry structured
@@ -419,7 +471,7 @@ fallback is intentionally less minimal, but linear and lossless.
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in
-   `permissions.ts`; Codex: per-server `default_tools_approval_mode`; OpenCode:
+   `server/security/permissions.ts`; Codex: per-server `default_tools_approval_mode`; OpenCode:
    the render server is the only MCP added via `OPENCODE_CONFIG_CONTENT` and the
    user's own permission rules otherwise apply; Gemini: `trust: true` on only
    the injected project entry). Never pass Gemini's
@@ -468,16 +520,35 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
    `server/adapters/gemini-cli/gemini-cli.ts` (headless CLI). Identify the native
    durable conversation id/resume call and any pre-submit command discovery
    surface at the same time; honor every rule in §3.
-4. **Wire the seam** — six touchpoints in two server files, plus display
-   metadata in one browser file:
-   - `protocol.ts`: add the name to the `AgentName` union (additive).
-   - `adapters/index.ts`: `credentialKind()` case (what counts as live),
-     `backendOptions()` case (the picker's menu of ways it can run),
-     `modelFor()` case (its own env var, never a shared one), `ADAPTER_AGENTS`
-     entry (agent picker offers it), `createSession()` case.
-   - `web/src/agents-meta.ts`: the human label and connect/blocked hints
-     (`LABEL`, `CONNECT_HINT`, `BLOCKED_HINT`). This is display copy, not
-     behavior — shared code still never branches on the agent name.
+3b. **Emit what the compact transcript needs (Phase TF).** Classify routine
+   work only from the engine's own signal — an exact tool-name table in
+   `adapters/routine-actions.ts` or a structured field such as Codex's
+   `commandActions` — and put it on `tool_use.actions`; never infer it from
+   shell text. Route a running call's output through `LiveOutput`
+   (`adapters/live-output.ts`: `append`/`replace`/`settle`/`clear`) so
+   snapshots stay throttled and bounded. Spell every result with
+   `outputFields(capOutput(...))`, carrying `exitCode`/`durationMs` when the
+   engine reports them. For subagents and background work emit `task_update`
+   with the ENGINE's own state word — never a state you guessed — and the
+   retained report through the same cap. A capability the adapter lacks is
+   recorded as `false` in `adapters/capabilities.ts` with the probe that
+   established it (the `Required<AgentCapabilities>` type makes a missing row
+   a compile error).
+4. **Wire the seam** — the compiler enforces most of it: every
+   `Record<AgentName, …>` table fails typecheck until the new name has a row.
+   Server: `protocol.ts` (`AgentName` union, additive); `adapters/index.ts`
+   (`probe` entry, `credentialKind()` case — what counts as live —
+   `backendOptions()` case — the picker's menu of ways it can run —
+   `modelFor()` case — its own env var, never a shared one — `defaultAgent()`
+   order, `ADAPTER_AGENTS` entry so the agent picker offers it,
+   `AGENT_DIALECT` — which local-server dialect it can drive, or `null` —
+   and the `createSession()` case); `adapters/capabilities.ts`
+   (`AGENT_CAPABILITIES` row); `adapters/routine-actions.ts` (`TABLES` row,
+   `{}` if the engine classifies its own commands). Browser:
+   `web/src/agents-meta.ts` — the human label and connect/blocked hints
+   (`LABEL`, `CONNECT_HINT`, `BLOCKED_HINT`) plus `backendLabel()` and
+   `localCapable()`. This is display copy, not behavior — shared code still
+   never branches on the agent name.
 4b. **Only if the provider's credential kind can change mid-session or isn't
    knowable at hello time** (OpenCode is the first such — its kind is a fact
    about the underlying provider, resolved from the running engine and mutable
@@ -518,8 +589,9 @@ Ollama/vLLM/LM Studio; Claude Agent → `ANTHROPIC_BASE_URL` through the SDK's
 bundled Claude Code runtime — already counted as "live" by
 `agentHasCredentials`) already runs locally, and Mirafold simply re-skins it.
 **No LiteLLM, no shim, no homegrown loop for bare models.** Phase
-L is documentation and ergonomics (`docs/local-models.md`, later `--local`
-detection), not architecture. Small models that misfire on render tools
+L is documentation and ergonomics (`docs/local-models.md`, and the
+well-known-port discovery in `server/local-models.ts` that puts a running
+local server in the picker), not architecture. Small models that misfire on render tools
 degrade to styled text via the Step 1.4 fallback — best-effort by design, no
 curated model gate. The same logic answers future requests: if something ships
 a terminal agent, it gets an adapter; if it's a bare inference endpoint, it

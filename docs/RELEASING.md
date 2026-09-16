@@ -8,8 +8,9 @@ generates every rule here:
 
 "Production" is two surfaces that update together on a `main` push: the npm
 package (published by CI on a tag) and app.mirafold.com (Cloudflare Pages
-rebuilds on every push to `main`). Flow b keeps them in lockstep by making a
-`main` push and a release the same event.
+builds every push to `main` as production and other branches as previews —
+that branch mapping lives in the Cloudflare dashboard, not in this repo). Flow
+b keeps them in lockstep by making a `main` push and a release the same event.
 
 ## The branches
 
@@ -23,15 +24,20 @@ rebuilds on every push to `main`). Flow b keeps them in lockstep by making a
 Three mechanics to know:
 
 - **Every commit headed for a PR needs a DCO sign-off** — commit with
-  `git commit -s`. The DCO check is required on both protected branches.
+  `git commit -s`. The DCO check is required on both protected branches. A
+  `prepare-commit-msg` hook that appends the trailer is a per-machine
+  convenience; nothing in the repository installs one for a fresh clone, so
+  `-s` (or `git rebase --signoff` to repair a branch) is the rule.
 - **An open or green feature PR is not approval to merge it.** Keep the PR
   open through the requested review and refactor passes. When it appears
   ready, ask Kyle explicitly whether to merge; merge only after he approves.
 - **Every PR gets automated review comments — read them before any merge.**
-  Two bots review each PR on open: CodeQL's code-quality scan (inline
-  "unused import" style notes) and the Codex reviewer (inline P1/P2 findings
-  with a claimed failure). They post minutes after the PR opens, so a
-  PR that "went green" can still be carrying findings. Before asking for
+  The Codex reviewer (`chatgpt-codex-connector`) posts inline P1/P2 findings,
+  each with a claimed failure, minutes after the PR opens; after a push,
+  comment `@codex review` to get the new head reviewed. Cloudflare's bot only
+  posts the preview link. There is no CodeQL workflow in this repository
+  (`.github/workflows/` holds `ci.yml` and `release.yml`; checked 2026-09-15).
+  A PR that "went green" can still be carrying findings. Before asking for
   merge approval on a feature PR, and before merging a release PR, pull
   every comment (`gh api repos/mirafold/mirafold/pulls/<n>/comments`,
   plus `/issues/<n>/comments` and `/pulls/<n>/reviews`), verify each claim
@@ -105,7 +111,11 @@ Three mechanics to know:
    workflow already proved tag ↔ pack, this proves pack ↔ registry); and the
    packaged smoke passes against the published package —
    `node scripts/packaged-pass.mjs` (a global install driven in a real
-   browser; it has caught launch blockers the test tiers cannot see).
+   browser; it has caught launch blockers the test tiers cannot see). The
+   Mirafold Desktop repository (`mirafold/mirafold-desktop`) consumes the
+   published package: its scheduled intake notices the new npm version,
+   re-pins to it, and publishes a Desktop release on its own — nothing to
+   trigger here, but expect that release to follow within its polling window.
 7. **Close the loop — do not skip**: PR `main` → `next` and merge it. The
    version bump and release merge commit now exist on `main` only; until this
    sync lands, the next cycle's release PR will conflict on `package.json`.

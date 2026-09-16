@@ -255,6 +255,139 @@ test("tool lifecycle: running announces, completed resolves, output is capped", 
   session.close();
 });
 
+test("TF2.5: a running tool's republished metadata.output becomes replacement snapshots; nothing duplicates", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { command: "make", description: "build" };
+  const running = (output: string) =>
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "running", input, metadata: { output } } });
+  feed(running(""), running("step 1\n"), running("step 1\n"), running("step 1\nstep 2\n"));
+  feed(snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "completed", input, output: "step 1\nstep 2\n", title: "make" } }), idle());
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "tool_output_delta").map((m) => m.text), ["step 1\n", "step 2\n"]);
+  const snaps = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "t1");
+  assert.ok(snaps.length >= 1);
+  assert.equal(snaps.at(-1)!.head, "step 1\nstep 2\n");
+  const order = msgs.filter((m) => m.id === "t1").map((m) => m.type);
+  assert.equal(order.at(-1), "tool_result");
+  assert.ok(!msgs.some((m) => m.type === "task_update"), "a plain tool is not a task");
+  session.close();
+});
+
+test("TF2.5: an interrupted tool keeps the output it produced ahead of the error text", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { command: "sleep 99", description: "wait" };
+  feed(
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "running", input, metadata: { output: "started\n" } } }),
+    snap({ type: "tool", id: "t1", tool: "bash", callID: "c1", state: { status: "error", input, error: "Tool execution aborted", metadata: { output: "started\n", interrupted: true } } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "t1")!;
+  assert.deepEqual([result.isError, result.output], [true, "started\n\nTool execution aborted"]);
+  session.close();
+});
+
+test("TF2.5: the spawn part carries the child's lifecycle — busy is running, settlement is completed with the report", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "probe child", prompt: "run it", subagent_type: "general" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta, title: "probe child" } }),
+    { type: "session.created", properties: { info: { id: "ses_kid", parentID: SES } } },
+    { type: "session.status", properties: { sessionID: "ses_kid", status: { type: "busy" } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: { ...meta, truncated: false }, output: "<task_result>\nCHILD DONE\n</task_result>" } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.map((m) => [m.id, m.state, m.label, m.agentType, m.report]), [
+    ["sp1", "running", "probe child", "general", undefined],
+    ["sp1", "running", "probe child", "general", undefined],
+    ["sp1", "completed", "probe child", "general", "<task_result>\nCHILD DONE\n</task_result>"],
+  ]);
+  assert.deepEqual(msgs.find((m) => m.type === "tool_use" && m.id === "sp1")!.actions, undefined);
+  session.close();
+});
+
+test("PR #120 review round 2: a background launcher's settlement is not the child finishing; the child's idle is", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "watch the build", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => m.state), ["running", "running"], "the launcher's settlement keeps the task running");
+  feed({ type: "session.status", properties: { sessionID: "ses_bg", status: { type: "busy" } } });
+  feed(idle("ses_bg"));
+  assert.equal(msgs.filter((m) => m.type === "task_update").at(-1)!.state, "completed", "the child's own idle completes it");
+  session.close();
+});
+
+test("PR #120 round 3: a failed background child stays failed through a later idle; its running call keeps streaming across the root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "bg", prompt: "run it" };
+  const meta = { sessionId: "ses_bg", parentSessionId: SES, background: true };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.created", properties: { info: { id: "ses_bg", parentID: SES } } },
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "completed", input, metadata: meta, output: "started in background" } }),
+    // The child's own command streams while the root turn ends.
+    { type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\n" } } } } },
+    idle(),
+  );
+  await awaitTurnEnd();
+  feed({ type: "message.part.updated", properties: { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "m9", id: "cp1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "make" }, metadata: { output: "one\ntwo\n" } } } } });
+  // Snapshots are throttled (250 ms): wait for the second one.
+  await waitFor(() => msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").length >= 2, "second child snapshot", 3_000);
+  const revisions = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "cp1").map((m) => m.revision);
+  assert.deepEqual(revisions, [1, 2], "the child's snapshot revisions continue across the root turn end");
+  feed({ type: "session.error", properties: { sessionID: "ses_bg", error: { data: { message: "child exploded" } } } });
+  feed(idle("ses_bg"));
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "sp1").map((m) => m.state);
+  assert.equal(states.at(-1), "failed", "a late idle cannot turn the failure into success");
+  session.close();
+});
+
+test("PR #120 review: a task part stopped by the user reads interrupted, not failed", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "long job", prompt: "run it" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "error", input, error: "aborted", metadata: { ...meta, interrupted: true, output: "partial" } } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => [m.state, m.report]), [["running", undefined], ["interrupted", "partial\naborted"]]);
+  session.close();
+});
+
+test("TF2.5: a child session error fails its task without ending the root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  const input = { description: "probe child", prompt: "run it" };
+  const meta = { sessionId: "ses_kid", parentSessionId: SES };
+  feed(
+    snap({ type: "tool", id: "sp1", tool: "task", callID: "c1", state: { status: "running", input, metadata: meta } }),
+    { type: "session.error", properties: { sessionID: "ses_kid", error: { data: { message: "child exploded" } } } },
+  );
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 0, "the root turn is still open");
+  assert.deepEqual(msgs.filter((m) => m.type === "task_update").map((m) => [m.state, m.report]), [["running", undefined], ["failed", "child exploded"]]);
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
 test("OpenCode write/edit calls use the shared code and diff painter shapes", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");
@@ -1007,7 +1140,7 @@ test("prompt options: our re-skins immediately, the engine catalog behind them",
   session.close();
 });
 
-test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose once", async () => {
+test("OC.4c: subscription/gateway providers run and publish their kind; only Zen discloses", async () => {
   const cases = [
     {
       model: "openai/gpt-5.5",
@@ -1015,7 +1148,7 @@ test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose o
         { id: "openai", source: "custom" as const, apiKeyOption: "opencode-oauth-dummy-key" },
       ],
       kind: "subscription",
-      disclosure: /not clearly\s+permitted .* your account, your\s+call/s,
+      disclosure: undefined,
     },
     {
       model: "opencode/big-pickle",
@@ -1034,14 +1167,16 @@ test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose o
     await awaitTurnEnd();
     assert.deepEqual(published, [{ kind: c.kind, provider: c.catalog[0].id }]);
     const notices = msgs.filter((m) => m.type === "notice");
-    assert.equal(notices.length, 1, "the disclosure rides exactly once");
-    assert.match(notices[0].text, c.disclosure);
-    assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+    assert.equal(notices.length, c.disclosure ? 1 : 0);
+    if (c.disclosure) {
+      assert.match(notices[0].text, c.disclosure);
+      assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+    }
     // A second turn must not re-disclose.
     await prompt("again");
     feed(idle());
     await awaitTurnEnd(2);
-    assert.equal(msgs.filter((m) => m.type === "notice").length, 1);
+    assert.equal(msgs.filter((m) => m.type === "notice").length, c.disclosure ? 1 : 0);
     session.close();
   }
 });
@@ -1812,5 +1947,296 @@ test("TS.7: an event or part kind the mapper cannot place is reported once per s
   feed(ev("question.v3.asked", { sessionID: SES }), idle());
   await awaitTurnEnd(2);
   assert.equal(notices().length, 2, "a later turn re-reports nothing");
+  session.close();
+});
+
+// Release review 0.10.0: startTurn cleared the per-part and per-message
+// tables wholesale, so a background child's part announced in one root turn
+// re-announced itself on its next snapshot after the user started another
+// turn, and the child's own prompt echo lost its user role and replayed as
+// the subagent's narration.
+test("a background child's announced part and prompt role survive a new root turn — no duplicate row, no echo", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    // The child's prompt message (user role) and a running bash call, both in turn 1.
+    ev("message.updated", { sessionID: "ses_bg", info: { id: "mu", sessionID: "ses_bg", role: "user" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "announced once in turn 1");
+  await prompt("meanwhile…");
+  feed(
+    // The prompt's own echo arrives (a user-role text part) after the new root turn began.
+    ev("message.part.updated", { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "mu", id: "pu", type: "text", text: "do the background thing" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "the completion did not re-announce the row");
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "pc1")!;
+  assert.deepEqual([result.parentId, result.output], ["prt_bg", "done"]);
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && /background thing/.test(m.text)), "the child's prompt echo never replays as its narration");
+  session.close();
+});
+
+// Release review 0.10.0 (fix round): a child's final snapshot can trail its
+// terminal word; releasing its records on the spot re-announced that row.
+// And retained child records must not eat the root turn's own allowance.
+test("a settled child's straggler snapshot is not re-announced, and retained child records leave the root turn its full cap", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "ls" }, output: "a" } },
+    }),
+    // The engine's terminal word on the child, then the straggler: the same
+    // completed snapshot delivered once more.
+    ev("session.idle", { sessionID: "ses_bg" }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "ls" }, output: "a" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "the straggler did not re-announce");
+  assert.equal(msgs.filter((m) => m.type === "tool_result" && m.id === "pc1").length, 1);
+  // A still-running second child floods the child table to its cap during
+  // this turn; the next root turn's own parts must still be tracked.
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m2", id: "prt_bg2", type: "tool", tool: "task", callID: "c2",
+        state: { status: "completed", input: { description: "bg child 2" }, output: "started in background", metadata: { sessionId: "ses_bg2", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg2", info: { id: "ses_bg2", parentID: SES } }),
+  );
+  await prompt("meanwhile…");
+  const flood = [];
+  for (let i = 0; i < 2_000; i++) {
+    flood.push(ev("message.part.updated", { sessionID: "ses_bg2", part: { sessionID: "ses_bg2", messageID: "mb", id: `flood-${i}`, type: "text", text: "x" } }));
+  }
+  feed(...flood, ev("message.part.updated", { sessionID: SES, part: { sessionID: SES, messageID: "m3", id: "root-part", type: "text", text: "the root still speaks" } }), idle());
+  await awaitTurnEnd(2);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && !m.parentId && /root still speaks/.test(m.text)), "root prose is tracked despite a full child table");
+  session.close();
+});
+
+// PR #125 review: a child that settles and then runs again before the next
+// root prompt must keep its records through that prompt's boundary.
+test("a child running again after settling keeps its records across the next root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.idle", { sessionID: "ses_bg" }), // settled…
+    ev("session.status", { sessionID: "ses_bg", status: { type: "busy" } }), // …and running again
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc2", type: "tool", tool: "bash", callID: "cc2", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  await prompt("meanwhile…");
+  feed(
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc2", type: "tool", tool: "bash", callID: "cc2", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc2").length, 1, "the restarted child's row was announced once");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "pc2")?.output, "done");
+  session.close();
+});
+
+// PR #125 round 5: a grandchild rides its parent's lane; the parent settling
+// must not release the lane's records while the grandchild is still busy.
+test("a lane with a busy grandchild is not released when its child settles", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    // The child spawns a grandchild that keeps working after the child idles.
+    ev("session.created", { sessionID: "ses_gc", info: { id: "ses_gc", parentID: "ses_bg" } }),
+    ev("session.status", { sessionID: "ses_gc", status: { type: "busy" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_gc",
+      part: { sessionID: "ses_gc", messageID: "mg", id: "pg1", type: "tool", tool: "bash", callID: "cg1", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    ev("session.idle", { sessionID: "ses_bg" }), // the child is done; its grandchild is not
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pg1").length, 1);
+  await prompt("meanwhile…");
+  feed(
+    ev("message.part.updated", {
+      sessionID: "ses_gc",
+      part: { sessionID: "ses_gc", messageID: "mg", id: "pg1", type: "tool", tool: "bash", callID: "cg1", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    ev("session.idle", { sessionID: "ses_gc" }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pg1").length, 1, "the grandchild's row was not re-announced after the child settled");
+  assert.deepEqual([msgs.find((m) => m.type === "tool_result" && m.id === "pg1")?.parentId, msgs.find((m) => m.type === "tool_result" && m.id === "pg1")?.output], ["prt_bg", "done"]);
+  session.close();
+});
+
+// PR #125 round 6: child idles (completed) BEFORE its grandchild goes busy;
+// the grandchild's final idle must complete the lane again and release it.
+test("a lane re-run by a descendant after the child idled completes on the descendant's idle", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.idle", { sessionID: "ses_bg" }), // the child is done
+    ev("session.created", { sessionID: "ses_gc", info: { id: "ses_gc", parentID: "ses_bg" } }),
+    ev("session.status", { sessionID: "ses_gc", status: { type: "busy" } }), // …then its grandchild runs
+    ev("session.idle", { sessionID: "ses_gc" }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "prt_bg").map((m) => m.state);
+  assert.deepEqual(states.slice(-3), ["completed", "running", "completed"], "the descendant's idle completes the lane again");
+  session.close();
+});
+
+// PR #125 round 8: a child that completed, then a root turn consumed its
+// settled marker, then it runs again — its next idle must still complete it.
+test("a child busy again after a later root turn still completes on its idle", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.idle", { sessionID: "ses_bg" }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  await prompt("meanwhile…"); // consumes the settled marker
+  feed(ev("session.status", { sessionID: "ses_bg", status: { type: "busy" } }), ev("session.idle", { sessionID: "ses_bg" }), idle());
+  await awaitTurnEnd(2);
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "prt_bg").map((m) => m.state);
+  assert.deepEqual(states.slice(-3), ["completed", "running", "completed"]);
+  session.close();
+});
+
+// PR #125 round 10: a child idling while its grandchild still works is not
+// the task finishing; the last busy descendant's idle is.
+test("a lane completes only when its last busy descendant idles", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.created", { sessionID: "ses_gc", info: { id: "ses_gc", parentID: "ses_bg" } }),
+    ev("session.status", { sessionID: "ses_gc", status: { type: "busy" } }),
+    ev("session.idle", { sessionID: "ses_bg" }), // the child idles; its grandchild is still busy
+    idle(),
+  );
+  await awaitTurnEnd();
+  const states = () => msgs.filter((m) => m.type === "task_update" && m.id === "prt_bg").map((m) => m.state);
+  assert.ok(!states().includes("completed"), "not completed while the grandchild works");
+  feed(ev("session.idle", { sessionID: "ses_gc" }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(states().at(-1), "completed", "the grandchild's idle completes the lane");
+  session.close();
+});
+
+// Release review 0.10.0 (fix round B): startTurn cleared the narration
+// budget while a background child's lane stayed routable, so each new root
+// turn granted the same child a fresh allowance and another marker.
+test("a background child's narration cap holds across a new root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  const childText = (id: string, text: string) =>
+    ev("message.part.updated", { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "ma", id, type: "text", text } });
+  const chunk = "n".repeat(1_000);
+  const laneLines = () => msgs.filter((m) => m.type === "text_delta" && m.parentId === "prt_bg");
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("message.updated", { sessionID: "ses_bg", info: { id: "ma", sessionID: "ses_bg", role: "assistant" } }),
+    ...Array.from({ length: 70 }, (_, i) => childText("pt1", chunk.repeat(i + 1))),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const before = laneLines().length;
+  assert.equal(laneLines().filter((m) => m.text.includes("narration cap reached")).length, 1, "capped in turn 1");
+  await prompt("meanwhile…");
+  feed(...Array.from({ length: 10 }, (_, i) => childText("pt2", chunk.repeat(i + 1))), idle());
+  await awaitTurnEnd(2);
+  assert.equal(laneLines().length, before, "an exhausted lane forwards nothing in the next root turn");
+  assert.equal(laneLines().filter((m) => m.text.includes("narration cap reached")).length, 1, "one marker for the child's lifetime");
   session.close();
 });

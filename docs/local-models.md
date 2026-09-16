@@ -37,12 +37,14 @@ provider injected — no env vars, no `config.toml` edit, no dummy API key.
 Start your server while the picker is open and it appears within a few
 seconds, no reload.
 
-Three knobs, all optional:
+Four knobs, all optional:
 
 - `MIRAFOLD_LOCAL_ENDPOINTS` — comma-separated URLs to probe *in addition*
   to the well-known ports (a server on a nonstandard port).
 - `MIRAFOLD_LOCAL_DISCOVERY=off` — disable the well-known-port probing
   entirely (env-listed endpoints are still honored).
+- `MIRAFOLD_LOCAL_PROBE_TTL_MS` — how long one probe result is reused before
+  the ports are probed again (default `5000`).
 - `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` — the outer deadline for one Codex
   turn on a discovered server (default `480000`, or eight minutes). Set it to
   `0` to disable the deadline for a model or machine that legitimately needs
@@ -90,9 +92,11 @@ export DEFAULT_MODEL=qwen3-coder-32k
 mirafold
 ```
 
-(`ANTHROPIC_AUTH_TOKEN` is required by the client but ignored by Ollama — any
-non-empty value works. In a clone instead of the installed CLI, put the same
-three lines in `.env` and run `yarn dev`.)
+(`ANTHROPIC_AUTH_TOKEN` is ignored by Ollama — any non-empty value works. If you
+set only `ANTHROPIC_BASE_URL`, Mirafold supplies the fixed dummy token
+`ollama` to the Claude client itself, since that client insists on one even
+when the target ignores it. In a clone instead of the installed CLI, put the
+same lines in `.env` and run `yarn dev`.)
 
 That's it. Mirafold counts a set `ANTHROPIC_BASE_URL` as "this agent is
 configured" (exactly so that local setups don't fall back to the API-free mock),
@@ -114,9 +118,10 @@ Two things to know first:
   server must offer `/v1/responses`. Ollama and LM Studio do; vLLM does for
   supported models, depending on your deployment.
 - Make the local provider the **top-level default** in `config.toml` (not a
-  `--profile` you pass on the command line): Mirafold spawns Codex through
-  its SDK and inherits your config defaults, but never passes CLI flags like
-  `--oss` or `--profile`.
+  `--profile` you pass on the command line): Mirafold drives Codex through
+  its own `codex app-server` protocol, passing only per-session `-c` overrides,
+  so it inherits your config defaults but never passes CLI flags like `--oss`
+  or `--profile`.
 
 1. Add the provider and defaults to `~/.codex/config.toml`:
 
@@ -136,8 +141,13 @@ Responses API for your model).
 
 2. That's the whole setup — launch Mirafold. It reads the default
    `model_provider` from `~/.codex/config.toml` (honoring `CODEX_HOME`, like
-   the CLI) and offers it in the agent picker as its own endpoint row — **local
-   endpoint · localhost:11434** here. No key, no extra env. *(Older Mirafold
+   the CLI) and offers it in the agent picker as its own endpoint row, labeled
+   with the provider's display name from your config — **Ollama** here; the
+   base URL stays on the daemon, never in the browser. No key, no extra env.
+   A config-file pick differs from a discovered server in one visible way: the
+   discovered row lists the server's models (Mirafold injects a
+   `mirafold_local` provider for it), while the config-file row inherits the
+   model your config names. *(Older Mirafold
    versions couldn't see a config-file provider and needed a dummy
    `export OPENAI_API_KEY=local` to flip the "configured" signal; that wart
    is gone — an existing dummy key is harmless and can be deleted.)*
@@ -148,16 +158,18 @@ Responses API for your model).
 
 ### When a discovered Codex turn looks stuck
 
-Codex's SDK emits an agent message only after the message item completes; it
-does not expose token deltas. A CPU-bound Ollama request can therefore look
-silent while Ollama pre-fills Codex's agent context, then remain silent longer
-while a reasoning model thinks. Direct measurements on the ThinkPad described
-below separated those two costs: the request was active in Ollama throughout,
-not stalled between Mirafold and the Codex SDK.
+Codex streams prose as `item/agentMessage/delta` events, but nothing can
+arrive before the model produces its first token. A CPU-bound Ollama request
+therefore looks silent while Ollama pre-fills Codex's agent context, then stays
+silent longer while a reasoning model thinks (reasoning text streams only when
+Codex is configured to emit summaries). Direct measurements on the ThinkPad
+described below separated those two costs: the request was active in Ollama
+throughout, not stalled between Mirafold and Codex.
 
 Mirafold leaves Codex's configured reasoning default untouched. On a
-probe-discovered local endpoint, `/effort` additionally offers `none`; choosing
-it explicitly restarts the same warm Codex thread with reasoning disabled.
+probe-discovered local endpoint, `/effort` additionally offers `none`; the pick
+applies from the next turn on the same warm Codex thread (effort is a per-turn
+parameter — nothing restarts).
 Ollama supports that Responses-API value; another local runtime may reject it,
 which Codex reports as an ordinary provider error. If a discovered local turn
 still does not finish within eight minutes, Mirafold ends it with a message that

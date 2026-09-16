@@ -14,7 +14,7 @@ import type { FsDirEntry } from "@protocol";
 // visible — a turn-end refresh must never read as a collapse), or errored.
 
 /** One successful fs_dir reply: the entries plus the per-directory cap flag. */
-export type DirListing = { entries: FsDirEntry[]; truncated: boolean };
+export type DirListing = { entries: FsDirEntry[]; truncated: boolean; continuation?: string };
 
 export type DirState =
   /** A fetch is in flight. `stale` is the previous listing of a refetch —
@@ -37,19 +37,26 @@ export type DirStore = ReadonlyMap<string, DirState>;
 
 export const emptyDirStore = (): DirStore => new Map();
 
-/** The carry-forward half of a transition: a prior listing stays visible
- *  until the new reply decides. */
-const carried = (prev: DirState | undefined): { stale?: DirListing } => {
-  const stale = prev && shownListing(prev);
-  return stale ? { stale } : {};
+/** The daemon's listing order (`sortAndCapDir`): directories first, then
+ *  names by code point — kept identical so an appended page cannot reorder
+ *  what a single page would have shown. */
+export const compareDirEntries = (a: FsDirEntry, b: FsDirEntry): number =>
+  (a.kind === "dir" ? 0 : 1) - (b.kind === "dir" ? 0 : 1) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/** Refreshes and failed continuations retire the old listing's token. */
+const withoutContinuation = ({ continuation: _continuation, ...listing }: DirListing): DirListing => {
+  return listing;
 };
 
 /** Mark `path` as fetching. Previous entries (and truncation) stay visible;
  *  a previous error is cleared — the new reply decides. */
-export function beginDirFetch(store: DirStore, path: string): DirStore {
+export function beginDirFetch(store: DirStore, path: string, append = false): DirStore {
   const next = new Map(store);
   const prev = store.get(path);
-  next.set(path, { phase: "loading", ...carried(prev) });
+  const stale = prev && shownListing(prev);
+  next.set(path, { phase: "loading", ...(stale ? {
+    stale: append ? stale : withoutContinuation(stale),
+  } : {}) });
   return next;
 }
 
@@ -59,16 +66,32 @@ export function beginDirFetch(store: DirStore, path: string): DirStore {
 export function applyDirReply(
   store: DirStore,
   path: string,
-  reply: { entries: FsDirEntry[]; truncated?: boolean; error?: string },
+  reply: { entries: FsDirEntry[]; truncated?: boolean; continuation?: string; error?: string },
+  append = false,
 ): DirStore {
   const next = new Map(store);
   const prev = store.get(path);
   if (reply.error) {
-    next.set(path, { phase: "error", error: reply.error, ...carried(prev) });
+    const stale = prev && shownListing(prev);
+    next.set(path, { phase: "error", error: reply.error,
+      ...(stale ? { stale: withoutContinuation(stale) } : {}),
+    });
   } else {
+    const previous = append && prev ? shownListing(prev)?.entries ?? [] : [];
+    // A directory may change during pagination. Keep one row per name and
+    // let the later page refresh its kind/status without duplicating it.
+    // Each page arrives sorted on its own, so the accumulation is re-sorted
+    // with the daemon's exact order (directories first, then code-point
+    // name order — `sortAndCapDir`): a directory found in a later raw page
+    // must not sit below a thousand files (release review, 0.10.0).
+    const entries = append
+      ? [...new Map([...previous, ...reply.entries].map(entry => [entry.name, entry])).values()].sort(compareDirEntries)
+      : reply.entries;
     next.set(path, {
       phase: "ready",
-      listing: { entries: reply.entries, truncated: Boolean(reply.truncated) },
+      listing: { entries, truncated: Boolean(reply.truncated),
+        ...(reply.continuation ? { continuation: reply.continuation } : {}),
+      },
     });
   }
   return next;

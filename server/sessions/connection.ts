@@ -33,6 +33,7 @@ import { VERSION } from "../version";
 export { escapeTranscriptFence } from "./bang-handlers";
 import { envInt } from "../env";
 import { folderPickerAvailable } from "../folder-picker";
+import { agentCapabilities } from "../adapters/capabilities";
 
 // Minimum gap between refresh_agents-triggered probe sweeps per connection.
 // The picker polls every few seconds; anything faster serves the cached
@@ -134,8 +135,11 @@ export function openConnection(
   const deliver = viewport;
   viewport = (msg) => {
     if (entry) {
-      if (msg.type === "refused" && !entry.viewports.has(viewport)) entry = null;
-      else if (msg.type === "session_ended" && msg.sessionId === entry.id) entry = null;
+      if ((msg.type === "refused" && !entry.viewports.has(viewport)) ||
+          (msg.type === "session_ended" && msg.sessionId === entry.id)) {
+        fs.reset();
+        entry = null;
+      }
     }
     deliver(msg);
   };
@@ -201,6 +205,7 @@ export function openConnection(
       return false;
     }
     if (entry) registry.detach(entry, viewport);
+    if (entry !== e) fs.reset();
     entry = e;
     const resumed = afterSeq !== undefined && registry.canResume(e, afterSeq);
     viewport({
@@ -210,6 +215,7 @@ export function openConnection(
       shellCwd: e.bangCwd,
       agent: e.agent,
       model: e.session.modelName,
+      capabilities: agentCapabilities(e.agent),
       replayPending: true,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
@@ -218,7 +224,10 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
-    viewport({ type: "replay_complete" });
+    viewport({
+      type: "replay_complete",
+      ...(!resumed && registry.historyEvicted(e) ? { evicted: true as const } : {}),
+    });
     // A relay viewport is governed by the relay gate even after a mid-session
     // credential-kind flip: mark it so the registry can evict it if the kind
     // becomes relay-ineligible.
@@ -520,6 +529,7 @@ export function openConnection(
         break;
       case "watch_sessions":
         // This connection is the fleet page — snapshots, not a session.
+        fs.reset();
         if (entry) {
           registry.detach(entry, viewport);
           entry = null;
@@ -715,6 +725,7 @@ export function openConnection(
 
   const close = () => {
     closed = true;
+    fs.reset();
     unsubscribeEntitlement?.();
     folderPicker.close();
     uploads.dispose();

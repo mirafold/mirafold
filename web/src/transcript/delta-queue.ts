@@ -18,13 +18,19 @@ function sameDeltaLane(left: QueuedDelta, right: QueuedDelta): boolean {
   return true;
 }
 
+// The merged entry keeps the FIRST delta's seq: the projection keys a
+// reasoning row's disclosure on the seq of its first delta, and a full
+// replay (which bypasses this queue) sees that same seq — so live and
+// replayed rows derive one key (PR #120 round 4).
 function copyDelta(msg: QueuedDelta): QueuedDelta {
+  const seq = msg.seq !== undefined ? { seq: msg.seq } : {};
   if (msg.type === "text_delta") {
     return {
       type: msg.type,
       text: msg.text,
       ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
       ...(msg.phase !== undefined ? { phase: msg.phase } : {}),
+      ...seq,
     };
   }
   if (msg.type === "tool_output_delta") {
@@ -33,12 +39,14 @@ function copyDelta(msg: QueuedDelta): QueuedDelta {
       id: msg.id,
       text: msg.text,
       ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+      ...seq,
     };
   }
   return {
     type: msg.type,
     text: msg.text,
     ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+    ...seq,
   };
 }
 
@@ -126,9 +134,12 @@ export function createTranscriptIngress(
       return;
     }
     if (message.type === "replay_complete") {
+      // The marker rides at the end of its batch: the projection needs it
+      // (it materializes evicted-history records and the eviction notice
+      // there), and an older daemon that sends none loses nothing.
       const pending = replay;
       replay = null;
-      if (pending) deliver(pending);
+      deliver([...(pending ?? []), message]);
       return;
     }
     if (replay) {

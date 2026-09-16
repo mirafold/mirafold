@@ -6,6 +6,30 @@ import { deckElapsedSeconds, subagentSummary } from "./subagent-deck";
 // component renders exactly what this returns, so pinning it here pins the
 // card's one-glance truth without a DOM.
 
+test("R4: the engine's lifecycle word wins over the spawn call's settlement", () => {
+  const task = { name: "spawn_agent", detail: "Audit the watcher", output: "t-child: running", isError: false };
+  // Without a lifecycle the settled spawn reads done — and says it is an inference.
+  const inferred = subagentSummary(task, []);
+  assert.deepEqual([inferred.state, inferred.reported], ["done", false]);
+  // With one, a finished spawn call whose child still runs reads running.
+  const running = subagentSummary(task, [], { state: "running", label: "Audit the watcher", action: "Grep" });
+  assert.deepEqual([running.state, running.reported, running.currentAction, running.description], ["running", true, "Grep", "Audit the watcher"]);
+  const failed = subagentSummary(task, [], { state: "failed", report: "boom\nmore" });
+  assert.deepEqual([failed.state, failed.resultLine, failed.report?.text], ["failed", "boom", "boom\nmore"]);
+  const interrupted = subagentSummary(task, [], { state: "interrupted" });
+  assert.equal(interrupted.state, "interrupted");
+  const unknown = subagentSummary({ name: "Agent" }, [], { state: "unknown" });
+  assert.deepEqual([unknown.state, unknown.resultLine], ["unknown", undefined]);
+  // The full retained report — head, tail, omission — rides through whole.
+  const big = subagentSummary(task, [], { state: "completed", report: "H", reportTail: "T", reportOmittedBytes: 9, elapsedMs: 4200 });
+  assert.deepEqual(big.report, { text: "H", tail: "T", omittedBytes: 9 });
+  assert.equal(big.elapsedMs, 4200);
+  // No lifecycle: the spawn result is the report, with its own retention facts.
+  const fromCall = subagentSummary({ name: "Agent", output: "line one\nline two", tail: "end", omittedBytes: 3 }, []);
+  assert.deepEqual(fromCall.report, { text: "line one\nline two", tail: "end", omittedBytes: 3 });
+  assert.equal(fromCall.resultLine, "line one");
+});
+
 test("running: agent type, description, count, and the newest active call", () => {
   const s = subagentSummary(
     {
@@ -69,7 +93,9 @@ test("failed: an errored spawn reads failed, never done", () => {
     [],
   );
   assert.equal(s.state, "failed");
-  assert.equal(s.resultLine, undefined);
+  // The failure's own first line is the summary — a child failure marks its
+  // task visibly instead of hiding behind a bare "failed".
+  assert.equal(s.resultLine, "boom");
 });
 
 test("description falls back input.description → detail → name; type absent stays absent", () => {

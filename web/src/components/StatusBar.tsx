@@ -63,6 +63,8 @@ export function StatusBar({
   workspaceOpen,
   workspaceDisabled,
   onToggleWorkspace,
+  details,
+  onToggleDetails,
 }: {
   connected: boolean;
   // Why the socket is down, when the relay refused it (no daemon / at capacity /
@@ -111,6 +113,11 @@ export function StatusBar({
   billing?: boolean;
   subRequest?: SubscriptionRequest;
   subReply?: SubscriptionReply | null;
+  // The transcript's detail mode (Phase TF R6): compact by default;
+  // "details" opens reasoning, individual routine calls, inputs, and
+  // retained output. Viewport-local, shell-owned; absent when no session.
+  details?: boolean;
+  onToggleDetails?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const phone = useIsPhone();
@@ -261,6 +268,18 @@ export function StatusBar({
         subRequest={subRequest}
         subReply={subReply}
       />
+      {/* The transcript's detail mode: a shell-owned press toggle, beside
+          the gear so it reads as a view setting, never as agent content. */}
+      {onToggleDetails && (
+        <button
+          className={"sb-details" + (details ? " is-active" : "")}
+          onClick={onToggleDetails}
+          aria-pressed={Boolean(details)}
+          title={details ? "Hide details — the compact transcript" : "Show details — reasoning, every call, inputs, and retained output"}
+        >
+          {details ? "hide details" : "show details"}
+        </button>
+      )}
       {/* Settings gear — beside the pill, the far-right control. The pill
           below is LOCKED unchanged. */}
       {onOpenSettings && (

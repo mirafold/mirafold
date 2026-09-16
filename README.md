@@ -75,17 +75,28 @@ in [docs/local-models.md](docs/local-models.md).
 
 Inside a session:
 
-- Type ordinary prompts in the command box.
+- Type ordinary prompts in the prompt box.
 - Prefix a command with `!` to run it in Mirafold's interactive shell; the
   agent then sees the transcript as its own turn, as in the terminal. Prefix
   it with `!!` to run it the same way but shell-only — the agent never sees
   it.
 - Open `/` for mission control and `/s/<session-id>` for a session viewport.
-- Open Cockpit from the left activity rail to preview, prompt, stop, end, or
+- Open Cockpit from the activity bar (the left edge) to preview, prompt, stop, end, or
   switch directly among live sessions; it follows you across session switches
   until you close it.
 - Use the Files and Changes workspaces to inspect the current directory and
   its Git working-tree changes.
+- The transcript is compact by default: the agent's messages and every
+  command, edit, and failure stay visible with their outcomes (exit codes,
+  durations, a preview of the last lines), routine reads and searches group
+  into one line, reasoning collapses to a single "Thinking" control, and a
+  subagent or background task shows its state and its retained report.
+  `show details` in the status bar opens everything — reasoning, each
+  routine call, inputs, and the retained output — for this browser tab only.
+  Large outputs keep their beginning and end; the transcript says how much
+  fell between them rather than implying it kept it all. If you reattach after
+  the daemon's replay buffer has dropped older history, the transcript says
+  that too instead of pretending the session started where the buffer does.
 
 ## Development
 
@@ -102,7 +113,9 @@ yarn dev
 
 Open [http://localhost:5173](http://localhost:5173). The Vite development
 server proxies the local daemon, and a credential-free agent choice uses the
-scripted demo backend.
+scripted demo backend. `yarn dev` starts the daemon on port 3100 (`PORT` in the
+`dev` script) and the proxy reads the same `PORT` variable; set `PORT` before
+running either half on its own so they agree.
 
 Build and exercise the packaged path with:
 

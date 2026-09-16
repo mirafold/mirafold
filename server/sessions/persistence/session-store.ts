@@ -109,6 +109,38 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       seq: sequenceSchema,
     })
     .strict(),
+  // A running call's latest bounded replacement snapshot (Phase TF): the
+  // ring keeps one per id, so a reload mid-command shows the newest tail.
+  z
+    .object({
+      type: z.literal("tool_output_snapshot"),
+      id: idSchema,
+      revision: nonnegativeIntSchema,
+      head: z.string(),
+      tail: z.string().optional(),
+      omittedBytes: nonnegativeIntSchema.optional(),
+      parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  // A task's engine-reported lifecycle (Phase TF), one retained per id.
+  z
+    .object({
+      type: z.literal("task_update"),
+      id: idSchema,
+      state: z.enum(["running", "completed", "failed", "interrupted", "unknown"]),
+      label: z.string().optional(),
+      agentType: z.string().optional(),
+      action: z.string().optional(),
+      report: z.string().optional(),
+      reportTail: z.string().optional(),
+      reportOmittedBytes: nonnegativeIntSchema.optional(),
+      elapsedMs: nonnegativeIntSchema.optional(),
+      parentId: idSchema.optional(),
+      attempt: sequenceSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("status"),
@@ -153,6 +185,11 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       id: idSchema,
       input: jsonRecordSchema.optional(),
       parentId: idSchema.optional(),
+      actions: z
+        .array(z.object({ kind: z.enum(["read", "list", "search"]), target: z.string().optional() }).strict())
+        .max(1_000)
+        .optional(),
+      attempt: sequenceSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -162,6 +199,8 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       id: idSchema,
       detail: z.string().optional(),
       input: jsonRecordSchema.optional(),
+      elapsedMs: nonnegativeIntSchema.optional(),
+      parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -173,6 +212,12 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       id: idSchema,
       truncatedBytes: nonnegativeIntSchema.optional(),
       parentId: idSchema.optional(),
+      tail: z.string().optional(),
+      omittedBytes: nonnegativeIntSchema.optional(),
+      // Any safe integer, like bang_end: an exit status is displayed, never
+      // acted on.
+      exitCode: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).optional(),
+      durationMs: nonnegativeIntSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),

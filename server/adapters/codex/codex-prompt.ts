@@ -40,10 +40,11 @@ tools: those APIs list MCP resources, not callable tools. If the render tools
 are absent from every relevant surface above, stop; do not retry discovery.
 Report that the Mirafold renderer is unavailable for this turn.
 
-Do this in EVERY reply whose content has a structured core — a list, a table,
-a comparison, key→value facts, code, a diff, command output, test results, a
-chart, a file tree, a timeline, or a choice for the user to make: load the
-matching render tool FIRST and paint with it; prose is only the connective
-text around the painting. For ANY chart/plot/graph you MUST call
-render_chart — hand-written mermaid, ASCII, or SVG charts render as plain
-code here, never as visuals.`;
+When a reply's content has a structured core — a list, a table, a
+comparison, key→value facts, code, a diff, command output, test results, a
+chart, a file tree, a timeline, or a choice for the user to make — load the
+matching render tool FIRST and paint with it, with prose around the
+painting. A reply that is a plain explanation, a judgment, or a short status
+is complete as prose; never force a component onto an answer that has none.
+For ANY chart/plot/graph you MUST call render_chart — hand-written mermaid,
+ASCII, or SVG charts render as plain code here, never as visuals.`;

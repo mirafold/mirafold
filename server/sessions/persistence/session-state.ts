@@ -10,7 +10,10 @@ import { PERMISSION_TIMEOUT_MS } from "../../adapters/types";
 // regardless. Each KEPT entry still carries its full, untruncated detail.
 export const PERMISSION_MIRROR_CAP = 25;
 
-export type PendingPermission = { id: string; tool: string; detail: string; askedAt: number };
+// `parentId`: the ask is a SUBAGENT's — it outlives the root turn that was
+// running when it was raised (its background child still is) and leaves the
+// mirror only on its own resolution or timeout. Server-side only.
+export type PendingPermission = { id: string; tool: string; detail: string; askedAt: number; parentId?: string };
 export type SessionUsage = { inputTokens: number; outputTokens: number; costUsd?: number };
 
 /**
@@ -161,8 +164,16 @@ export function reduceSessionState(
     if (next.status !== "permission") next.status = "working";
   } else if (msg.type !== "permission_resolved") {
     // permission_resolved decides its own status below — it must not
-    // blanket-flip to "working" while a SECOND ask still pends.
-    next.status = "working";
+    // blanket-flip to "working" while a SECOND ask still pends. A
+    // subagent's traffic (parentId set, or a task lifecycle word) after the
+    // root turn ended — a background child that outlived it — must not
+    // re-mark the session working either: no turn_end would ever idle it
+    // again, and the fleet would read "working" forever (PR #122 review).
+    // A `notice` is the shell's or the engine's word about something, never
+    // proof a turn is running (a child-flood notice can arrive after the
+    // root turn ended).
+    const subagentTraffic = msg.type === "task_update" || msg.type === "notice" || ("parentId" in msg && Boolean(msg.parentId));
+    if (!subagentTraffic || next.modelTurnsPending > 0 || next.bangActive) next.status = "working";
   }
 
   // ---- cockpit: activity ----
@@ -188,7 +199,7 @@ export function reduceSessionState(
     // permission_request; copying it whole here leaks nothing new.
     next.permissions = [
       ...next.permissions,
-      { id: msg.id, tool: msg.tool, detail: msg.detail, askedAt: now },
+      { id: msg.id, tool: msg.tool, detail: msg.detail, askedAt: now, ...(msg.parentId ? { parentId: msg.parentId } : {}) },
     ];
     if (next.permissions.length > PERMISSION_MIRROR_CAP) {
       next.permissions = next.permissions.slice(-PERMISSION_MIRROR_CAP);
@@ -198,13 +209,22 @@ export function reduceSessionState(
     // is approximate. An answered id is usually already gone
     // (permission_answered); the timeout path is the one only this catches.
     next.permissions = next.permissions.filter((p) => p.id !== msg.id);
-    if (next.status === "permission" && next.permissions.length === 0) next.status = "working";
+    // The hold lifts to whatever is underneath — a pending turn or a PTY
+    // keeps the row working; otherwise it is idle (a background child's
+    // ask can be the last thing pending after the root turn ended).
+    if (next.status === "permission" && next.permissions.length === 0) {
+      next.status = next.modelTurnsPending > 0 || next.bangActive ? "working" : "idle";
+    }
   } else if (msg.type === "turn_end" || msg.type === "error") {
     // The turn that owned these asks ended. A queued next turn may keep the
-    // session working, but none of the prior turn's approvals survive into it.
-    next.permissions = [];
+    // session working, but none of the prior turn's approvals survive into
+    // it — except a SUBAGENT's: its background child is still running and
+    // its escalation is still the user's to answer, so the hold stands
+    // (PR #122 review).
+    next.permissions = next.permissions.filter((p) => p.parentId);
+    if (next.permissions.length) next.status = "permission";
   } else if (next.status === "idle") {
-    next.permissions = [];
+    next.permissions = next.permissions.filter((p) => p.parentId);
   } else if (next.permissions.length) {
     // The adapter auto-denies an unanswered ask at PERMISSION_TIMEOUT_MS with
     // no stream event marking it — age the mirror out on the same clock so

@@ -46,7 +46,9 @@ current directory and opens the authenticated local URL once the server is
 listening. [`server/index.ts`](../server/index.ts) is the daemon entry point:
 it serves the built client, hosts the `/ws` WebSocket endpoint, binds to
 `127.0.0.1`, applies the launch-token and Origin checks, creates the session
-registry, and optionally dials the relay.
+registry, and dials the hosted relay when a Pro entitlement is configured
+(`MIRAFOLD_RELAY_URL=off` opts out; `server/relay/relay-url.ts` resolves that
+plan, and a malformed value narrows to "off" rather than widening).
 
 The daemon delegates by responsibility:
 
@@ -63,7 +65,11 @@ The daemon delegates by responsibility:
   (PTY) shell (`!` hands the finished transcript to the agent as its own
   turn; `!!` is shell-only — the agent never sees it).
 - [`server/relay/`](../server/relay/) owns pairing, encryption, the daemon's
-  outbound relay client, and its transport contract.
+  outbound relay client, its transport contract, the license-key →
+  entitlement-token exchange ([`entitlement.ts`](../server/relay/entitlement.ts):
+  the permanent key stays on the daemon; a 48-hour signed token admits it to
+  the relay), and the local-only subscription status/cancel surface
+  ([`subscription.ts`](../server/relay/subscription.ts)).
 
 The server is bundled to `dist-server/` for the published package. The browser
 bundle is emitted to `dist/` and served by the same daemon outside development.
@@ -94,10 +100,13 @@ the one place that constructs a concrete adapter. Shared code does not branch
 on provider-specific events after this seam.
 
 Gemini is the one shipped adapter with a project-settings write. Its headless
-surface loads MCP servers from project settings, so the adapter may create
-`<workspace>/.gemini/settings.json` when that file is absent. It does not open
-or modify a pre-existing file before the user grants workspace trust; after
-trust, it merges the Mirafold MCP entry into the existing settings.
+surface loads MCP servers from project settings, so the adapter needs a
+Mirafold entry in `<workspace>/.gemini/settings.json`. Nothing is opened,
+read, or written before the user grants workspace trust: only once the trust
+ask has resolved to yes does the adapter create that file (when absent) or
+merge the Mirafold MCP entry into the existing one, non-destructively and
+through a no-follow open (`prepareSettings()` in
+[`gemini-cli.ts`](../server/adapters/gemini-cli/gemini-cli.ts)).
 
 See [ADAPTERS.md](ADAPTERS.md) for event grammar, capability differences,
 credential constraints, MCP requirements, and the add-an-adapter checklist.
@@ -121,9 +130,12 @@ Boundary checkpoints are synchronous on purpose (a `turn_end` must not be
 observable before its record is durable); moving the interior ones off the
 loop would need a generation guard so an older async write can never land
 over a newer boundary write, and has not been done because only image-heavy
-sessions pay the cost. The browser's transcript projection copies its ledger
-per streamed delta: ~0.26 ms per delta at 1,200 entries and ~0.9 ms at
-6,000, replaying 6,000 entries in ~100 ms — under a frame, left as is.
+sessions pay the cost. Streamed deltas are coalesced twice before the
+projection sees them: the registry merges same-lane deltas for
+`DELTA_COALESCE_MS` (33 ms by default) before broadcasting, and the browser's
+[`delta-queue.ts`](../web/src/transcript/delta-queue.ts) batches what arrives
+per animation frame, so the projection copies its ledger once per frame, not
+once per token.
 
 [`connection.ts`](../server/sessions/connection.ts) is the transport-neutral
 message boundary used by local WebSockets and relay viewports. It validates
@@ -169,6 +181,54 @@ tool activity, errors, and shell boundaries visible. The output zone delegates
 structured content to [`web/src/registry/`](../web/src/registry/) and arbitrary
 HTML to the sandboxed [`Artifact`](../web/src/components/Artifact.tsx) host.
 
+#### The compact transcript (Phase TF, 2026-09-15)
+
+The projection in
+[`transcript-projection.ts`](../web/src/transcript/transcript-projection.ts)
+is the one place wire chronology becomes rows, and the rules it applies are
+deliberately narrow:
+
+- **Every message, command, edit, failure, and in-flight call is its own
+  row.** Prose is never folded into tool activity.
+- **Only routine work groups.** A contiguous run of completed, error-free,
+  exit-0 calls that the ENGINE classified as reads, listings, or searches
+  (`tool_use.actions`, produced by
+  [`routine-actions.ts`](../server/adapters/routine-actions.ts) from exact
+  engine tool names or Codex's own `commandActions` — never inferred from
+  shell text) collapses to one line such as "Read 8 files · 3 searches"
+  ([`tool-visibility.ts`](../web/src/transcript/tool-visibility.ts)). Reasoning
+  between two routine calls rides inside that group; leading or trailing
+  reasoning is its own collapsed "Thinking" control.
+- **Command rows carry outcomes.** `tool_result.exitCode` and `durationMs`
+  are independent of `isError` (a nonzero exit that ran is not an error); a
+  collapsed row previews the last non-empty lines.
+- **Evidence is bounded and says so.** A large result keeps a UTF-8-safe head
+  and tail within one 64,000-byte budget (`OUTPUT_CAP_BYTES` in
+  [`server/adapters/types.ts`](../server/adapters/types.ts)); `omittedBytes`
+  counts what fell between them. A running call streams
+  `tool_output_snapshot` replacements (at most four per second per call,
+  through [`live-output.ts`](../server/adapters/live-output.ts)); the ring
+  keeps one snapshot per call and the result retires it.
+- **Tasks are a lifecycle, not a call.** Subagents and background tasks ride
+  the additive `task_update` message (engine-stated state, retained report,
+  transient action); [`subagent-deck.ts`](../web/src/transcript/subagent-deck.ts)
+  folds a task's own calls and prose under its anchor. A state the engine
+  never stated is shown as inferred, never asserted.
+- **Absence is declared, not implied.** `session_created.capabilities`
+  ([`capabilities.ts`](../server/adapters/capabilities.ts)) says per adapter
+  whether live output, thinking, tasks, and a task's child activity can
+  appear, so the shell can say "unavailable for this agent" instead of
+  letting silence read as "nothing happened". A replay past evicted history
+  ends with `replay_complete { evicted: true }` and shows a notice; an
+  outcome whose opening row was evicted becomes an explicit "(earlier call)"
+  row.
+- **Disclosure is the viewer's.** Expand/collapse choices are keyed by wire
+  identity (`tool:<id>`, `think:seq:<n>`, `fold:<anchor>`, `deck:<id>`) and
+  kept per session in `sessionStorage`
+  ([`disclosure-store.ts`](../web/src/transcript/disclosure-store.ts)); the
+  status bar's `show details` mode opens everything for that tab only.
+  Nothing about disclosure reaches other viewers or the daemon.
+
 Browser modules follow the same ownership boundaries:
 [`transport/`](../web/src/transport/) owns daemon and relay connectivity;
 [`transcript/`](../web/src/transcript/) owns transcript state and projection;
@@ -196,6 +256,11 @@ one.
 | Review shortcuts in [`useDiffPanelController`](../web/src/components/diff-panel/use-diff-panel-controller.ts) | `r`, `n` | `window`, bubble | the diff panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
 | Busy interrupt in [`Shell`](../web/src/components/Shell.tsx) (`useEscapeKey`, non-exclusive) | Escape | `window`, bubble | a turn is running | the fallback: runs only when no exclusive owner above claimed the key |
 
+[`Artifact`](../web/src/components/Artifact.tsx) also registers a
+window-capture `keydown` listener, but it only records when a Tab was pressed
+(to tell a user's gesture from a frame grabbing focus) and never claims the
+key, so it has no row above.
+
 Focused-element handlers sit outside this order because they see the key
 first and only for their own element: the prompt box's textarea (completion
 menu open: ArrowUp/ArrowDown move, Tab/Enter accept, Escape dismisses the
@@ -217,7 +282,9 @@ rows that have collided before.
 Mirafold exposes drawing tools to each agent through the Model Context Protocol
 (MCP). Claude Agent uses the in-process server in
 [`render-tools.ts`](../server/render-tools.ts); adapters that load an MCP
-subprocess use [`render-mcp.ts`](../server/render-mcp.ts).
+subprocess describe the launch through
+[`adapters/render-mcp-cmd.ts`](../server/adapters/render-mcp-cmd.ts), which
+starts the bundled [`render-mcp.ts`](../server/render-mcp.ts) over stdio.
 Both paths use the schemas in
 [`registry-spec.ts`](../server/registry-spec.ts).
 
@@ -241,12 +308,19 @@ components.
 [`server/protocol.ts`](../server/protocol.ts) defines both directions of the
 browser/server protocol:
 
-- `WireMsg` covers streamed text and reasoning, tool activity, renders,
-  artifacts, shell status, session metadata, filesystem replies, PTY output,
-  fleet snapshots, and lifecycle events.
+- `WireMsg` covers streamed text and reasoning, tool activity (`tool_use`
+  with its engine-classified `actions`, `tool_update`, `tool_output_delta`,
+  `tool_output_snapshot`, `tool_result` with head/tail/exit/duration),
+  task lifecycle (`task_update`), renders, artifacts, notices and pickers,
+  usage, shell status, session metadata (`session_created` with its declared
+  `capabilities`, `replay_complete` with `evicted`), entitlement and
+  subscription reads, filesystem and folder-picker replies, PTY output,
+  upload progress, fleet snapshots, and lifecycle events.
 - `ClientMsg` covers prompts, interrupts, permission answers, session
   attachment and creation, mediated component actions, PTY input, filesystem
-  requests, uploads, and fleet actions.
+  requests (including `fs_listdir` continuation pages), the native folder
+  picker, agent re-probing, subscription requests, uploads, browser error
+  reports, keepalives, and fleet actions.
 
 Fleet snapshots are per-viewport plumbing, not replay records: they have no
 session sequence number. The optional transcript tail is requested by the
@@ -351,7 +425,11 @@ accepted residual risks in detail.
 
 1. The client attaches with the last sequence number it observed.
 2. If that cursor remains in the bounded buffer, the registry replays only the
-   unseen tail; otherwise it sends a complete available replay.
+   unseen tail (`session_created.resumed`); otherwise it sends the complete
+   available replay. Either way the replay is bracketed: the client publishes
+   history once when `replay_complete` arrives, and `evicted: true` on that
+   message means the ring had already dropped older history, which the
+   transcript states rather than hides.
 3. A second local tab follows the same path. A paired remote browser uses the
    same connection logic after the relay layer authenticates and decrypts its
    frames.
@@ -377,7 +455,7 @@ accepted residual risks in detail.
 | `server/sessions/` | Session, connection, persistence, workspace, Git, upload, and action logic |
 | `server/security/` | Authentication, tool permissions, and executable trust |
 | `server/pty/` | Interactive `!` shell |
-| `server/relay/` | Pairing, encryption, and outbound remote transport |
+| `server/relay/` | Pairing, encryption, outbound remote transport, and the entitlement/subscription exchange |
 | `server/testing/` | Integration, browser, visual, and live-test infrastructure |
 | `web/src/components/` | Trusted shell and session/fleet surfaces |
 | `web/src/registry/` | Agent-paintable React component vocabulary |
@@ -405,13 +483,17 @@ opt-in live-agent tests.
 - UI work is exercised against the mock before a live model is involved.
 - The visual language is a terminal workbench, not a chat application:
   monospace command input, rich output, no message bubbles, and
-  provider-native activity that compacts only after it settles.
+  provider-native activity kept visible: routine engine-classified work
+  groups as it completes, reasoning collapses when the answer begins, and
+  every message, command, edit, and failure stays its own row.
 - Adapter drive loops stay local. How an engine is pumped, aborted, and
   resumed differs per engine and is deliberately not shared; the
   wire-contract obligations that must behave identically everywhere (the
   permission ledger, the checklist painting, the first-turn guidance, the
-  slash-turn envelope, output caps) live once in `server/adapters/` shared
-  modules (`wire-helpers.ts`, `types.ts`) and every adapter composes them.
+  slash-turn envelope, output caps, live-output snapshots, routine-work
+  classification, declared capabilities) live once in `server/adapters/`
+  shared modules (`wire-helpers.ts`, `types.ts`, `live-output.ts`,
+  `routine-actions.ts`, `capabilities.ts`) and every adapter composes them.
   The distinct render/artifact update paths and the scripted mock are not
   genericized only to reduce line count.
 

@@ -5,11 +5,13 @@ import {
   type TodoItem,
   capOutput,
   emitPromptOptions,
+  outputFields,
   PERMISSION_TIMEOUT_MS,
 } from "../types";
 import { RENDER_TOOL_COMPONENT } from "../render-mcp-cmd";
 import { codexSlashOptions } from "../codex/codex-prompt-options";
 import { PermissionLedger } from "../wire-helpers";
+import { routineActions } from "../routine-actions";
 
 // component → its real render_* tool name, inverted from the one mapping
 // (a hand-rolled inverse here would produce tool names no agent can call —
@@ -592,6 +594,12 @@ export class MockSession implements AgentSession {
     { id: "charts", prompt: "chart demo", match: /chart demo/i, play: (m) => m.playCharts() },
     { id: "console", prompt: "show a console", match: /console/i, play: (m) => m.playConsole() },
     { id: "tool-activity", prompt: "show tool activity", match: /tool activity|transcript compact/i, play: (m) => m.playToolActivity() },
+    { id: "exploration-flood", prompt: "explore the codebase widely", match: /explore the codebase widely/i, play: (m) => m.playExplorationFlood() },
+    { id: "failure-recovery", prompt: "fix the failing test", match: /fix the failing test/i, play: (m) => m.playFailureRecovery() },
+    { id: "parallel-work", prompt: "run the parallel work", match: /run the parallel work/i, play: (m) => m.playParallelWork() },
+    { id: "noisy-process", prompt: "run a noisy process", match: /run a noisy process/i, play: (m) => m.playNoisyProcess() },
+    { id: "gemini-shaped", prompt: "gemini shaped turn", match: /gemini shaped turn/i, play: (m) => m.playGeminiShaped() },
+    { id: "painting-permission", prompt: "plan then paint and ask", match: /plan then paint and ask/i, play: (m) => m.playPaintingPermission() },
     { id: "image", prompt: "take a screenshot", match: /screenshot/i, play: (m) => m.playImage() },
     { id: "diagram", prompt: "draw a diagram", match: /diagram/i, play: (m) => m.playDiagram() },
     { id: "stat", prompt: "kpi demo", match: /kpi/i, play: (m) => m.playStat() },
@@ -1305,7 +1313,7 @@ export class MockSession implements AgentSession {
     const id = randomUUID();
     const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
     const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
-    const capped = capOutput(big);
+    const capped = outputFields(capOutput(big));
     this.beginTurn();
     this.schedule(() => {
       this.emit({ type: "status", state: "tool", label: "Bash" });
@@ -1315,8 +1323,7 @@ export class MockSession implements AgentSession {
       () =>
         this.emit({
           type: "tool_result",
-          output: capped.text,
-          truncatedBytes: capped.truncatedBytes,
+          ...capped,
           id,
         }),
       900,
@@ -1412,13 +1419,12 @@ export class MockSession implements AgentSession {
         this.emit({ type: "tool_use", name: t.name, detail: t.detail, id, input: t.input });
       }, delay);
       delay += randInt(300, 700);
-      const capped = capOutput(t.output);
+      const capped = outputFields(capOutput(t.output));
       this.schedule(
         () =>
           this.emit({
             type: "tool_result",
-            output: capped.text,
-            truncatedBytes: capped.truncatedBytes,
+            ...capped,
             isError: t.isError,
             id,
           }),
@@ -1462,9 +1468,9 @@ export class MockSession implements AgentSession {
       detail: string;
       output: string;
       isError?: boolean;
-      // Codex-style narration between commands: the fold must absorb it.
+      // Reasoning between two routine calls: the group absorbs it in order.
       thinkBefore?: string;
-      // A short spoken remark between commands: absorbed the same way.
+      // A spoken remark between commands: its own readable row (TF R1).
       sayBefore?: string;
       // How long the call appears to run (a window for live assertions).
       runFor?: number;
@@ -1475,10 +1481,20 @@ export class MockSession implements AgentSession {
         output: "Read 42 lines",
       },
       {
+        name: "Grep",
+        detail: "tool_result",
+        output: "3 hits",
+        thinkBefore: "Weighing which check to run next.",
+      },
+      {
+        name: "Read",
+        detail: "web/src/transcript/turn-state.ts",
+        output: "Read 197 lines",
+      },
+      {
         name: "Bash",
         detail: "yarn typecheck",
         output: "Done in 1.2s",
-        thinkBefore: "Weighing which check to run next.",
       },
       {
         name: "Bash",
@@ -1535,6 +1551,197 @@ export class MockSession implements AgentSession {
       delay,
     );
     this.endTurn(delay + 40);
+  }
+
+  /** TF5 scenario 1 — exploration flood: a long reasoning stream, fifty
+   *  routine reads/searches, and two real root messages splitting them. */
+  private playExplorationFlood() {
+    this.beginTurn();
+    let delay = 60;
+    const think = "Mapping the module graph before touching anything. ".repeat(12);
+    for (const chunk of think.match(/.{1,24}/g) ?? []) {
+      this.schedule(() => this.emit({ type: "thinking_delta", text: chunk }), delay);
+      delay += 12;
+    }
+    const routine = (i: number) => {
+      const id = randomUUID();
+      const search = i % 3 === 2;
+      const name = search ? "Grep" : "Read";
+      const detail = search ? `needle-${i}` : `${pick(FILES)}`;
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: name });
+        this.emit({ type: "tool_use", name, detail, id });
+      }, delay);
+      delay += 24;
+      this.schedule(() => this.emit({ type: "tool_result", output: search ? `${i} hits` : `Read ${20 + i} lines`, id }), delay);
+      delay += 12;
+    };
+    for (let i = 0; i < 25; i++) routine(i);
+    delay = this.streamText("Halfway: the auth path runs through the socket handshake.", delay + 40);
+    delay += 60;
+    for (let i = 25; i < 50; i++) routine(i);
+    delay = this.streamText("Exploration complete — fifty files and searches later, the map is drawn.", delay + 40);
+    this.endTurn(delay);
+  }
+
+  /** TF5 scenario 2 — failure and recovery: a command fails, the agent
+   *  explains, edits, reruns green; then a bare exit 1 with no verdict. */
+  private playFailureRecovery() {
+    this.beginTurn();
+    let delay = 80;
+    const command = (detail: string, output: string, exitCode: number, runFor = 120) => {
+      const id = randomUUID();
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: "Bash" });
+        this.emit({ type: "tool_use", name: "Bash", detail, id, input: { command: detail } });
+      }, delay);
+      delay += runFor;
+      this.schedule(() => this.emit({ type: "tool_result", output, id, exitCode, durationMs: runFor, isError: false }), delay);
+      delay += 40;
+    };
+    command("yarn test", "12 passing\n\n  1) session › resumes\n     expected 3, got 2\n\nFAIL: 1 test failed", 1, 400);
+    delay = this.streamText("The resume test fails because the cursor is compared before the ring flushes; flushing first fixes it.", delay + 40);
+    delay += 60;
+    const edit = randomUUID();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Edit" });
+      this.emit({ type: "tool_use", name: "Edit", detail: "server/sessions/persistence/replay-ring.ts", id: edit, input: { file_path: "server/sessions/persistence/replay-ring.ts", old_string: "if (!this.tailResumeSafe) return false;", new_string: "this.flush();\nif (!this.tailResumeSafe) return false;" } });
+    }, delay);
+    delay += 120;
+    this.schedule(() => this.emit({ type: "tool_result", output: "Edited 1 file", id: edit }), delay);
+    delay += 40;
+    command("yarn test", "13 passing", 0, 350);
+    command("rg nope src/", "", 1, 90);
+    delay = this.streamText("Green again. The probe for `nope` simply matched nothing.", delay + 40);
+    this.endTurn(delay);
+  }
+
+  /** TF5 scenario 3 — parallel work: two children and a background
+   *  process; the parent's turn ends first, then one child fails, one
+   *  reports at length, and the process keeps running. */
+  private playParallelWork() {
+    this.beginTurn();
+    const a = randomUUID();
+    const b = randomUUID();
+    const proc = randomUUID();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Agent" });
+      this.emit({ type: "tool_use", name: "Agent", detail: "audit the watcher", id: a, input: { description: "audit the watcher", subagent_type: "Explore" } });
+      this.emit({ type: "task_update", id: a, state: "running", label: "audit the watcher", agentType: "Explore" });
+      this.emit({ type: "tool_use", name: "Agent", detail: "trace the token path", id: b, input: { description: "trace the token path", subagent_type: "general-purpose" } });
+      this.emit({ type: "task_update", id: b, state: "running", label: "trace the token path", agentType: "general-purpose" });
+      this.emit({ type: "tool_use", name: "Bash", detail: "make watch", id: proc, input: { command: "make watch", run_in_background: true } });
+      this.emit({ type: "task_update", id: proc, state: "running", label: "make watch" });
+    }, 200);
+    this.schedule(() => this.emit({ type: "tool_result", output: "Started 2 agents and a background build.", id: a }), 400);
+    const d = this.streamText("Kicked off both audits and the watch build; they report as they finish.", 500);
+    this.endTurn(d);
+    // Child A works, then fails.
+    const a1 = randomUUID();
+    this.schedule(() => this.emit({ type: "tool_use", name: "Grep", detail: "-rn watcher server/", id: a1, parentId: a }), 1_200);
+    this.schedule(() => this.emit({ type: "tool_result", output: "server/watch.ts:12", id: a1, parentId: a }), 1_500);
+    this.schedule(() => this.emit({ type: "task_update", id: a, state: "failed", label: "audit the watcher", agentType: "Explore", report: "Audit aborted: server/watch.ts imports a module that does not exist.\nMissing: ./inotify-shim" }), 2_400);
+    // Child B works, then reports at length.
+    const b1 = randomUUID();
+    this.schedule(() => this.emit({ type: "text_delta", text: "Following the cookie from auth.ts into the relay…", parentId: b }), 1_000);
+    this.schedule(() => this.emit({ type: "tool_use", name: "Read", detail: "server/relay/relay.ts", id: b1, parentId: b }), 1_800);
+    this.schedule(() => this.emit({ type: "tool_result", output: "120 lines", id: b1, parentId: b }), 2_100);
+    const report = ["Token path traced.", "", "1. auth.ts mints the cookie.", "2. The socket handshake reads it.", "3. The relay never sees it — it stays on the daemon.", "", "FINAL: the token never leaves the machine."].join("\n");
+    this.schedule(() => this.emit({ type: "task_update", id: b, state: "completed", label: "trace the token path", agentType: "general-purpose", report, elapsedMs: 3_100 }), 3_300);
+    this.schedule(() => this.emit({ type: "tool_result", output: report, id: b }), 3_350);
+    // The background build keeps running; its progress ticks are state, not rows.
+    for (let i = 1; i <= 6; i++) {
+      this.schedule(() => this.emit({ type: "task_update", id: proc, state: "running", label: "make watch", action: `compiled ${i * 7} files` }), 1_000 + i * 700);
+    }
+  }
+
+  /** TF5 scenario 4 — a large, noisy process: UTF-8 logs past a small cap
+   *  with the key failure at the end, a silent pause, then exit 2. */
+  private playNoisyProcess() {
+    const id = randomUUID();
+    this.beginTurn();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Bash" });
+      this.emit({ type: "tool_use", name: "Bash", detail: "./build.sh --verbose", id, input: { command: "./build.sh --verbose" } });
+    }, 150);
+    // A scripted engine with a 600-byte budget: the head stays fixed, the
+    // tail slides, and the omitted count grows — replacement snapshots, one
+    // per revision, exactly the LiveOutput contract.
+    const head = "build: starting — configuración ✓\ncompiling módulo 1\n";
+    let delay = 300;
+    let total = Buffer.byteLength(head, "utf8");
+    this.schedule(() => this.emit({ type: "tool_output_snapshot", id, revision: 1, head }), delay);
+    const lines: string[] = [];
+    for (let i = 2; i <= 40; i++) {
+      lines.push(`compiling módulo ${i} … ok ✓`);
+      const tailText = lines.slice(-4).join("\n");
+      total += Buffer.byteLength(lines[lines.length - 1] + "\n", "utf8");
+      const omitted = Math.max(0, total - Buffer.byteLength(head, "utf8") - Buffer.byteLength(tailText, "utf8"));
+      const revision = i;
+      delay += 70;
+      this.schedule(() => this.emit({ type: "tool_output_snapshot", id, revision, head, tail: tailText, omittedBytes: omitted }), delay);
+    }
+    delay += 70;
+    const finalTail = [...lines.slice(-2), "ld: undefined symbol: mf_relay_open", "ERROR: link failed (exit 2)"].join("\n");
+    const finalOmitted = Math.max(0, total + 60 - Buffer.byteLength(head, "utf8") - Buffer.byteLength(finalTail, "utf8"));
+    this.schedule(() => this.emit({ type: "tool_output_snapshot", id, revision: 41, head, tail: finalTail, omittedBytes: finalOmitted }), delay);
+    // Silence: the command is still running; nothing must be inferred.
+    delay += 3_000;
+    this.schedule(() => this.emit({ type: "tool_result", output: head, tail: finalTail, omittedBytes: finalOmitted, truncatedBytes: finalOmitted + Buffer.byteLength(finalTail, "utf8"), id, exitCode: 2, durationMs: delay - 150, isError: false }), delay);
+    const d = this.streamText("The build fails at link time — the relay symbol is missing.", delay + 80);
+    this.endTurn(d);
+  }
+
+  /** TF5 scenario 8 — a Gemini-shaped turn: only a call and its result,
+   *  with a long silence between; no thinking, no live output, no tasks. */
+  private playGeminiShaped() {
+    const id = randomUUID();
+    this.beginTurn();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "run_shell_command" });
+      this.emit({ type: "tool_use", name: "run_shell_command", detail: "./slow-probe.sh", id, input: { command: "./slow-probe.sh" } });
+    }, 150);
+    this.schedule(() => this.emit({ type: "tool_result", output: "probe: ok", id, isError: false }), 3_400);
+    const d = this.streamText("The probe completed.", 3_600);
+    this.endTurn(d);
+  }
+
+  /** TF5 scenario 7 — a plan completes above the reader, a render call
+   *  fails, and a child asks for permission. */
+  private playPaintingPermission() {
+    this.beginTurn();
+    const planId = randomUUID();
+    const todos = (done: number) => [
+      { content: "read the watcher", status: done > 0 ? "completed" : "in_progress" },
+      { content: "fix the shim", status: done > 1 ? "completed" : "pending" },
+      { content: "run the suite", status: done > 2 ? "completed" : "pending" },
+    ];
+    this.schedule(() => this.emit({ type: "render", component: "todo-list", props: { todos: todos(0) }, id: planId }), 150);
+    let delay = this.streamText("Working through the plan; I will keep it updated above.\n\n" + Array.from({ length: 14 }, () => sentence()).join("\n\n"), 250, 10);
+    this.schedule(() => this.emit({ type: "render", component: "todo-list", props: { todos: todos(3) }, id: planId }), delay + 200);
+    delay += 400;
+    const failing = randomUUID();
+    this.schedule(() => {
+      this.emit({ type: "tool_use", name: "mcp__ui__render_chart", detail: "series: 0", id: failing, input: { series: [] } });
+      this.emit({ type: "tool_result", output: "render_chart: `series` must have at least one entry", id: failing, isError: true });
+    }, delay);
+    delay += 120;
+    const child = randomUUID();
+    this.schedule(() => {
+      this.emit({ type: "tool_use", name: "Agent", detail: "verify the shim", id: child, input: { description: "verify the shim", subagent_type: "Explore" } });
+      this.emit({ type: "task_update", id: child, state: "running", label: "verify the shim", agentType: "Explore" });
+    }, delay);
+    delay += 150;
+    this.schedule(() => {
+      void this.permissions
+        .ask({ tool: "Bash", detail: "rm -rf build/", parentId: child }, PERMISSION_TIMEOUT_MS)
+        .then((allowed) => {
+          this.emit({ type: "task_update", id: child, state: allowed ? "completed" : "failed", label: "verify the shim", agentType: "Explore", report: allowed ? "Shim verified." : "Verification declined." });
+          this.emit({ type: "tool_result", output: allowed ? "Shim verified." : "declined", id: child, isError: !allowed });
+          const done = this.streamText("Plan complete.", 100);
+          this.endTurn(done);
+        });
+    }, delay);
   }
 
   /** Emit a one-artifact turn: brief text, then the artifact. */
@@ -1606,6 +1813,14 @@ export class MockSession implements AgentSession {
   }
 
   private emit(msg: SessionMsg) {
+    // The scripted calls speak Claude-style names (Read/Grep/Glob); classify
+    // them the way that adapter does so the browser's grouping runs
+    // API-free. Bash and friends carry nothing, exactly like the real path.
+    if (msg.type === "tool_use" && !msg.actions) {
+      const input = msg.input ?? (msg.name === "Read" ? { file_path: msg.detail } : { pattern: msg.detail });
+      const actions = routineActions("claude-code", msg.name, input);
+      if (actions) msg = { ...msg, actions };
+    }
     for (const cb of this.listeners) cb(msg);
   }
 

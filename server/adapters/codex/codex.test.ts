@@ -14,6 +14,7 @@ import { codexRenderMcpConfig } from "./codex-binding";
 import { MIRAFOLD_CONTEXT } from "../../render-guidance";
 import { OUTPUT_CAP_BYTES } from "../types";
 import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
+import { CODEX_CHILD_THREAD_SEQUENCE } from "../../testing/fixtures/codex-child-thread-fixture";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -68,6 +69,11 @@ async function answerAsk(s: CodexSession, msgs: Any[], n: number, allow: boolean
 }
 
 const DONE: Notification = ["turn/completed", { turn: { status: "completed" } }];
+const last = (arr: Any[]): Any => {
+  const m = arr.at(-1);
+  assert.ok(m, "expected at least one message");
+  return m;
+};
 const usage = (inputTokens: number, outputTokens: number, reasoningOutputTokens = 0): Notification => [
   "thread/tokenUsage/updated",
   { tokenUsage: { total: { inputTokens, outputTokens, reasoningOutputTokens, cachedInputTokens: 0, totalTokens: inputTokens + outputTokens }, last: {} } },
@@ -741,6 +747,759 @@ test("a command that RAN is never a red error, whatever its exit status — app-
   const results = msgs.filter((m) => m.type === "tool_result");
   assert.ok(results.every((r) => r.isError !== true), "a command that ran is not a red error");
   assert.deepEqual(results.map((r) => r.output), ["(exit 1)", "ls: cannot access\n(exit 2)", "(exit 1)"]);
+  s.close();
+});
+
+test("TF1.4: verified commandActions classify routine work; exit code and duration ride as facts", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    // Every parsed action is a read/listing/search → groupable, targets carried.
+    ["item/started", { item: { type: "commandExecution", id: "r1", command: "cat a.ts && ls src && rg TODO src", status: "inProgress", commandActions: [{ type: "read", command: "cat a.ts", name: "a.ts", path: "/w/a.ts" }, { type: "listFiles", command: "ls src", path: "src" }, { type: "search", command: "rg TODO src", query: "TODO", path: "src" }] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "r1", command: "cat a.ts && ls src && rg TODO src", aggregatedOutput: "…", exitCode: 0, durationMs: 12.7, status: "completed", commandActions: [{ type: "read", command: "cat a.ts", name: "a.ts", path: "/w/a.ts" }, { type: "listFiles", command: "ls src", path: "src" }, { type: "search", command: "rg TODO src", query: "TODO", path: "src" }] } }],
+    // A mixed pipeline (one unknown) stays a command: no actions at all.
+    ["item/completed", { item: { type: "commandExecution", id: "m1", command: "cat a | wc -l", aggregatedOutput: "3", exitCode: 0, status: "completed", commandActions: [{ type: "read", command: "cat a", name: "a", path: "/w/a" }, { type: "unknown", command: "wc -l" }] } }],
+    // grep exit 1 (no match) and a test run exit 1: both factual, neither red.
+    ["item/completed", { item: { type: "commandExecution", id: "g1", command: "rg zzz", aggregatedOutput: "", exitCode: 1, status: "failed", commandActions: [{ type: "search", command: "rg zzz", query: "zzz", path: null }] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "x1", command: "yarn test", aggregatedOutput: "1 failing", exitCode: 1, durationMs: 900, status: "failed", commandActions: [{ type: "unknown", command: "yarn test" }] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const use = (id: string) => msgs.find((m) => m.type === "tool_use" && m.id === id)!;
+  const result = (id: string) => msgs.find((m) => m.type === "tool_result" && m.id === id)!;
+  assert.deepEqual(use("r1").actions, [
+    { kind: "read", target: "a.ts" },
+    { kind: "list", target: "src" },
+    { kind: "search", target: "TODO" },
+  ]);
+  assert.deepEqual([result("r1").exitCode, result("r1").durationMs, result("r1").isError], [0, 12, false]);
+  assert.equal(use("m1").actions, undefined, "an unknown action anywhere keeps the command a command");
+  assert.deepEqual(use("g1").actions, [{ kind: "search", target: "zzz" }]);
+  assert.deepEqual([result("g1").exitCode, result("g1").isError, result("g1").output], [1, false, "(exit 1)"]);
+  assert.deepEqual([result("x1").exitCode, result("x1").durationMs, result("x1").isError, result("x1").output], [1, 900, false, "1 failing\n(exit 1)"]);
+  assert.equal(use("x1").actions, undefined);
+  s.close();
+});
+
+test("review 2026-09-15: a large failing run keeps its exit note in the head, and an oversized action list is not routine", async () => {
+  const big = "log line\n".repeat(12_000); // over the 64 KB cap → head + tail
+  const many = Array.from({ length: 300 }, (_, i) => ({ type: "read", command: `cat f${i}`, name: `f${i}`, path: `/w/f${i}` }));
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/completed", { item: { type: "commandExecution", id: "big", command: "yarn test", aggregatedOutput: big, exitCode: 1, status: "failed", commandActions: [] } }],
+    ["item/completed", { item: { type: "commandExecution", id: "many", command: "cat …", aggregatedOutput: "", exitCode: 0, status: "completed", commandActions: many } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "big")!;
+  assert.ok(result.tail !== undefined && result.omittedBytes > 0, "a head/tail result");
+  assert.ok(result.output.endsWith("(exit 1)"), "the exit note is where a pre-TF client reads");
+  assert.equal(result.exitCode, 1);
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "many")!.actions, undefined);
+  s.close();
+});
+
+test("TF1.3: a running command's output streams as bounded legacy deltas AND replacement snapshots; the result settles the row", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "commandExecution", id: "s1", command: "make", status: "inProgress", commandActions: [] } }],
+    ["item/commandExecution/outputDelta", { itemId: "s1", delta: "line 1\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "s1", delta: "line 2\n" }],
+    ["item/completed", { item: { type: "commandExecution", id: "s1", command: "make", aggregatedOutput: "line 1\nline 2\n", exitCode: 0, status: "completed", commandActions: [] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const types = msgs.filter((m) => m.id === "s1").map((m) => m.type);
+  assert.equal(types[0], "tool_use");
+  assert.ok(types.includes("tool_output_delta") && types.includes("tool_output_snapshot"));
+  assert.equal(types.at(-1), "tool_result", "the authoritative result comes last");
+  const snaps = msgs.filter((m) => m.type === "tool_output_snapshot" && m.id === "s1");
+  assert.equal(last(snaps).head, "line 1\nline 2\n", "the final snapshot flushed before the result");
+  assert.ok(snaps.every((m, i) => i === 0 || m.revision > snaps[i - 1].revision));
+  assert.ok(msgs.indexOf(last(snaps)) < msgs.indexOf(msgs.find((m) => m.type === "tool_result" && m.id === "s1")!));
+  s.close();
+});
+
+test("TF2.3: MCP progress and the agent's own stdin ride the running row's live output; process/* stays ignored", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "mcpToolCall", id: "m1", server: "docs", tool: "search", status: "inProgress", arguments: { q: "x" } } }],
+    ["item/mcpToolCall/progress", { itemId: "m1", message: "indexing 3/9" }],
+    ["item/mcpToolCall/progress", { itemId: "m1", message: "indexing 9/9" }],
+    ["item/completed", { item: { type: "mcpToolCall", id: "m1", server: "docs", tool: "search", status: "completed", arguments: { q: "x" }, result: { content: [{ type: "text", text: "3 hits" }] }, durationMs: 250 } }],
+    ["item/started", { item: { type: "commandExecution", id: "c1", command: "python repl.py", status: "inProgress", commandActions: [], processId: "pty-9" } }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: ">>> " }],
+    ["item/commandExecution/terminalInteraction", { itemId: "c1", processId: "pty-9", stdin: "print(1)\n" }],
+    ["item/commandExecution/outputDelta", { itemId: "c1", delta: "1\n" }],
+    ["item/completed", { item: { type: "commandExecution", id: "c1", command: "python repl.py", aggregatedOutput: ">>> 1\n", exitCode: 0, status: "completed", commandActions: [], processId: "pty-9" } }],
+    ["process/outputDelta", { processHandle: "h1", stream: "stdout", deltaBase64: "eA==", capReached: false }],
+    ["process/exited", { processHandle: "h1", exitCode: 0, stdout: "", stderr: "", stdoutCapReached: false, stderrCapReached: false }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const live = (id: string) => msgs.filter((m) => m.type === "tool_output_delta" && m.id === id).map((m) => m.text).join("");
+  assert.equal(live("m1"), "indexing 3/9\nindexing 9/9\n");
+  assert.equal(live("c1"), ">>> ‹stdin› print(1)\n1\n");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "m1")!.durationMs, 250);
+  assert.ok(!msgs.some((m) => m.type === "notice"), "process/* is ledgered, never reported as unknown");
+  assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "h1"));
+  s.close();
+});
+
+test("TF2.4: a spawn returns while its child runs; later state updates the same task; the full report survives", async () => {
+  const report = "Audit complete.\n" + "detail line\n".repeat(30) + "FINAL: two findings.";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "Audit the watcher\nthen report", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "running", message: null } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa1", kind: "started", agentThreadId: "t-child", agentPath: "worker" } }],
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb2", tool: "wait", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb2", tool: "wait", receiverThreadIds: ["t-child"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-child": { status: "completed", message: report } } } }],
+    ["item/completed", { item: { type: "subAgentActivity", id: "sa2", kind: "completed", agentThreadId: "t-child", agentPath: "worker" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.ok(tasks.every((m) => m.id === "cb1"), "every child update lands on the spawn that first named the thread");
+  assert.deepEqual(tasks.map((m) => [m.state, m.label]), [
+    ["running", "Audit the watcher"], // spawn started: the child exists
+    ["running", "Audit the watcher"], // spawn completed with the child still running
+    ["running", "Audit the watcher"], // subAgentActivity started
+    ["completed", "Audit the watcher"], // wait: the child's state and its full report
+    ["completed", "Audit the watcher"], // subAgentActivity completed
+  ]);
+  const spawnResult = msgs.find((m) => m.type === "tool_result" && m.id === "cb1")!;
+  assert.equal(spawnResult.isError, false, "the finished spawn call is not the child finishing");
+  const withReport = tasks.find((m) => m.report);
+  assert.equal(withReport!.report, report, "the report is the whole message, not the collapsed 160-char line");
+  assert.ok(msgs.find((m) => m.type === "tool_result" && m.id === "cb2")!.output.length < report.length);
+  s.close();
+});
+
+test("PR #120 round 4: one collab result's child reports share one budget and one update count", async () => {
+  const threads = Array.from({ length: 600 }, (_, i) => `t-${i}`);
+  const states = Object.fromEntries(threads.map((t) => [t, { status: "completed", message: "m".repeat(50_000) }]));
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: threads, senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: threads, senderThreadId: "t-root", status: "completed", agentsStates: states } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const completed = msgs.filter((m) => m.type === "task_update" && m.state === "completed");
+  assert.ok(completed.length <= CodexEventMapper.MAX_TASK_UPDATES_PER_RESULT, `updates bounded (${completed.length})`);
+  const reportBytes = completed.reduce((n, m) => n + Buffer.byteLength(m.report ?? "", "utf8") + Buffer.byteLength(m.reportTail ?? "", "utf8"), 0);
+  assert.ok(reportBytes <= OUTPUT_CAP_BYTES, `one result's reports share one budget (${reportBytes})`);
+  assert.ok(completed.some((m) => m.report), "the first children still carry their reports");
+  s.close();
+});
+
+test("LIVE 2026-09-15 capture: a child thread's items ride the subagent lane under the anchor its spawn announced", async () => {
+  // The fake app-server's own thread id stands in for ROOT.
+  const events = CODEX_CHILD_THREAD_SEQUENCE.map(([method, params]) => {
+    const p = { ...params, threadId: params["threadId"] === "ROOT" ? "codex-thread-new" : "CHILD" };
+    return [method, p] as Notification;
+  });
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(events);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const anchor = "codex-agent:CHILD";
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.map((m) => [m.id, m.state, m.label]), [[anchor, "running", "/root/list_files"], [anchor, "completed", "/root/list_files"]]);
+  assert.equal(tasks[1]!.report, "The files are alpha.txt and beta.md.", "the child's final answer is its report");
+  const childCall = msgs.find((m) => m.type === "tool_use" && m.parentId === anchor)!;
+  assert.deepEqual([childCall.name, childCall.detail, childCall.actions], ["Shell", "/usr/bin/zsh -lc ls", [{ kind: "list" }]]);
+  const childResult = msgs.find((m) => m.type === "tool_result" && m.id === childCall.id)!;
+  assert.deepEqual([childResult.parentId, childResult.exitCode, childResult.output], [anchor, 0, "alpha.txt\nbeta.md\n"]);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && /list the files/.test(m.text)), "the child's commentary rides the lane");
+  // No reasoning text in this capture (the live run had reasoning
+  // summaries off — no `item/reasoning/*Delta` arrived); the lane for it is
+  // exercised by the mapper's reasoning path, not asserted here.
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool" && m.label === "Shell" && msgs.indexOf(m) < msgs.indexOf(childCall) + 1 && msgs.indexOf(m) > msgs.indexOf(childCall) - 2), "a child's tool churn never steers the root activity line");
+  const root = msgs.filter((m) => m.type === "tool_use" && !m.parentId).map((m) => m.name);
+  assert.deepEqual(root, ["wait", "Shell"], "the parent's own rows");
+  assert.equal(turnEnds(), 1, "the child's turn/completed did not end the parent's turn");
+  assert.ok(!msgs.some((m) => m.type === "notice"), "nothing reported as unknown");
+  s.close();
+});
+
+test("TF2.4: an errored or interrupted child marks its task failed/interrupted", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: ["t-a", "t-b"], senderThreadId: "t-root", status: "inProgress", agentsStates: {} } }],
+    ["item/completed", { item: { type: "collabAgentToolCall", id: "cb1", tool: "spawnAgent", prompt: "go", receiverThreadIds: ["t-a", "t-b"], senderThreadId: "t-root", status: "completed", agentsStates: { "t-a": { status: "errored", message: "boom" }, "t-b": { status: "interrupted" } } } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.deepEqual(tasks.slice(-2).map((m) => [m.state, m.report]), [["failed", "boom"], ["interrupted", undefined]]);
+  s.close();
+});
+
+// The engine's own spawn announcement (app-server 0.153.4 shape, TF5.2 live
+// capture): anchors `thread` as a child of this session.
+const spawned = (thread: string, id = `sa-${thread}`): Notification => [
+  "item/completed",
+  { item: { type: "subAgentActivity", id, kind: "started", agentThreadId: thread, agentPath: `/root/${thread.toLowerCase()}` } },
+];
+const settled = (thread: string, kind = "completed", id = `sa-${thread}-${kind}`): Notification => [
+  "item/completed",
+  { item: { type: "subAgentActivity", id, kind, agentThreadId: thread, agentPath: `/root/${thread.toLowerCase()}` } },
+];
+/** One of the child's own items, arriving on the parent connection under its thread id. */
+const childItem = (thread: string, item: Record<string, unknown>, phase: "started" | "completed" = "completed"): Notification => [
+  `item/${phase}`,
+  { threadId: thread, item },
+];
+
+test("PR #122 review: a child's Mirafold render call, image view, dynamic tool, and sleep are parented rows — never a session-level painting", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: MIRAFOLD_MCP, tool: "render_card", arguments: { title: "T", body: "b" }, status: "inProgress" }, "started"),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: MIRAFOLD_MCP, tool: "render_card", arguments: { title: "T", body: "b" }, status: "completed", result: { content: [{ type: "text", text: "ok" }], structuredContent: { renderId: "rid-c" } } }),
+    childItem("CHILD", { type: "imageView", id: "ci1", path: `${tmp}/pic.png` }),
+    childItem("CHILD", { type: "imageGeneration", id: "cg1", savedPath: `${tmp}/gen.png`, revisedPrompt: "a cat", status: "completed" }),
+    childItem("CHILD", { type: "dynamicToolCall", id: "cd1", tool: "lookup", namespace: "app", arguments: { q: "x" }, status: "completed", success: true, contentItems: [{ type: "text", text: "found" }] }),
+    childItem("CHILD", { type: "sleep", id: "cs1", durationMs: 1500 }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "render"), "a subagent never paints session-level UI");
+  for (const id of ["cm1", "ci1", "cg1", "cd1", "cs1"]) {
+    assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === id)?.parentId, anchor, `${id} is announced in the child's deck`);
+    assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === id)?.parentId, anchor, `${id} settles in the child's deck`);
+  }
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "cm1")!.name, `${MIRAFOLD_MCP}.render_card`, "the render call is an honest tool record");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "cd1")!.output, "found");
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool"), "a child's tool churn never steers the root activity line");
+  s.close();
+});
+
+test("PR #122 review: a child still running when the parent's turn ends keeps riding the lane and settles its task", async () => {
+  const anchor = "codex-agent:CHILD";
+  // A function script: the parent's turn is COMPLETE (turn_end emitted,
+  // no active turn) before the child's own items arrive on the connection.
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    complete("completed"); // the parent did not wait
+    await waitForTurnEnds(msgs, 1);
+    for (const [method, params] of [
+      childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 1", status: "inProgress" }, "started"),
+      childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 1", aggregatedOutput: "", exitCode: 0, status: "completed" }),
+      childItem("CHILD", { type: "agentMessage", id: "cm2", text: "slept.", phase: "final_answer" }),
+      settled("CHILD"),
+    ]) notify(method, params);
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const done = await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  assert.equal(turnEnds(), 1, "the child's activity ended no second turn");
+  const end = msgs.findIndex((m) => m.type === "turn_end");
+  const call = msgs.find((m) => m.type === "tool_use" && m.id === "cc1")!;
+  assert.ok(msgs.indexOf(call) > end, "the child's call arrived after the parent's turn ended");
+  assert.deepEqual([call.parentId, call.name], [anchor, "Shell"]);
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "cc1")!.parentId, anchor);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && m.text === "slept."), "the child's answer rides the lane");
+  assert.deepEqual([done.id, done.report], [anchor, "slept."], "the engine's completion settles the task with its report");
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "cc1").length, 1, "no re-announcement across the turn boundary");
+  s.close();
+});
+
+test("PR #122 review: past the child prose budget nothing rides the wire — no empty deltas", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "x".repeat(70_000), phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm2", text: "more", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "and more", phase: "commentary" }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lane = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor);
+  assert.equal(lane.length, 2, "the spawn narration, the capped head with its elision marker, then silence");
+  assert.ok(/elided/.test(lane[1]!.text));
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && m.text === ""), "no empty delta reached the wire");
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && !m.parentId && /more/.test(m.text)), "nothing escaped to the root transcript");
+  s.close();
+});
+
+test("PR #122 review: a child's report is retained capped and released at its terminal word", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "r".repeat(70_000), phase: "final_answer" }),
+    settled("CHILD"),
+    settled("CHILD", "completed", "sa-again"), // a late duplicate: the retained report is gone
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update" && m.id === anchor && m.state === "completed");
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks[0]!.reportOmittedBytes > 0 && Buffer.byteLength(tasks[0]!.report, "utf8") + Buffer.byteLength(tasks[0]!.reportTail, "utf8") <= 64_000, "the report is the capped shape");
+  assert.equal(tasks[1]!.report, undefined, "nothing engine-sized is kept past the terminal update");
+  s.close();
+});
+
+test("PR #122 review: past the child-item flood cap further child items are dropped whole, never shown as root output", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions({ childItemCap: 2 }, [
+    spawned("CHILD"),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "one", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm2", text: "two", phase: "commentary" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "", phase: "commentary" }, "started"),
+    ["item/agentMessage/delta", { threadId: "CHILD", itemId: "cm3", delta: "three" }],
+    childItem("CHILD", { type: "agentMessage", id: "cm3", text: "three", phase: "commentary" }),
+    childItem("CHILD", { type: "commandExecution", id: "cc3", command: "rm -rf x", aggregatedOutput: "", exitCode: 0, status: "completed" }),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc3", delta: "gone" }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.deepEqual(msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor).map((m) => m.text), ["/root/child started\n", "one", "two"]);
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && /three/.test(m.text)), "the untracked item and its deltas are dropped, not promoted to the root");
+  assert.ok(!msgs.some((m) => (m.type === "tool_output_delta" || m.type === "tool_output_snapshot") && m.id === "cc3"), "nor its streamed output");
+  assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "cc3"), "an untracked child call never becomes a root row");
+  assert.equal(msgs.filter((m) => m.type === "notice" && /subagent activity/.test(m.text)).length, 1, "said once, in the shell's voice");
+  s.close();
+});
+
+test("PR #122 review: a grandchild rides its parent's deck — the nearest visible ancestor — with no deck of its own", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    // The child spawns one agent by activity announcement and messages another by collab call.
+    childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }),
+    childItem("CHILD", { type: "collabAgentToolCall", id: "ccb1", tool: "spawnAgent", prompt: "dig deeper", receiverThreadIds: ["GRAND2"], senderThreadId: "CHILD", status: "inProgress", agentsStates: {} }, "started"),
+    childItem("CHILD", { type: "collabAgentToolCall", id: "ccb1", tool: "spawnAgent", prompt: "dig deeper", receiverThreadIds: ["GRAND2"], senderThreadId: "CHILD", status: "completed", agentsStates: { GRAND2: { status: "completed", message: "dug" } } }),
+    childItem("GRAND", { type: "commandExecution", id: "g1", command: "ls", aggregatedOutput: "a\n", exitCode: 0, status: "completed" }),
+    childItem("GRAND2", { type: "agentMessage", id: "g2", text: "dug", phase: "final_answer" }),
+    childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }),
+    // Should the ROOT thread also narrate the grandchild's lifecycle, that
+    // word must not restate the CHILD's task row.
+    settled("GRAND", "completed", "sa-grand-root"),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "g1")?.parentId, anchor, "the grandchild's call sits in the child's deck");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && m.text === "dug"), "the collab-spawned grandchild's answer too");
+  const spawnRow = msgs.find((m) => m.type === "tool_use" && m.id === "ccb1")!;
+  assert.deepEqual([spawnRow.parentId, spawnRow.name], [anchor, "spawnAgent"], "the child's own spawn call is a row in its deck");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.parentId === anchor && /grand started/.test(m.text)), "the child narrates its child's lifecycle in its lane");
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.id !== anchor), "no deck or task row is minted for a grandchild");
+  s.close();
+});
+
+test("PR #122 review round 2: a child notification buffered after close() emits nothing", async () => {
+  // A real process exits some time after SIGTERM; the fake exits at once, so
+  // its kill is deferred here to open exactly that window.
+  const server = fakeAppServer();
+  let notifyLate: ((method: string, params: Record<string, unknown>) => void) | undefined;
+  server.turns.push(async ({ notify, complete }) => {
+    notifyLate = notify;
+    notify(...spawned("CHILD"));
+    complete("completed");
+  });
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    makeAppServer: (spec) => {
+      const client = server.makeAppServer(spec);
+      const realKill = client.kill.bind(client);
+      client.kill = () => void setTimeout(realKill, 20);
+      return client;
+    },
+  });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("go");
+  await waitForTurnEnds(msgs, 1);
+  s.close();
+  const before = msgs.length;
+  notifyLate!(...childItem("CHILD", { type: "agentMessage", id: "ghost", text: "boo", phase: "commentary" }));
+  notifyLate!(...settled("CHILD"));
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(msgs.length, before, "no ghost record after close");
+});
+
+test("PR #122 review round 2: a child's stdin, MCP progress, and patch snapshots ride its running rows", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "python", status: "inProgress" }, "started"),
+    ["item/commandExecution/terminalInteraction", { threadId: "CHILD", itemId: "cc1", processId: "p1", stdin: "print(1)\n" }],
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "python", aggregatedOutput: "1\n", exitCode: 0, status: "completed" }),
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: "docs", tool: "search", arguments: { q: "x" }, status: "inProgress" }, "started"),
+    ["item/mcpToolCall/progress", { threadId: "CHILD", itemId: "cm1", message: "indexing 3/9" }],
+    childItem("CHILD", { type: "mcpToolCall", id: "cm1", server: "docs", tool: "search", arguments: { q: "x" }, status: "completed", result: { content: [{ type: "text", text: "hit" }] } }),
+    childItem("CHILD", { type: "fileChange", id: "cf1", status: "inProgress", changes: [] }, "started"),
+    ["item/fileChange/patchUpdated", { threadId: "CHILD", itemId: "cf1", changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }] }],
+    childItem("CHILD", { type: "fileChange", id: "cf1", status: "completed", changes: [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }] }),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const streamed = (id: string) =>
+    msgs
+      .filter((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === id)
+      .map((m) => [m.parentId, m.type === "tool_output_snapshot" ? `${m.output ?? ""}${m.tail ?? ""}` : m.text].join("|"))
+      .join("\n");
+  assert.ok(/codex-agent:CHILD\|.*‹stdin› print\(1\)/.test(streamed("cc1")), "the typed stdin shows in the child's running row");
+  assert.ok(/codex-agent:CHILD\|.*indexing 3\/9/.test(streamed("cm1")), "MCP progress shows in the child's running row");
+  const patch = msgs.find((m) => m.type === "tool_update" && m.id === "cf1");
+  assert.ok(patch, "the patch snapshot updates the child's announced row");
+  assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "cf1")?.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "status" && m.state === "tool"), "none of it steers the root activity line");
+  s.close();
+});
+
+test("PR #122 review round 2: a child's approval ask is attributed to its deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: unknown;
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    decision = await ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "cc1", command: "git push", reason: "network" });
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", aggregatedOutput: "", exitCode: 0, status: "completed" }));
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  const ask = await answerAsk(s, msgs, 1, true);
+  await awaitTurnEnd();
+  assert.deepEqual([ask.tool, ask.parentId], ["Shell", anchor], "the bar knows which subagent is asking");
+  assert.deepEqual(decision, { decision: "accept" });
+  assert.equal(msgs.find((m) => m.type === "permission_request" && !m.parentId), undefined, "no root-attributed copy of the ask");
+  s.close();
+});
+
+test("PR #122 review round 2: a grandchild still running when the root turn ends keeps its parentage and never re-announces", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", status: "inProgress" }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g1", delta: "still here\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", aggregatedOutput: "still here\n", exitCode: 0, status: "completed" }));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g1").length, 1, "one announcement across the turn boundary");
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "g1")!;
+  assert.deepEqual([result.parentId, result.output], [anchor, "still here\n"], "the grandchild's result still rides the child's deck");
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g1" && m.parentId === anchor), "its late output too");
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.id !== anchor), "no deck for the grandchild");
+  s.close();
+});
+
+test("PR #122 review round 3: a background child's approval ask survives the root turn ending", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: Promise<unknown> | undefined;
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    decision = ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "cc1", command: "git push", reason: "network" });
+    ctx.complete("completed"); // the parent did not wait
+    await decision;
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", aggregatedOutput: "", exitCode: 0, status: "completed" }));
+    ctx.notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  assert.equal(ask.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "permission_resolved"), "the root turn's end did not deny the child's ask");
+  s.resolvePermission(ask.id, true);
+  assert.deepEqual(await decision, { decision: "accept" }, "the user's answer still reaches the child");
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  s.close();
+});
+
+test("PR #122 review round 3: a child settling does not forget a grandchild that is still running", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", status: "inProgress" }, "started"));
+    notify(...settled("CHILD")); // the child is done; its grandchild is not
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g1", delta: "still here\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g1", command: "sleep 2", aggregatedOutput: "still here\n", exitCode: 0, status: "completed" }));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = await waitFor(msgs, (m) => m.type === "tool_result" && m.id === "g1");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g1").length, 1, "one announcement, no duplicate row");
+  assert.deepEqual([result.parentId, result.output], [anchor, "still here\n"]);
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g1" && m.parentId === anchor), "its late output still rides the deck");
+  s.close();
+});
+
+test("PR #122 review round 3: a child's terminal word flushes its streaming rows first — nothing streams after the task is over", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "tail -f log", status: "inProgress" }, "started"),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 1\n" }],
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 2\n" }], // within the throttle: a timer is pending
+    settled("CHILD", "interrupted"), // no item/completed ever comes for cc1
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await new Promise((r) => setTimeout(r, 400)); // past the snapshot interval
+  const terminalAt = msgs.findIndex((m) => m.type === "task_update" && m.id === anchor && m.state === "interrupted");
+  const streams = msgs.map((m, i) => [m, i] as const).filter(([m]) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "cc1");
+  assert.ok(streams.length > 0, "the interrupted row kept its evidence");
+  assert.ok(streams.every(([, i]) => i < terminalAt), "every snapshot precedes the terminal word");
+  assert.ok(/line 2/.test(streams.map(([m]) => (m.type === "tool_output_snapshot" ? `${m.output ?? ""}${m.tail ?? ""}` : m.text)).join("")), "the pending tail was flushed, not lost");
+  s.close();
+});
+
+test("PR #122 review round 4: a child preserved past the root turn gets a terminal word when the app-server exits", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, server, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 9", status: "inProgress" }, "started"));
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "tick\n" });
+    complete("completed");
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "task_update" && m.state !== "running"), "still running when the process dies");
+  server.clients[0]!.exit();
+  const terminal = msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!;
+  assert.equal(terminal.state, "interrupted", "the deck no longer reads running");
+  const terminalAt = msgs.indexOf(terminal);
+  assert.ok(msgs.some((m, i) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "cc1" && i < terminalAt), "its streaming row flushed first");
+  s.close();
+});
+
+test("PR #122 review round 4: an approval for a child item the flood cap refused is still attributed to the child's deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: unknown;
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions({ childItemCap: 1 }, async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm1", text: "one", phase: "commentary" })); // fills the cap
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc2", command: "git push", status: "inProgress" }, "started")); // refused
+    decision = await ctx.serverRequest("item/commandExecution/requestApproval", { threadId: "CHILD", itemId: "cc2", command: "git push" });
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  const ask = await answerAsk(s, msgs, 1, false);
+  await awaitTurnEnd();
+  assert.equal(ask.parentId, anchor, "attributed by thread when the item is untracked");
+  assert.deepEqual(decision, { decision: "decline" });
+  s.close();
+});
+
+test("PR #122 review round 4: a child whose turn failed is a failed task with the engine's diagnostic — the activity item's 'completed' does not undo it", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm1", text: "trying", phase: "commentary" }));
+    ctx.notify("turn/completed", { threadId: "CHILD", turn: { id: "ct1", status: "failed", error: { message: "quota exceeded" } } });
+    ctx.notify(...settled("CHILD")); // the engine's activity item still says completed
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update" && m.id === anchor);
+  assert.deepEqual(tasks.map((m) => m.state), ["running", "failed", "failed"]);
+  assert.equal(tasks[1]!.report, "quota exceeded");
+  assert.ok(!msgs.some((m) => m.type === "error"), "the child's failure is not the parent's turn error");
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
+test("PR #122 review round 5: a child's written plan rides its lane as commentary, streamed and whole", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "plan", id: "cp1", text: "" }, "started"),
+    ["item/plan/delta", { threadId: "CHILD", itemId: "cp1", delta: "1. look " }],
+    childItem("CHILD", { type: "plan", id: "cp1", text: "1. look 2. leap" }),
+    childItem("CHILD", { type: "agentMessage", id: "cm1", text: "leapt.", phase: "final_answer" }),
+    settled("CHILD"),
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const lane = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor && m.phase === "commentary").map((m) => m.text);
+  assert.deepEqual(lane.filter((t) => /look|leap/.test(t)), ["1. look ", "2. leap"], "the streamed part, then only the remainder");
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && !m.parentId && /look/.test(m.text)), "nothing in the root transcript");
+  assert.equal(msgs.filter((m) => m.type === "task_update" && m.state === "completed").at(-1)!.report, "leapt.", "the plan is never the report");
+  s.close();
+});
+
+test("PR #122 review round 6: the interrupt-grace kill gives a background child its terminal word", async () => {
+  const anchor = "codex-agent:CHILD";
+  const server = fakeAppServer({ interruptCompletes: false });
+  server.turns.push(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    complete("completed"); // the parent did not wait; the child keeps running
+  });
+  server.turns.push(async (ctx) => {
+    ctx.notify("item/agentMessage/delta", { itemId: "m2", delta: "working" });
+    await new Promise<void>(() => {}); // wedged: Stop's grace fallback will kill the process
+  });
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer, interruptGraceMs: 20 });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("spawn");
+  await waitForTurnEnds(msgs, 1);
+  s.pushPrompt("hang after Stop");
+  await waitFor(msgs, (m) => m.type === "text_delta" && m.text === "working");
+  s.interrupt();
+  await waitForTurnEnds(msgs, 2);
+  assert.equal(server.clients[0]?.exited, true, "the grace fallback reaped the client");
+  const terminal = msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!;
+  assert.equal(terminal.state, "interrupted", "the child died with the process and its deck says so");
+  s.close();
+});
+
+test("PR #122 review round 6: a background child's late patch snapshot carries its parentage", async () => {
+  const anchor = "codex-agent:CHILD";
+  const patch = [{ path: `${tmp}/src/a.ts`, kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-alpha\n+beta\n" }];
+  const { s, msgs, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "fileChange", id: "cf1", status: "inProgress", changes: [] }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/fileChange/patchUpdated", { threadId: "CHILD", itemId: "cf1", changes: patch });
+    notify(...childItem("CHILD", { type: "fileChange", id: "cf1", status: "completed", changes: patch }));
+    notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  const update = msgs.find((m) => m.type === "tool_update" && m.id === "cf1")!;
+  assert.equal(update.parentId, anchor, "the late snapshot is the child's, on the wire");
+  s.close();
+});
+
+test("PR #122 review round 7: a background child's open ask is denied when the app-server dies", async () => {
+  const anchor = "codex-agent:CHILD";
+  let decision: Promise<unknown> | undefined;
+  const { s, msgs, server, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "git push", status: "inProgress" }, "started"));
+    // The fake rejects a server request its process dies on; that rejection
+    // is the expected outcome here, not an unhandled one.
+    decision = ctx.serverRequest("item/commandExecution/requestApproval", { threadId: "CHILD", itemId: "cc1", command: "git push" }).catch(() => "rejected");
+    ctx.complete("completed"); // the parent did not wait
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  assert.equal(ask.parentId, anchor);
+  assert.ok(!msgs.some((m) => m.type === "permission_resolved"), "still pending after the root turn");
+  server.clients[0]!.exit();
+  const resolved = msgs.find((m) => m.type === "permission_resolved" && m.id === ask.id);
+  assert.deepEqual(resolved?.allow, false, "the ask dies with the process, denied, not left for the timeout");
+  assert.equal(msgs.filter((m) => m.type === "task_update" && m.id === anchor).at(-1)!.state, "interrupted");
+  // `decision` never settles: the fake's request died with its process, and
+  // the session correctly answers nothing to an exited client.
+  void decision;
+  s.close();
+});
+
+test("PR #122 review round 7: a settled grandchild spoken to again is running again — the root turn's end does not forget it", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd, turnEnds } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa1", kind: "started", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa2", kind: "completed", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    // Reactivated: the child speaks to it again and it runs a command.
+    notify(...childItem("CHILD", { type: "subAgentActivity", id: "csa3", kind: "interacted", agentThreadId: "GRAND", agentPath: "/root/child/grand" }));
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g2", command: "sleep 2", status: "inProgress" }, "started"));
+    complete("completed");
+    await waitForTurnEnds(msgs, 1);
+    notify("item/commandExecution/outputDelta", { threadId: "GRAND", itemId: "g2", delta: "back\n" });
+    notify(...childItem("GRAND", { type: "commandExecution", id: "g2", command: "sleep 2", aggregatedOutput: "back\n", exitCode: 0, status: "completed" }));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = await waitFor(msgs, (m) => m.type === "tool_result" && m.id === "g2");
+  assert.equal(turnEnds(), 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "g2").length, 1, "one announcement, no duplicate");
+  assert.deepEqual([result.parentId, result.output], [anchor, "back\n"]);
+  assert.ok(msgs.some((m) => (m.type === "tool_output_snapshot" || m.type === "tool_output_delta") && m.id === "g2" && m.parentId === anchor), "its late output still rides the deck");
+  s.close();
+});
+
+test("PR #122 review round 8: a child's throttled snapshot timer dies with close() — nothing emits after close", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession(async ({ notify, complete }) => {
+    notify(...spawned("CHILD"));
+    notify(...childItem("CHILD", { type: "commandExecution", id: "cc1", command: "tail -f log", status: "inProgress" }, "started"));
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 1\n" });
+    notify("item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "line 2\n" }); // within the throttle: a timer is pending
+    complete("completed");
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  s.close();
+  const before = msgs.length;
+  await new Promise((r) => setTimeout(r, 400)); // past the snapshot interval
+  assert.equal(msgs.length, before, "the pending snapshot never became a record after close");
+});
+
+test("PR #122 review round 8: a child restarted after a failed turn completes clean — the old failure is not pinned on the retry", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    ctx.notify("turn/completed", { threadId: "CHILD", turn: { id: "ct1", status: "failed", error: { message: "quota exceeded" } } });
+    // No activity item closes the failed attempt: the parent speaks to the
+    // same thread again straight away, and this time it succeeds.
+    ctx.notify(...settled("CHILD", "interacted", "sa-2"));
+    ctx.notify(...childItem("CHILD", { type: "agentMessage", id: "cm2", text: "second time lucky", phase: "final_answer" }));
+    ctx.notify(...settled("CHILD", "completed", "sa-3"));
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === anchor).map((m) => [m.state, m.report]);
+  assert.deepEqual(states, [["running", undefined], ["failed", "quota exceeded"], ["running", undefined], ["completed", "second time lucky"]]);
+  s.close();
+});
+
+test("PR #122 review round 8: a child interrupted mid-call leaves no row running inside a terminal deck", async () => {
+  const anchor = "codex-agent:CHILD";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    spawned("CHILD"),
+    childItem("CHILD", { type: "commandExecution", id: "cc1", command: "sleep 99", status: "inProgress" }, "started"),
+    ["item/commandExecution/outputDelta", { threadId: "CHILD", itemId: "cc1", delta: "partial\n" }],
+    settled("CHILD", "interrupted"), // no item/completed ever comes for cc1
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "cc1")!;
+  assert.ok(result, "the unfinished row got a result");
+  assert.deepEqual([result.parentId, result.output, result.isError], [anchor, "(interrupted)", true]);
+  const terminalAt = msgs.findIndex((m) => m.type === "task_update" && m.state === "interrupted");
+  assert.ok(msgs.indexOf(result) < terminalAt, "settled before the terminal word");
+  s.close();
+});
+
+test("PR #122 review: a synthetic child anchor stays inside the checkpoint id budget for any engine thread id", async () => {
+  const thread = "t".repeat(3_000);
+  const { s, msgs, awaitTurnEnd } = makeSession([spawned(thread, "sa-long"), settled(thread, "completed", "sa-long-done"), DONE]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const tasks = msgs.filter((m) => m.type === "task_update");
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks.every((m) => m.id.startsWith("codex-agent:") && m.id.length <= 1_024), "bounded, so a restored session validates");
+  assert.equal(tasks[0]!.id, tasks[1]!.id, "one stable anchor for the thread");
   s.close();
 });
 
@@ -1905,16 +2664,19 @@ test("subagent collab calls are rows, child activity narrates under its spawn; s
     ["sl1", "(done)", undefined],
     ["dt1", "2 accounts", false],
   ]);
-  // The child's lifecycle groups under the spawn row; a thread no call named
-  // is narrated in the transcript instead of dropped.
+  // The child's lifecycle groups under the spawn row; a thread no call
+  // named is a child the engine ANNOUNCED (live 2026-09-15: that is how a
+  // spawn surfaces in 0.153.4), so it gets its own task anchor and its
+  // narration rides that lane — never dropped, never loose commentary.
   assert.deepEqual(
     msgs.filter((m) => m.type === "text_delta").map((m) => [m.text, m.parentId, m.phase]),
     [
       ["worker started\n", "cb1", undefined],
       ["worker completed\n", "cb1", undefined],
-      ["Subagent stray started.\n", undefined, "commentary"],
+      ["stray started\n", "codex-agent:t-unknown", undefined],
     ],
   );
+  assert.ok(msgs.some((m) => m.type === "task_update" && m.id === "codex-agent:t-unknown" && m.state === "running" && m.label === "stray"));
   assert.equal(msgs.filter((m) => m.type === "notice").length, 0, "nothing was reported as unmapped");
   s.close();
 });
@@ -2167,4 +2929,31 @@ test("a zero live-output budget still says the ceiling was hit, once (review 202
     .filter((m): m is Extract<WireMsg, { type: "tool_output_delta" }> => m.type === "tool_output_delta" && m.id === "c0")
     .map((m) => m.text);
   assert.deepEqual(deltas, [streamCapMarker(0)], "exactly one marker, no output bytes");
+});
+
+// Release review 0.10.0 (fix round B): endTurn cleared the narration budget
+// while the background child's bookkeeping survived, so every later root
+// turn granted the same still-running child a fresh allowance and marker.
+test("a background child's narration cap holds across the root turn's end", async () => {
+  const anchor = "codex-agent:CHILD";
+  const activity = (i: number): Notification => [
+    "item/completed",
+    { item: { type: "subAgentActivity", id: `w${i}`, kind: "working", agentThreadId: "CHILD", agentPath: "p".repeat(96) } },
+  ];
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    ctx.notify(...spawned("CHILD"));
+    for (let i = 0; i < 800; i++) ctx.notify(...activity(i));
+    ctx.complete("completed"); // the parent did not wait
+    await waitForTurnEnds(msgs, 1);
+    for (let i = 800; i < 1600; i++) ctx.notify(...activity(i));
+    ctx.notify(...settled("CHILD"));
+  });
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await waitFor(msgs, (m) => m.type === "task_update" && m.state === "completed");
+  const lines = msgs.filter((m) => m.type === "text_delta" && m.parentId === anchor);
+  assert.equal(lines.filter((m) => m.text.includes("narration cap reached")).length, 1, "one marker for the child's lifetime");
+  const total = lines.reduce((n, m) => n + Buffer.byteLength(m.text, "utf8"), 0);
+  assert.ok(total <= 64_000 + 200, `the lane stays byte-bounded across the turn boundary (${total})`);
+  s.close();
 });

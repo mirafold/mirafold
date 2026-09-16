@@ -234,6 +234,8 @@ export class CodexSession implements AgentSession {
     localTurnTimeoutMs?: number;
     /** Unit-test seam; production uses MIRAFOLD_CODEX_INTERRUPT_GRACE_MS. */
     interruptGraceMs?: number;
+    /** Unit-test seam for the child-item flood cap. */
+    childItemCap?: number;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -268,6 +270,7 @@ export class CodexSession implements AgentSession {
       workspaceDir,
       modelName: () => this.modelName,
       providerDiagnostic: (value) => codexProviderDiagnostic(value, this.endpointForRedaction),
+      ...(opts.childItemCap !== undefined ? { maxChildItems: opts.childItemCap } : {}),
     });
     this.listModels = runtime.listModels;
     this.listEngineModels = runtime.listEngineModels;
@@ -344,8 +347,20 @@ export class CodexSession implements AgentSession {
     if (this.client === client) {
       this.client = undefined;
       this.threadReady = undefined;
+      // Detaching first means the exit handler's identity guard will not
+      // run: a background child dying with this process gets its terminal
+      // word here instead (PR #122 review).
+      if (!this.closed) this.abandonChildren();
     }
     client.kill();
+  }
+
+  /** The engine process is going or gone: every background child's deck
+   *  gets its terminal word, and a child's open ask is denied — the process
+   *  that could consume the answer no longer exists (PR #122 review). */
+  private abandonChildren() {
+    this.eventMapper.abandonChildren();
+    this.permissions.denyAll("teardown", (ask) => !ask.parentId);
   }
 
   private awaitStartup<T>(turn: ActiveTurn, pending: Promise<T>) {
@@ -363,6 +378,9 @@ export class CodexSession implements AgentSession {
     this.closed = true;
     this.interrupt();
     this.permissions.denyAll(); // an unanswered ask must not pin a turn open
+    // A background child's throttled snapshot timer would call the emitter
+    // directly after close; every live-output track dies here, unemitted.
+    this.eventMapper.discard();
     this.queue.push(CLOSE);
     this.client?.kill();
   }
@@ -453,6 +471,10 @@ export class CodexSession implements AgentSession {
     client.onExit(() => {
       if (this.client !== client) return;
       this.threadReady = undefined;
+      // A child that outlived the root turn died with the process: its deck
+      // gets a terminal word now, or it would read "running" forever — and
+      // its open ask is denied, since nothing is left to consume an answer.
+      if (!this.closed) this.abandonChildren();
       this.activeTurn?.finish({ exited: true });
     });
     this.threadReady = (async () => {
@@ -504,15 +526,29 @@ export class CodexSession implements AgentSession {
   }
 
   private onNotification(client: AppServerClient, method: string, params: unknown) {
-    if (this.client !== client) return;
+    // After close() the process is being killed but stays attached until it
+    // exits; a notification buffered in that window must not become a ghost
+    // record (no emissions after close — PR #122 review).
+    if (this.client !== client || this.closed) return;
     const p = (params ?? {}) as Record<string, unknown>;
     if (method === "thread/started") {
       const id = (p["thread"] as { id?: unknown } | undefined)?.id;
       if (typeof id === "string") this.adoptThread(id);
       return;
     }
-    // Only this session's thread; the process is ours alone, but be exact.
-    if (typeof p["threadId"] === "string" && this.threadId && p["threadId"] !== this.threadId) return;
+    // Only this session's thread — plus the CHILD threads the engine spawned
+    // for it: their items arrive on this same connection (verified live
+    // 2026-09-15, app-server 0.153.4) and ride the subagent lane under the
+    // anchor the parent's subAgentActivity announced. Any other thread
+    // stays dropped, and a child's turn/completed never ends OUR turn.
+    // A known child rides the lane whether or not OUR turn is still running:
+    // a spawn without a wait outlives the parent's turn, and its later
+    // calls, answer, and completion must still reach its deck (PR #122
+    // review) — the anchor persists across turns for exactly this reason.
+    if (typeof p["threadId"] === "string" && this.threadId && p["threadId"] !== this.threadId) {
+      if (this.eventMapper.isChildThread(p["threadId"])) this.eventMapper.handleChild(p["threadId"], method, params);
+      return;
+    }
     if (method === "turn/completed") {
       const turn = (p["turn"] ?? {}) as { id?: unknown; status?: unknown; error?: unknown };
       const active = this.activeTurn;
@@ -521,7 +557,14 @@ export class CodexSession implements AgentSession {
       active.finish({ status: typeof turn.status === "string" ? turn.status : "completed", error: turn.error });
       return;
     }
-    if (!this.activeTurn) return;
+    if (!this.activeTurn) {
+      // Between turns the only thing of ours that may still arrive is the
+      // engine's lifecycle word on a child that outlived the turn: it
+      // settles that task's row and nothing else.
+      const item = p["item"] as { type?: unknown } | undefined;
+      if (method === "item/completed" && item?.type === "subAgentActivity") this.eventMapper.handle(method, params);
+      return;
+    }
     this.eventMapper.handle(method, params);
   }
 
@@ -532,8 +575,22 @@ export class CodexSession implements AgentSession {
    *  didn't approve runs outside the sandbox. */
   private answerServerRequest(client: AppServerClient, id: JsonRpcId, method: string, params: unknown) {
     if (this.client !== client) return;
+    if (this.closed) {
+      // Nothing is asked after close: the engine is being killed and every
+      // open ask was already denied.
+      client.respondError(id, -32000, "Mirafold session closed");
+      return;
+    }
     const p = (params ?? {}) as Record<string, unknown>;
     const reason = typeof p["reason"] === "string" ? p["reason"] : undefined;
+    // An ask raised by a CHILD's item is attributed to its deck — the bar
+    // shows which subagent wants the escalation (PR #122 review). The
+    // request names its thread too, which still attributes an item the
+    // flood cap refused to track.
+    const threadId = typeof p["threadId"] === "string" && p["threadId"] !== this.threadId ? p["threadId"] : undefined;
+    const parentId =
+      (typeof p["itemId"] === "string" ? this.eventMapper.parentOf(p["itemId"]) : undefined) ??
+      (threadId ? this.eventMapper.anchorOf(threadId) : undefined);
     const respond = (result: unknown) => {
       if (this.client === client && !client.exited) client.respond(id, result);
     };
@@ -543,13 +600,13 @@ export class CodexSession implements AgentSession {
         // The command is ours to state plainly; the reason is the engine's own
         // explanation of the escalation ("retry outside the sandbox?").
         this.ask("Shell", reason ? `${command} — ${reason}` : command, (allow) =>
-          respond({ decision: allow ? "accept" : "decline" }),
+          respond({ decision: allow ? "accept" : "decline" }), parentId,
         );
         break;
       }
       case "item/fileChange/requestApproval":
         this.ask("apply_patch", reason ?? "apply this change outside the sandbox?", (allow) =>
-          respond({ decision: allow ? "accept" : "decline" }),
+          respond({ decision: allow ? "accept" : "decline" }), parentId,
         );
         break;
       case "item/permissions/requestApproval": {
@@ -560,7 +617,7 @@ export class CodexSession implements AgentSession {
         // seen it (audit 2026-08-26).
         const grant = describePermissionProfile(permissions);
         this.ask("Codex", reason ? `${grant} — ${reason}` : grant, (allow) =>
-          respond({ permissions: allow ? permissions : {} }),
+          respond({ permissions: allow ? permissions : {} }), parentId,
         );
         break;
       }
@@ -571,8 +628,8 @@ export class CodexSession implements AgentSession {
 
   /** Raise one permission ask on the bar; `onAnswer` fires once, on any
    *  resolution path (answer, timeout, teardown — all deny but "answer"). */
-  private ask(tool: string, detail: string, onAnswer: (allow: boolean) => void) {
-    void this.permissions.ask({ tool, detail }, this.permissionTimeoutMs, (allow) => onAnswer(allow));
+  private ask(tool: string, detail: string, onAnswer: (allow: boolean) => void, parentId?: string) {
+    void this.permissions.ask({ tool, detail, ...(parentId ? { parentId } : {}) }, this.permissionTimeoutMs, (allow) => onAnswer(allow));
   }
 
   /**
@@ -724,7 +781,10 @@ export class CodexSession implements AgentSession {
         });
       }
       if (this.activeTurn === turn) this.activeTurn = undefined;
-      this.permissions.denyAll("moot"); // drop any ask the ended turn left open
+      // Drop any ask the ended turn left open — except a CHILD's: a spawn
+      // with no wait is still running and its escalation is still the
+      // user's to answer; the ask's own timeout bounds it (PR #122 review).
+      this.permissions.denyAll("moot", (ask) => Boolean(ask.parentId));
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
     }
   }

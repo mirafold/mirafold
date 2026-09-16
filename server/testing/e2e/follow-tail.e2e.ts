@@ -32,7 +32,11 @@ const fillTranscript = async (
   let n = 0;
   while (n < 6 && (n < 3 || (await overflow()) <= 300)) {
     n += 1;
+    const before = await page.locator(".turn-user").count();
     await send(`tell me about the fold, take ${n}`);
+    // A bare Enter resolves before the daemon's echo renders; wait for the
+    // user row so the idle wait below cannot pass on a turn not yet started.
+    await page.waitForFunction((k) => document.querySelectorAll(".turn-user").length > k, before, { timeout: 15_000 });
     await waitTurnIdle(page);
   }
   const got = await overflow();
@@ -131,6 +135,90 @@ test("phone: the pill is centered for the thumb and still jumps to the tail", as
   );
 });
 
+// 2026-09-15 (Kyle: the "lightning fast scroll from way up to down low" on a
+// cockpit switch): the switched-to page DID land at the tail, but paintings
+// that size themselves after mount — a diagram rendering in its frame, an
+// image loading, an artifact — grew the transcript afterwards with no
+// transcript change to re-follow, so the reader sat hundreds of pixels
+// above the bottom until the next message jumped them down. The content
+// box's resize is followed now. Sampled per animation frame (a
+// ResizeObserver re-pins inside the frame, so no painted frame may sit
+// away from the tail once it has been reached).
+test("switching to a session whose paintings size themselves after mount stays at the tail", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-grow-4c8e", async (page) => {
+    for (const text of ["draw a diagram", "take a screenshot", "chart demo", "show an artifact"]) {
+      await typePrompt(page, text);
+      await waitTurnIdle(page);
+    }
+    await fillTranscript(page);
+    // The LAST turn is a painting that sizes itself after mount, so its
+    // growth lands INSIDE the viewport: growth above the viewport is
+    // absorbed by the browser's own scroll anchoring and would let this
+    // proof pass without the observer (cold review).
+    await typePrompt(page, "draw a diagram");
+    await waitTurnIdle(page);
+    // Plain JS: tsx's esbuild keepNames helper is not serialized into the
+    // page (see NF.2 / SA.1 in PLAN.md).
+    await page.addInitScript(`
+      (function () {
+        var frames = []; window.__mfRafFrames = frames;
+        function tick() {
+          var el = document.querySelector(".output-zone");
+          if (el && frames.length < 5000) frames.push({ top: el.scrollTop, h: el.scrollHeight, c: el.clientHeight, rows: el.querySelectorAll(".turn-user").length });
+          requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+    `);
+    await page.reload();
+    await page.locator(".output-zone .turn-user").first().waitFor({ timeout: 15_000 });
+    // Everything that sizes itself has done so: no diagram still rendering,
+    // every image complete, and the geometry quiet for a moment.
+    await page.waitForFunction(() => document.querySelectorAll(".rc-diagram-loading").length === 0, undefined, { timeout: 20_000 });
+    await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete), undefined, { timeout: 20_000 });
+    await page.waitForTimeout(600);
+    const gap = await bottomGap(page);
+    const frames = await page.evaluate(
+      () => (window as unknown as { __mfRafFrames: { top: number; h: number; c: number; rows: number }[] }).__mfRafFrames,
+    );
+    if (gap > 24) {
+      // CI stranded this twice on 2026-09-16 (gap=510) while local runs
+      // never did; two hypotheses (a shift above the viewport, a clamped
+      // shrink) were probed and held. Carry the evidence out with the
+      // failure: the frame timeline around the first departure from the
+      // tail, and which rows changed height.
+      const departed = frames.findIndex((f, i) => i > 0 && frames[i - 1]!.h - frames[i - 1]!.top - frames[i - 1]!.c <= 24 && f.h - f.top - f.c > 100);
+      const window_ = frames.slice(Math.max(0, departed - 3), departed + 6).map((f) => `top=${f.top} h=${f.h} c=${f.c}`).join(" | ");
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".output-zone .zone-content > *")).map((el) => `${String((el as HTMLElement).className).slice(0, 24)}:${Math.round(el.getBoundingClientRect().height)}`).join(" "),
+      );
+      const detached = await page.evaluate(() => Boolean(document.querySelector(".jump-to-latest.is-visible")));
+      assert.fail(`after the paintings settled the reader is still at the tail (gap=${gap}); pill visible (reader detached)=${detached}; frames=${frames.length}, first departure at #${departed}: ${window_}; rows: ${rows}`);
+    }
+    const painted = frames.filter((f) => f.rows > 0 && f.h - f.c > 200);
+    assert.ok(painted.length > 0, "the sampler saw the painted, overflowing transcript");
+    const firstAtTail = painted.findIndex((f) => f.h - f.top - f.c <= 24);
+    assert.ok(firstAtTail >= 0, "the transcript reached the tail");
+    const grew = painted[painted.length - 1]!.h - painted[firstAtTail]!.h;
+    assert.ok(grew > 100, `the proof needs post-mount growth to follow (grew ${grew}px after first reaching the tail)`);
+    // A rAF callback runs BEFORE the frame's layout and ResizeObserver
+    // step, so the frame in which a painting grows reads as away (the read
+    // forces layout on the grown content; the re-pin follows in the same
+    // frame) — and several paintings can finish sizing on adjacent frames.
+    // A stranded reader is the other shape entirely: away on EVERY frame
+    // until the next message, hundreds here across the settle wait. So: no
+    // run of ten consecutive away frames (~170 ms) is allowed.
+    const after = painted.slice(firstAtTail);
+    let run = 0;
+    let longest = 0;
+    for (const f of after) {
+      run = f.h - f.top - f.c > 100 ? run + 1 : 0;
+      longest = Math.max(longest, run);
+    }
+    assert.ok(longest < 10, `the reader sat away from the tail for ${longest} consecutive frames after growth`);
+  });
+});
+
 test("switching to a session with a transcript lands at the tail with no top-to-bottom flash", async () => {
   await withFreshMockSession(browser, "e2e-follow-tail-switch-9d21", async (page) => {
     await fillTranscript(page);
@@ -178,5 +266,72 @@ test("switching to a session with a transcript lands at the tail with no top-to-
       0,
       `replay painted ${awayFromTail.length} of ${frames.length} frames away from the tail: ${JSON.stringify(awayFromTail.slice(0, 3))}`,
     );
+  });
+});
+
+// A guard the 2026-09-16 CI stranding of the growth case (gap=510 after
+// settle, not reproduced locally) prompted: a painting ABOVE the viewport
+// shrinking makes Chrome's scroll anchoring lower scrollTop with no input
+// behind it, and the backstop must not read that as the reader steering up.
+// It held (the content observer re-pins and updates the backstop's last
+// position before the scroll event runs), so this pins that ordering rather
+// than explaining the CI failure.
+test("a layout shift above the viewport does not detach a following reader", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-anchor-7a1c", async (page) => {
+    await fillTranscript(page);
+    await page.waitForFunction(() => { const el = document.querySelector(".output-zone") as HTMLElement; return el.scrollHeight - el.scrollTop - el.clientHeight <= 24; });
+    // Shrink the first (out-of-view) turn by 400 px: scroll anchoring keeps
+    // the visible content still by lowering scrollTop.
+    await page.evaluate(() => {
+      const first = document.querySelector(".output-zone .zone-content > *") as HTMLElement;
+      first.style.height = "8px";
+      first.style.overflow = "hidden";
+    });
+    await page.waitForTimeout(200);
+    // Now the tail grows: a following reader must still be brought down.
+    await page.evaluate(() => {
+      const content = document.querySelector(".output-zone .zone-content") as HTMLElement;
+      const filler = document.createElement("div");
+      filler.style.height = "600px";
+      filler.textContent = "late growth";
+      content.appendChild(filler);
+    });
+    await page.waitForTimeout(300);
+    const gap = await bottomGap(page);
+    assert.ok(gap <= 24, `still following after a layout shift above the viewport (gap=${gap})`);
+  });
+});
+
+// CI 2026-09-16, twice, identical gap=510 on the growth case. Hypothesis: a
+// painting swaps its placeholder for its rendered frame and the content
+// SHRINKS for a moment; a script-forced layout (any geometry read) clamps
+// scrollTop at once, the next frame dispatches that scroll event BEFORE its
+// ResizeObserver step, and the backstop reads the drop as the reader
+// steering up — detaching, so the growth that follows is never followed.
+test("a content shrink clamped by a forced layout does not detach a following reader", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-clamp-3e9b", async (page) => {
+    await fillTranscript(page);
+    await page.waitForFunction(() => { const el = document.querySelector(".output-zone") as HTMLElement; return el.scrollHeight - el.scrollTop - el.clientHeight <= 24; });
+    // Shrink the LAST row and force layout in the same script: scrollTop is
+    // clamped down before any observer can run.
+    await page.evaluate(() => {
+      const rows = document.querySelectorAll(".output-zone .zone-content > *");
+      const last = rows[rows.length - 1] as HTMLElement;
+      last.style.height = "8px";
+      last.style.overflow = "hidden";
+      void (document.querySelector(".output-zone") as HTMLElement).scrollHeight;
+    });
+    await page.waitForTimeout(200);
+    // The tail grows again: a following reader must be brought down.
+    await page.evaluate(() => {
+      const content = document.querySelector(".output-zone .zone-content") as HTMLElement;
+      const filler = document.createElement("div");
+      filler.style.height = "600px";
+      filler.textContent = "late growth";
+      content.appendChild(filler);
+    });
+    await page.waitForTimeout(300);
+    const gap = await bottomGap(page);
+    assert.ok(gap <= 24, `still following after a clamped shrink (gap=${gap})`);
   });
 });

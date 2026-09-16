@@ -48,21 +48,19 @@ devices. Why they're first, not just included:
   even fits them — a lab's bundled front end can't serve someone who chose
   the API key to escape the lab's plan limits.
 
-**BYOK for closed models is now a requirement, not just a positioning
-(added 2026-07-10; re-verified 2026-07-15, PLAN K.3).** A provider-terms
-review confirmed Anthropic and Google prohibit driving a subscription/OAuth
-login from another app in writing — those are refused with an API-key
-pointer. OpenAI grants no written permission but shows a visibly permissive
-posture, so a Codex/ChatGPT login runs locally as a **disclosed gray area**
-(the K.3 disclosed-uncertainty rule: state the uncertainty to the user,
-their account, their call — honesty as positioning, consistent with §4's
-trust story). No subscription of any kind is driven over the paid relay.
-Enforced in code (`server/provider-policy.ts`, PLAN R.4i/K.3).
-This *sharpens* the first target rather than shrinking it: the API-key cohort is
-exactly who's unaffected, and "closed models are BYOK here" is now a true,
-enforceable line, not marketing. It also retires an earlier code assumption that
-the day-one user would arrive on a Pro/Max subscription — the day-one closed-
-model user is the **API-key holder**, which is what this section always said.
+**API keys remain the paid-relay path for closed models (updated 2026-09-09,
+PLAN PSC).** Local Codex use also supports the user's ChatGPT login as an
+ordinary connection option, without a subscription warning. Anthropic
+subscriptions remain blocked. Users may try their native Gemini CLI sign-in
+locally, with account/plan availability disclosed and an explicit API-key
+alternative (PLAN GSI). Personal Gemini CLI service was retired; a cached
+login is not a promise of entitlement.
+Google's restriction on direct backend access through reused CLI OAuth does
+not establish a blanket ban on interfaces driving its official binary.
+No subscription of any kind is driven over the paid relay. The executable
+policy is `server/provider-policy.ts`; research is in
+`docs/provider-subscriptions.md`. The API-key cohort remains the first paid
+target, while local ChatGPT subscribers can use Mirafold naturally too.
 
 Estimated reachable population: tens of thousands today, growing fast.
 Realistic capture at indie scale: hundreds to low thousands of paying users.
@@ -378,16 +376,18 @@ The free local skin is the funnel feeding all of it.
 5. **SDK/ToS drift.** The Agent SDK's key requirements, subscription-auth
    rules, or rate structures change under you. *Mitigation:* BYOK keeps you
    out of the blast radius of most pricing changes; wire-protocol seam keeps
-   you portable if the SDK shifts. *Concrete stance (2026-07-10 provider-terms
-   review, enforced in `server/provider-policy.ts`):* closed-provider
-   subscriptions are prohibited where their terms say so — Anthropic + Gemini
-   everywhere, OpenAI over the relay — and this is a dated, one-file,
-   revisit-able rule, so a terms change is a small edit, not a scramble. All
-   three moved in H1 2026; treat the table as living. This is our reading of
+   you portable if the SDK shifts. *Concrete stance (2026-09-09 provider review,
+   enforced in `server/provider-policy.ts`):* Anthropic subscriptions remain
+   blocked; ChatGPT login is an ordinary supported local option; users may try
+   their native Gemini CLI sign-in locally, with account/plan availability
+   disclosed. No subscription is available over the paid relay. Google's
+   restriction on reused CLI OAuth is not a blanket ban on interfaces driving
+   the official CLI; retired personal entitlements still do not regain access.
+   The policy is dated and revisitable; `docs/provider-subscriptions.md` records
+   the evidence. This is our reading of
    published terms, not legal advice — but a lawyer is only *warranted* if we
    ever monetize a subscription-dependent path, which the current design avoids
-   (paid = API-key/local only; the free local Codex path is a disclosed
-   gray area at personal-use scope). So it's a conditional pre-launch item, not an
+   (paid = API-key/local only). So it's a conditional pre-launch item, not an
    unconditional blocker (revisit at PLAN R.6 if the design changes).
 
 ## 9. Milestones & validation gates

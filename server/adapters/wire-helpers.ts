@@ -30,7 +30,7 @@ export type PermissionResolution = "answer" | "timeout" | "external" | "teardown
  * place `permission_resolved` is emitted.
  */
 export class PermissionLedger {
-  private pending = new Map<string, (allow: boolean, how: PermissionResolution) => void>();
+  private pending = new Map<string, { finish: (allow: boolean, how: PermissionResolution) => void; parentId?: string }>();
 
   constructor(private readonly emit: Emit) {}
 
@@ -66,7 +66,7 @@ export class PermissionLedger {
         resolve(allow);
       };
       const timer = setTimeout(() => finish(false, "timeout"), timeoutMs);
-      this.pending.set(id, finish);
+      this.pending.set(id, { finish, ...(request.parentId ? { parentId: request.parentId } : {}) });
       this.emit({
         type: "permission_request",
         tool: request.tool,
@@ -79,15 +79,20 @@ export class PermissionLedger {
 
   /** The answer for one ask; false when no such ask is pending (a stale tap). */
   resolve(id: string, allow: boolean, how: PermissionResolution = "answer"): boolean {
-    const finish = this.pending.get(id);
-    if (!finish) return false;
-    finish(allow, how);
+    const ask = this.pending.get(id);
+    if (!ask) return false;
+    ask.finish(allow, how);
     return true;
   }
 
-  /** Deny every in-flight ask — interrupt, close, or a turn that ended. */
-  denyAll(how: PermissionResolution = "teardown") {
-    for (const finish of [...this.pending.values()]) finish(false, how);
+  /** Deny every in-flight ask — interrupt, close, or a turn that ended.
+   *  `keep` spares the asks it returns true for (a background child's ask
+   *  outlives the root turn that ended; its own timeout still bounds it). */
+  denyAll(how: PermissionResolution = "teardown", keep?: (ask: { id: string; parentId?: string }) => boolean) {
+    for (const [id, ask] of [...this.pending]) {
+      if (keep?.({ id, ...(ask.parentId ? { parentId: ask.parentId } : {}) })) continue;
+      ask.finish(false, how);
+    }
   }
 }
 

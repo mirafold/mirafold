@@ -116,6 +116,15 @@ body {
   padding: 24px 4px;
   display: flex;
   flex-direction: column;
+}
+
+/* The scrolled content, one box the tail-follow can watch resize. It fills
+   the scroller (so the welcome's auto margins still center it) and lays the
+   rows out in the column rhythm the scroller itself used to. */
+.zone-content {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
 
