@@ -941,7 +941,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         // The "new attempt" mark holds until this attempt reports something
         // of its own, so the anchor call's earlier output is not shown as
         // its report meanwhile.
-        const fresh = msg.report === undefined && msg.state === "running" && (restarted || prior?.restarted === true);
+        // The mark also arrives on the wire (the ring's retained frame after
+        // a full replay) and survives a reportless terminal frame: only this
+        // attempt's own report ends it.
+        const fresh = msg.report === undefined && (restarted || msg.restarted === true || prior?.restarted === true);
         const lifecycle: TaskLifecycle = {
           state: msg.state,
           ...(fresh ? { restarted: true } : {}),
@@ -966,11 +969,12 @@ export function createTranscriptProjection(): TranscriptProjection {
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
         if (restarted) {
-          // A new attempt's clock starts now; a live restart of a replayed
-          // anchor is live from here on.
+          // A new attempt's clock starts now — when the restart is live. A
+          // replayed restart's real time is unknown, so the anchor reads as
+          // replayed (no live clock) rather than counting from reconnection.
           entries = entries.map((entry) =>
             entry.kind === "tool" && entry.toolId === msg.id
-              ? { ...entry, startedAt: readNow(), ...(msg.replay ? {} : { replayed: undefined }) }
+              ? { ...entry, startedAt: readNow(), replayed: msg.replay ? true : undefined }
               : entry,
           );
         }

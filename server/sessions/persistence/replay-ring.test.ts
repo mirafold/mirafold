@@ -201,3 +201,21 @@ test("a task restarted after a terminal state drops the prior report and duratio
   const partial = r.buffer.find((m) => m.type === "task_update" && m.id === "t2") as Extract<WireMsg, { type: "task_update" }>;
   assert.deepEqual([partial.report, partial.elapsedMs, partial.action], ["progress", 3, "Grep"]);
 });
+
+// PR #125 review: after a full replay the ring's retained frame is a lone
+// `running` with the terminal update coalesced away — the restart's
+// provenance must ride that frame, and end only with this attempt's report.
+test("the retained restarted frame says so until this attempt reports", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "running", label: "job" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "quota exceeded" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = () => r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.equal(kept().restarted, true);
+  r.offer({ type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(kept().restarted, true, "a reportless frame keeps the mark");
+  r.offer({ type: "task_update", id: "t1", state: "completed" });
+  assert.equal(kept().restarted, true, "a reportless terminal frame keeps it too");
+  r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  assert.equal(kept().restarted, undefined, "this attempt's report ends it");
+});

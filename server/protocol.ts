@@ -227,6 +227,12 @@ export type SessionMsgBody =
       reportOmittedBytes?: number;
       elapsedMs?: number;
       parentId?: string;
+      // Optional/additive (release review, 0.10.0): the task is running
+      // AGAIN after a terminal word and has not reported for this attempt
+      // yet, so the anchor call's earlier output is not its report. Set by
+      // the replay ring on the retained frame (which coalesces the earlier
+      // terminal update away) so a full replay keeps that provenance.
+      restarted?: true;
     }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`

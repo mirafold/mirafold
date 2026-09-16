@@ -185,7 +185,14 @@ export class ReplayRing {
           report?: string; reportTail?: string; reportOmittedBytes?: number; elapsedMs?: number;
         };
         const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
-        retained = { ...(restarted ? fresh : carried), ...present } as SessionMsg;
+        const merged = { ...(restarted ? fresh : carried), ...present } as SessionMsg & { restarted?: true; report?: string };
+        // The restart's provenance rides the retained frame until this
+        // attempt reports: a full replay sees one `running` frame with the
+        // terminal update coalesced away, and must still not show the
+        // anchor's earlier output as the report.
+        if (restarted) merged.restarted = true;
+        else if (merged.report !== undefined) delete merged.restarted;
+        retained = merged;
       }
     }
     if (msg.type === "tool_update") {

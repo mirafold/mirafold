@@ -2048,3 +2048,40 @@ test("a settled child's straggler snapshot is not re-announced, and retained chi
   assert.ok(msgs.some((m) => m.type === "text_delta" && !m.parentId && /root still speaks/.test(m.text)), "root prose is tracked despite a full child table");
   session.close();
 });
+
+// PR #125 review: a child that settles and then runs again before the next
+// root prompt must keep its records through that prompt's boundary.
+test("a child running again after settling keeps its records across the next root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.idle", { sessionID: "ses_bg" }), // settled…
+    ev("session.status", { sessionID: "ses_bg", status: { type: "busy" } }), // …and running again
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc2", type: "tool", tool: "bash", callID: "cc2", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  await prompt("meanwhile…");
+  feed(
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc2", type: "tool", tool: "bash", callID: "cc2", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc2").length, 1, "the restarted child's row was announced once");
+  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "pc2")?.output, "done");
+  session.close();
+});

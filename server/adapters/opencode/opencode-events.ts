@@ -581,8 +581,10 @@ export class OpenCodeEventMapper {
       ...(report?.tail !== undefined ? { reportTail: report.tail } : {}),
       ...(report?.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
     });
-    // The engine's terminal word on the child releases what it owned.
-    if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
+    // The engine's terminal word on the child releases what it owned — at
+    // the next root-turn boundary; running again before then keeps it.
+    if (state === "running") this.settledLanes.delete(id);
+    else if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
   }
 
   private announceTool(

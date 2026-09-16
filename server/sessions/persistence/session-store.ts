@@ -137,6 +137,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       reportOmittedBytes: nonnegativeIntSchema.optional(),
       elapsedMs: nonnegativeIntSchema.optional(),
       parentId: idSchema.optional(),
+      restarted: z.literal(true).optional(),
       seq: sequenceSchema,
     })
     .strict(),

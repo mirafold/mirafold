@@ -3964,6 +3964,15 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   output as "report so far" (`lifecycle.restarted` suppresses the fallback
   until this attempt reports); its live clock kept the first attempt's
   start (the anchor's `startedAt` refreshes on restart). Mutation-checked.
+  **Round 2 (three findings, all legitimate, fixed):** the restart mark did
+  not survive a full replay (the ring coalesces the terminal frame away) or
+  a reportless terminal frame — `task_update.restarted?: true`
+  (optional/additive, checkpoint schema widened) rides the ring's retained
+  frame until this attempt reports; a tail-replayed restart started a live
+  clock at reconnection time (the anchor now reads as replayed — no clock);
+  an OpenCode child running again before the next root prompt was still
+  marked settled and lost its records at that boundary (running unmarks
+  it). Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 

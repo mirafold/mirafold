@@ -908,3 +908,44 @@ test("a request-scoped error (terminal: false) ends no turn, so it orphans nothi
   assert.equal(rows.filter((r) => r.kind === "text" && r.role === "assistant" && r.text.startsWith("child")).length, 0, "not narrated inline");
   assert.equal(rows.filter((r) => r.kind === "subagent-deck").length, 1, "grouped under its anchor once it lands");
 });
+
+// PR #125 review: the restart mark must survive a full replay (the ring
+// coalesces the terminal frame away and marks the lone running frame), a
+// reportless terminal frame, and a tail-resumed restart must not start a
+// live clock at reconnection time.
+test("a restart replayed as one marked running frame, or settled without a report, still hides the anchor's old output; a tail-replayed restart shows no live clock", () => {
+  const replayed = createTranscriptProjection();
+  const afterReplay = apply(
+    replayed,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_result", id: "t1", output: "launched, first attempt", replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", restarted: true, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(afterReplay, "subagent-deck")[0]!;
+  assert.equal(deck.summary.report, undefined, "the ring's mark keeps the anchor's old output out of the report");
+  assert.equal(deck.summary.state, "running");
+
+  const live = createTranscriptProjection();
+  apply(
+    live,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t2", name: "Agent", input: { description: "d" } },
+    { type: "tool_result", id: "t2", output: "launched, first attempt" },
+    { type: "task_update", id: "t2", state: "failed", report: "quota exceeded" },
+    { type: "task_update", id: "t2", state: "running" },
+  );
+  const settledQuiet = apply(live, { type: "task_update", id: "t2", state: "completed" });
+  assert.equal(rowsOf(settledQuiet, "subagent-deck")[0]!.summary.report, undefined, "a reportless terminal frame does not revive the old output");
+
+  const resumed = createTranscriptProjection();
+  apply(
+    resumed,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t3", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t3", state: "failed", report: "x" },
+  );
+  const tail = resumed.apply([{ type: "task_update", id: "t3", state: "running", replay: true }], () => NOW + 9_000).snapshot;
+  assert.equal(rowsOf(tail, "subagent-deck")[0]!.task.replayed, true, "a tail-replayed restart's real time is unknown: no live clock");
+});
