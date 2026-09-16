@@ -37,6 +37,12 @@ export type DirStore = ReadonlyMap<string, DirState>;
 
 export const emptyDirStore = (): DirStore => new Map();
 
+/** The daemon's listing order (`sortAndCapDir`): directories first, then
+ *  names by code point — kept identical so an appended page cannot reorder
+ *  what a single page would have shown. */
+export const compareDirEntries = (a: FsDirEntry, b: FsDirEntry): number =>
+  (a.kind === "dir" ? 0 : 1) - (b.kind === "dir" ? 0 : 1) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
 /** Refreshes and failed continuations retire the old listing's token. */
 const withoutContinuation = ({ continuation: _continuation, ...listing }: DirListing): DirListing => {
   return listing;
@@ -74,8 +80,12 @@ export function applyDirReply(
     const previous = append && prev ? shownListing(prev)?.entries ?? [] : [];
     // A directory may change during pagination. Keep one row per name and
     // let the later page refresh its kind/status without duplicating it.
+    // Each page arrives sorted on its own, so the accumulation is re-sorted
+    // with the daemon's exact order (directories first, then code-point
+    // name order — `sortAndCapDir`): a directory found in a later raw page
+    // must not sit below a thousand files (release review, 0.10.0).
     const entries = append
-      ? [...new Map([...previous, ...reply.entries].map(entry => [entry.name, entry])).values()]
+      ? [...new Map([...previous, ...reply.entries].map(entry => [entry.name, entry])).values()].sort(compareDirEntries)
       : reply.entries;
     next.set(path, {
       phase: "ready",

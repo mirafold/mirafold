@@ -116,8 +116,15 @@ export async function withFreshMockSession(
 /** Type a prompt into the composer and send it; returns the textarea. */
 export async function typePrompt(page: Page, text: string): Promise<Locator> {
   const prompt = page.locator(".prompt-box textarea");
+  const before = await page.locator(".turn-user").count();
   await prompt.fill(text);
   await prompt.press("Enter");
+  // "Sent" means the daemon echoed the prompt back as a user turn. Enter
+  // resolves 30–50 ms before that echo renders (probe, 2026-09-16), and the
+  // turn indicator `waitTurnIdle` keys on mounts with the echo — a caller
+  // that waits for idle inside that window sees no turn at all. CI sent six
+  // prompts in a burst that way (overflow=0 after 6 turns).
+  await page.waitForFunction((n) => document.querySelectorAll(".turn-user").length > n, before, { timeout: 15_000 });
   return prompt;
 }
 

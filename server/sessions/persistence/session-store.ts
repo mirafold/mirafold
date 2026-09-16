@@ -137,6 +137,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       reportOmittedBytes: nonnegativeIntSchema.optional(),
       elapsedMs: nonnegativeIntSchema.optional(),
       parentId: idSchema.optional(),
+      attempt: sequenceSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -188,6 +189,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
         .array(z.object({ kind: z.enum(["read", "list", "search"]), target: z.string().optional() }).strict())
         .max(1_000)
         .optional(),
+      attempt: sequenceSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),

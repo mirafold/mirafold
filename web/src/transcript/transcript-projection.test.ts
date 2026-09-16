@@ -586,6 +586,35 @@ test("PR #120 review: a partial task update keeps the report, duration, and iden
   assert.equal(rowsOf(scoped, "thinking").at(-1)?.done, false, "a request-scoped error ends nothing");
 });
 
+test("release review 0.10.0: a task running again after a terminal word is a new attempt — the old report and duration do not ride into it", () => {
+  const projection = createTranscriptProjection();
+  const failed = apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "task_update", id: "t1", state: "failed", report: "quota exceeded", elapsedMs: 9 },
+  );
+  assert.deepEqual(rowsOf(failed, "subagent-deck")[0]!.lifecycle, { state: "failed", label: "d", report: "quota exceeded", elapsedMs: 9 });
+  // The anchor call itself settled with the launcher's output (an OpenCode
+  // task call, a Codex collab call): not this attempt's report either.
+  apply(projection, { type: "tool_result", id: "t1", output: "launched, first attempt" });
+  // The restart lands five seconds later on the clock: the anchor's start
+  // must move to it, or the live elapsed counter shows the first attempt's age.
+  const restarted = projection.apply([{ type: "task_update", id: "t1", state: "running" }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(restarted, "subagent-deck")[0]!;
+  assert.deepEqual(deck.lifecycle, { state: "running", label: "d", restarted: true }, "running again carries the identity, not the failure");
+  assert.equal(deck.summary.report, undefined, "the anchor's earlier output is not shown as this attempt's report");
+  assert.equal(deck.task.startedAt, NOW + 5_000, "the live clock restarts with the attempt");
+  const still = apply(projection, { type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(rowsOf(still, "subagent-deck")[0]!.summary.report, undefined, "and stays hidden until this attempt reports");
+  const done = apply(projection, { type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  assert.deepEqual(rowsOf(done, "subagent-deck")[0]!.lifecycle, { state: "completed", label: "d", report: "second time lucky" });
+  // A partial frame while still running keeps carrying, as before.
+  const again = apply(projection, { type: "task_update", id: "t1", state: "running", report: "progress" }, { type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(rowsOf(again, "subagent-deck")[0]!.lifecycle?.report, "progress");
+});
+
 test("PR #120 review: an outcome replayed before its task anchor settles the placeholder instead of vanishing", () => {
   const projection = createTranscriptProjection();
   const snapshot = apply(
@@ -878,4 +907,197 @@ test("a request-scoped error (terminal: false) ends no turn, so it orphans nothi
   const rows = result.snapshot.rows;
   assert.equal(rows.filter((r) => r.kind === "text" && r.role === "assistant" && r.text.startsWith("child")).length, 0, "not narrated inline");
   assert.equal(rows.filter((r) => r.kind === "subagent-deck").length, 1, "grouped under its anchor once it lands");
+});
+
+// PR #125 review: the restart mark must survive a full replay (the ring
+// coalesces the terminal frame away and marks the lone running frame), a
+// reportless terminal frame, and a tail-resumed restart must not start a
+// live clock at reconnection time.
+test("a restart replayed as one marked running frame, or settled without a report, still hides the anchor's old output; a tail-replayed restart shows no live clock", () => {
+  const replayed = createTranscriptProjection();
+  const afterReplay = apply(
+    replayed,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_result", id: "t1", output: "launched, first attempt", replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(afterReplay, "subagent-deck")[0]!;
+  assert.equal(deck.summary.report, undefined, "the ring's mark keeps the anchor's old output out of the report");
+  assert.equal(deck.summary.state, "running");
+
+  const live = createTranscriptProjection();
+  apply(
+    live,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t2", name: "Agent", input: { description: "d" } },
+    { type: "tool_result", id: "t2", output: "launched, first attempt" },
+    { type: "task_update", id: "t2", state: "failed", report: "quota exceeded" },
+    { type: "task_update", id: "t2", state: "running" },
+  );
+  const settledQuiet = apply(live, { type: "task_update", id: "t2", state: "completed" });
+  assert.equal(rowsOf(settledQuiet, "subagent-deck")[0]!.summary.report, undefined, "a reportless terminal frame does not revive the old output");
+
+  const resumed = createTranscriptProjection();
+  apply(
+    resumed,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t3", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t3", state: "failed", report: "x" },
+  );
+  const tail = resumed.apply([{ type: "task_update", id: "t3", state: "running", replay: true }], () => NOW + 9_000).snapshot;
+  assert.equal(rowsOf(tail, "subagent-deck")[0]!.task.replayed, true, "a tail-replayed restart's real time is unknown: no live clock");
+});
+
+// PR #125 round 3: `unknown` (the turn end's word for a task that never
+// spoke) is not a terminal attempt; its first `running` is the same attempt.
+test("a task's first running word after an unknown state is not a restart", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "tool_result", id: "t1", output: "launched" },
+    { type: "task_update", id: "t1", state: "unknown", label: "d" },
+  );
+  const running = projection.apply([{ type: "task_update", id: "t1", state: "running" }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(running, "subagent-deck")[0]!;
+  assert.equal(deck.lifecycle?.restarted, undefined);
+  assert.equal(deck.summary.report?.text, "launched", "the anchor's output is still this attempt's evidence");
+  assert.equal(deck.task.startedAt, NOW, "the clock is not reset");
+});
+
+// PR #125 round 4: a viewport that last saw the old attempt still running,
+// then tail-resumes onto the ring's coalesced `running, attempt: 2` frame,
+// must not carry that old attempt's progress report or clock either.
+test("a wire-marked restart on a locally-running task drops the old attempt's report and clock", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d", report: "progress so far", elapsedMs: 40_000 },
+  );
+  const resumed = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2, replay: true }], () => NOW + 60_000).snapshot;
+  const deck = rowsOf(resumed, "subagent-deck")[0]!;
+  assert.deepEqual(deck.lifecycle, { state: "running", label: "d", restarted: true, attempt: 2, replayed: true });
+  assert.equal(deck.summary.report, undefined);
+  assert.equal(deck.task.replayed, true, "the restart time is unknown: no live clock");
+});
+
+// PR #125 round 5: the ring keeps the restart mark on every reportless frame
+// of the new attempt, so a progress frame must not restart the clock again;
+// and the old attempt's still-open child call must not become the new
+// attempt's "current action".
+test("a restarted attempt resets its clock once and retires the old attempt's open child call", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "sleep 99", parentId: "t1" },
+    { type: "task_update", id: "t1", state: "failed", report: "boom" },
+  );
+  const restarted = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2 }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(restarted, "subagent-deck")[0]!;
+  assert.equal(deck.task.startedAt, NOW + 5_000);
+  assert.notEqual(deck.summary.currentAction, "Bash sleep 99", "the old attempt's open call is not this attempt's action");
+  const oldCall = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(oldCall && oldCall.kind === "tool" && /interrupted/.test(oldCall.output ?? ""), "the old attempt's call is retired with an honest outcome");
+  // Two more reportless frames still carrying the ring's mark: no clock reset.
+  const later = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2, action: "Grep" }], () => NOW + 30_000).snapshot;
+  assert.equal(rowsOf(later, "subagent-deck")[0]!.task.startedAt, NOW + 5_000, "a progress frame does not restart the clock");
+  const again = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2 }], () => NOW + 60_000).snapshot;
+  assert.equal(rowsOf(again, "subagent-deck")[0]!.task.startedAt, NOW + 5_000);
+});
+
+// PR #125 round 6: a viewport that tail-resumes AFTER the new attempt has
+// already reported sees a frame with a report and a new attempt number — it
+// must still treat that as the boundary (fresh clock, old calls retired).
+test("a resumed frame that already carries the new attempt's report is still an attempt boundary", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "sleep 99", parentId: "t1" },
+  );
+  const resumed = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2, report: "second attempt progress", replay: true }], () => NOW + 9_000).snapshot;
+  const deck = rowsOf(resumed, "subagent-deck")[0]!;
+  assert.equal(deck.summary.report?.text, "second attempt progress");
+  assert.equal(deck.task.replayed, true, "replayed boundary: no live clock");
+  assert.notEqual(deck.summary.currentAction, "Bash sleep 99", "the old attempt's open call was retired");
+  const later = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2, action: "Grep" }], () => NOW + 20_000).snapshot;
+  assert.equal(rowsOf(later, "subagent-deck")[0]!.summary.report?.text, "second attempt progress", "same attempt: the report carries");
+});
+
+// PR #125 round 8: on a full replay the ring's re-appended task frame trails
+// the current attempt's own calls; a first-seen marked frame must not retire
+// them as the "old attempt's" leftovers.
+test("a full replay of a restarted task keeps the current attempt's open call running", () => {
+  const projection = createTranscriptProjection();
+  const replayed = apply(
+    projection,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_result", id: "t1", output: "launched", replay: true },
+    // The ring stamps a subagent's call with its attempt (round 9), so the
+    // replayed current-attempt call says which attempt it belongs to.
+    { type: "tool_use", id: "c2", name: "Bash", detail: "sleep 5", parentId: "t1", attempt: 2, replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(replayed, "subagent-deck")[0]!;
+  assert.equal(deck.summary.currentAction, "Bash sleep 5", "the current attempt's call is still what the task is doing");
+  assert.equal(deck.summary.report, undefined, "and the anchor's old output is still not this attempt's report");
+});
+
+// PR #125 round 9: on a tail resume the ring's re-appended task frame can
+// trail the current attempt's call; the call carries its attempt, so the
+// boundary retires only earlier attempts' open calls.
+test("a resumed call stamped with the new attempt survives the boundary; the old attempt's call is retired", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "old attempt", parentId: "t1" },
+  );
+  // Disconnected through the failure and restart; the resume delivers the
+  // new attempt's call (stamped) before the re-appended task frame.
+  const resumed = projection.apply(
+    [
+      { type: "tool_use", id: "c2", name: "Bash", detail: "new attempt", parentId: "t1", attempt: 2, replay: true },
+      { type: "task_update", id: "t1", state: "running", attempt: 2, replay: true },
+    ],
+    () => NOW + 5_000,
+  ).snapshot;
+  const deck = rowsOf(resumed, "subagent-deck")[0]!;
+  assert.equal(deck.summary.currentAction, "Bash new attempt", "the current attempt's call is still running");
+  const old = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "the old attempt's call is retired");
+});
+
+// PR #125 round 10: a full replay of attempt 2 can still carry attempt 1's
+// unanswered call; with calls carrying their attempt, the first-seen marked
+// frame retires that older call while sparing attempt 2's.
+test("a first-seen replayed attempt retires an older attempt's open call but not its own", () => {
+  const projection = createTranscriptProjection();
+  const replayed = apply(
+    projection,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "old attempt", parentId: "t1", replay: true },
+    { type: "tool_use", id: "c2", name: "Bash", detail: "new attempt", parentId: "t1", attempt: 2, replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(replayed, "subagent-deck")[0]!;
+  const old = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "attempt 1's open call is retired");
+  assert.equal(deck.summary.currentAction, "Bash new attempt", "attempt 2's call is what the task is doing");
 });

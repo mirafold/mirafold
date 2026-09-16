@@ -67,6 +67,8 @@ export type ToolRow = {
   isError?: boolean;
   startedAt: number;
   replayed?: boolean;
+  /** For a subagent's call: the parent task's attempt it belongs to. */
+  attempt?: number;
   /** Output streamed while the call runs (tool_output_delta); `output` is
    *  still the engine's authoritative text once the call completes. */
   streamed?: string;
@@ -828,6 +830,11 @@ export function createTranscriptProjection(): TranscriptProjection {
           input: msg.input,
           parentId: msg.parentId,
           ...(msg.actions?.length ? { actions: msg.actions } : {}),
+          // The wire's stamp first (the ring knows the attempt even when the
+          // task frame trails this call on replay), else the task as known here.
+          ...((msg.attempt ?? (msg.parentId ? tasks.get(msg.parentId)?.attempt : undefined)) !== undefined
+            ? { attempt: msg.attempt ?? tasks.get(msg.parentId!)?.attempt }
+            : {}),
           batchId,
           settled: false,
           startedAt: placeholder >= 0 ? (entries[placeholder] as ToolEntry).startedAt : readNow(),
@@ -934,8 +941,33 @@ export function createTranscriptProjection(): TranscriptProjection {
         // the transient current action are the newest frame's (PR #120
         // review).
         const prior = tasks.get(msg.id);
+        // A task running AGAIN after a terminal word is a new attempt: the
+        // earlier report and duration are not carried into it (release
+        // review, 0.10.0).
+        // Only a TERMINAL word starts a new attempt: `unknown` is the turn
+        // end's guess for a task that never spoke, and its first `running`
+        // afterwards is the same attempt (PR #125 review).
+        const restarted =
+          msg.state === "running" &&
+          prior !== undefined &&
+          (prior.state === "completed" || prior.state === "failed" || prior.state === "interrupted");
+        // The "new attempt" mark holds until this attempt reports something
+        // of its own, so the anchor call's earlier output is not shown as
+        // its report meanwhile.
+        // The mark also arrives on the wire (the ring's retained frame after
+        // a full replay) and survives a reportless terminal frame: only this
+        // attempt's own report ends it.
+        // A new attempt is either seen locally (a terminal word, then
+        // running) or told by the wire (the ring's mark on a tail-resumed
+        // frame when this viewport last saw the old attempt still running):
+        // neither carries the old attempt's report or duration (PR #125).
+        const newAttempt = restarted || (msg.attempt !== undefined && msg.attempt !== prior?.attempt);
+        const fresh = msg.report === undefined && (newAttempt || prior?.restarted === true);
+        const attempt = msg.attempt ?? prior?.attempt;
         const lifecycle: TaskLifecycle = {
           state: msg.state,
+          ...(fresh ? { restarted: true } : {}),
+          ...(attempt !== undefined ? { attempt } : {}),
           ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
           ...(msg.agentType !== undefined ? { agentType: msg.agentType } : prior?.agentType !== undefined ? { agentType: prior.agentType } : {}),
           ...(msg.action !== undefined ? { action: msg.action } : {}),
@@ -945,17 +977,48 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
                 ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
               }
-            : prior?.report !== undefined
+            : prior?.report !== undefined && !newAttempt
               ? {
                   report: prior.report,
                   ...(prior.reportTail !== undefined ? { reportTail: prior.reportTail } : {}),
                   ...(prior.reportOmittedBytes !== undefined ? { reportOmittedBytes: prior.reportOmittedBytes } : {}),
                 }
               : {}),
-          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined ? { elapsedMs: prior.elapsedMs } : {}),
+          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined && !newAttempt ? { elapsedMs: prior.elapsedMs } : {}),
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
+        // The attempt BOUNDARY is the terminal-to-running transition seen
+        // here, or the wire's attempt number changing — not every later
+        // frame of the same attempt, or the clock would restart on each
+        // progress frame (PR #125 rounds 5–6).
+        // A first-seen marked frame (a full replay) is a boundary too: with
+        // every subagent call carrying its attempt, retirement below spares
+        // the current attempt's calls and retires only older ones (round 10).
+        const attemptBoundary = newAttempt;
+        // What this boundary starts: the wire's number, else one past the last.
+        const startingAttempt = msg.attempt ?? (prior?.attempt ?? 1) + 1;
+        if (attemptBoundary) {
+          // A new attempt's clock starts now — when the restart is live. A
+          // replayed restart's real time is unknown, so the anchor reads as
+          // replayed (no live clock) rather than counting from reconnection.
+          // The old attempt's still-open child calls are retired: no turn
+          // end will close them (the root turn may be long over), and the
+          // deck must not claim the new attempt is running the old command.
+          entries = entries.map((entry) => {
+            if (entry.kind !== "tool") return entry;
+            if (entry.toolId === msg.id) return { ...entry, startedAt: readNow(), replayed: msg.replay ? true : undefined };
+            // Retired as settled, not as an error: an errored child call is
+            // surfaced at the root by design (`nested`), and this one is
+            // the old attempt's leftover, not something the reader must act on.
+            // Only an EARLIER attempt's open call is retired: a call the ring
+            // stamped with this attempt may precede the frame on a resume.
+            if (entry.parentId === msg.id && entry.output === undefined && (entry.attempt ?? 1) < startingAttempt) {
+              return { ...entry, settled: true, ...interruptedOutcome(entry), streamed: undefined, live: undefined };
+            }
+            return entry;
+          });
+        }
         if (!toolEntry(msg.id)) {
           // An outcome that arrived before this anchor (its opening was
           // evicted) belongs to it: the placeholder is born settled with

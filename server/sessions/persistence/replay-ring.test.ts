@@ -181,3 +181,97 @@ test("an explicitly-undefined field in a superseding tool_update does not erase 
   assert.equal(kept.detail, "Updated a.ts");
   assert.deepEqual(kept.input, { changes: [] });
 });
+
+// Release review 0.10.0: a task running AGAIN after a terminal word (a Codex
+// child spoken to after it failed) is a new attempt; the retained frame must
+// not show the old failure report and duration under "running".
+test("a task restarted after a terminal state drops the prior report and duration from the retained frame", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "running", label: "job" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "quota exceeded", reportTail: "…", reportOmittedBytes: 2, elapsedMs: 9 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([kept.state, kept.label, kept.report, kept.reportTail, kept.reportOmittedBytes, kept.elapsedMs], ["running", "job", undefined, undefined, undefined, undefined]);
+  r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  const done = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([done.state, done.label, done.report], ["completed", "job", "second time lucky"]);
+  // Running → running still carries (a partial frame is not a restart).
+  r.offer({ type: "task_update", id: "t2", state: "running", report: "progress", elapsedMs: 3 });
+  r.offer({ type: "task_update", id: "t2", state: "running", action: "Grep" });
+  const partial = r.buffer.find((m) => m.type === "task_update" && m.id === "t2") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([partial.report, partial.elapsedMs, partial.action], ["progress", 3, "Grep"]);
+});
+
+// PR #125 review: after a full replay the ring's retained frame is a lone
+// `running` with the terminal update coalesced away — the restart's
+// provenance must ride that frame, and end only with this attempt's report.
+test("the retained frame carries the attempt number from the first restart on, through this attempt's report", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "running", label: "job" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "quota exceeded" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = () => r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.equal(kept().attempt, 2);
+  r.offer({ type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(kept().attempt, 2, "a reportless frame keeps the attempt");
+  r.offer({ type: "task_update", id: "t1", state: "completed" });
+  assert.equal(kept().attempt, 2, "a reportless terminal frame keeps it too");
+  r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  assert.equal(kept().attempt, 2, "and so does this attempt's report — a late resumer must still see the attempt change (round 6)");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  assert.deepEqual([kept().attempt, kept().report], [3, undefined], "a third attempt counts on");
+});
+
+test("PR #125 round 3: unknown → running is the same attempt — the retained frame keeps its fields and gets no restart mark", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "unknown", label: "job", report: "so far", elapsedMs: 4 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([kept.state, kept.report, kept.elapsedMs, kept.attempt], ["running", "so far", 4, undefined]);
+});
+
+// PR #125 round 7: the attempt counter must outlive the frame's eviction, or
+// a task really on attempt 3 restarts at "2" and a viewport that saw 2 reads
+// the resumed frame as the same attempt.
+test("a task's attempt number survives its frame being evicted from the ring", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m), countCap: 3 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "first" });
+  r.offer({ type: "task_update", id: "t1", state: "running" }); // attempt 2
+  const kept = () => r.buffer.find((m) => m.type === "task_update" && m.id === "t1") as Extract<WireMsg, { type: "task_update" }> | undefined;
+  assert.equal(kept()?.attempt, 2);
+  for (let i = 0; i < 4; i++) r.offer({ type: "text_delta", text: `filler ${i}` });
+  assert.equal(kept(), undefined, "the task's frame was evicted");
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "second" });
+  assert.equal(kept()?.attempt, 2, "the recreated frame carries the attempt the ring remembered");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  assert.equal(kept()?.attempt, 3, "and the next restart counts on from it");
+});
+
+// PR #125 round 8: the side map must remember the last STATE too — a terminal
+// frame evicted before the next running one is still the boundary it was.
+test("a terminal frame evicted before the next running one still advances the attempt", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m), countCap: 3 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "first" });
+  r.offer({ type: "task_update", id: "t1", state: "running" }); // attempt 2
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "second" }); // still attempt 2, terminal
+  for (let i = 0; i < 4; i++) r.offer({ type: "text_delta", text: `filler ${i}` });
+  assert.equal(r.buffer.some((m) => m.type === "task_update"), false, "evicted");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.equal(kept.attempt, 3, "terminal (evicted) → running is the third attempt");
+});
+
+// PR #125 round 9: a subagent's call is stamped with its parent's attempt.
+test("a child call carries its parent task's attempt number", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "tool_use", id: "t1", name: "Agent" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "tool_use", id: "c1", name: "Bash", parentId: "t1" });
+  assert.equal((r.buffer.find((m) => m.type === "tool_use" && m.id === "c1") as { attempt?: number }).attempt, undefined, "attempt 1 is unmarked");
+  r.offer({ type: "task_update", id: "t1", state: "failed" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "tool_use", id: "c2", name: "Bash", parentId: "t1" });
+  assert.equal((r.buffer.find((m) => m.type === "tool_use" && m.id === "c2") as { attempt?: number }).attempt, 2);
+});
