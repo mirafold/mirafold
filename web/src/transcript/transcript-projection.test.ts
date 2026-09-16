@@ -1101,3 +1101,45 @@ test("a first-seen replayed attempt retires an older attempt's open call but not
   assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "attempt 1's open call is retired");
   assert.equal(deck.summary.currentAction, "Bash new attempt", "attempt 2's call is what the task is doing");
 });
+
+// Release review 0.10.0 (fix round B): a terminal error ended the turn
+// without settling it — the open batch and its in-flight calls stayed open,
+// and the next prompt's calls were filed behind the abandoned batch, so the
+// next turn_end settled the wrong batch and left the new turn's group live.
+test("a terminal error settles the turn like turn_end: in-flight calls interrupt at once, the next turn's calls settle on its own turn_end, a trailing turn_end is harmless", () => {
+  const projection = createTranscriptProjection();
+  const routineTurn = (prefix: string) =>
+    [
+      { type: "tool_use", id: `${prefix}1`, name: "Read", detail: "a.ts", actions: READ },
+      { type: "tool_result", id: `${prefix}1`, output: "a" },
+      { type: "tool_use", id: `${prefix}2`, name: "Grep", detail: "needle", actions: SEARCH },
+      { type: "tool_result", id: `${prefix}2`, output: "b" },
+    ] as const;
+  apply(projection, { type: "user_prompt", text: "work" }, { type: "tool_use", id: "A", name: "Bash" });
+  const died = apply(projection, { type: "error", message: "engine died" });
+  assert.deepEqual(rowKinds(died), ["text", "tool", "text"]);
+  assert.deepEqual(
+    rowsOf(died, "tool").map(({ output, isError }) => ({ output, isError })),
+    [{ output: "(interrupted — no result)", isError: true }],
+    "the in-flight call is interrupted at the error, not at some later turn_end",
+  );
+  const next = apply(projection, { type: "user_prompt", text: "again" }, ...routineTurn("B"));
+  assert.equal(rowsOf(next, "tool-fold")[0]?.live, true, "the next turn's group is live while its turn runs");
+  const ended = apply(projection, { type: "turn_end" });
+  assert.equal(rowsOf(ended, "tool-fold")[0]?.live, false, "its own turn_end settles the next turn's calls — they were filed under the next turn, not the dead one");
+  // A turn_end trailing the error (an adapter that sends both) changes nothing.
+  const trailing = apply(
+    projection,
+    { type: "user_prompt", text: "once more" },
+    { type: "tool_use", id: "C", name: "Bash" },
+    { type: "error", message: "died again" },
+    { type: "turn_end" },
+  );
+  assert.deepEqual(
+    rowsOf(trailing, "tool").slice(-1).map(({ output, isError }) => ({ output, isError })),
+    [{ output: "(interrupted — no result)", isError: true }],
+  );
+  assert.equal(rowKinds(trailing).length, rowKinds(ended).length + 3, "no extra rows from the trailing turn_end");
+  const after = apply(projection, { type: "user_prompt", text: "still works" }, ...routineTurn("D"), { type: "turn_end" });
+  assert.equal(rowsOf(after, "tool-fold").slice(-1)[0]?.live, false, "a turn after the trailing turn_end still settles its own calls");
+});
