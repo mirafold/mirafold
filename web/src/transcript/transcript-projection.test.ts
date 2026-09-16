@@ -967,3 +967,21 @@ test("a task's first running word after an unknown state is not a restart", () =
   assert.equal(deck.summary.report?.text, "launched", "the anchor's output is still this attempt's evidence");
   assert.equal(deck.task.startedAt, NOW, "the clock is not reset");
 });
+
+// PR #125 round 4: a viewport that last saw the old attempt still running,
+// then tail-resumes onto the ring's coalesced `running, restarted` frame,
+// must not carry that old attempt's progress report or clock either.
+test("a wire-marked restart on a locally-running task drops the old attempt's report and clock", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d", report: "progress so far", elapsedMs: 40_000 },
+  );
+  const resumed = projection.apply([{ type: "task_update", id: "t1", state: "running", restarted: true, replay: true }], () => NOW + 60_000).snapshot;
+  const deck = rowsOf(resumed, "subagent-deck")[0]!;
+  assert.deepEqual(deck.lifecycle, { state: "running", label: "d", restarted: true, replayed: true });
+  assert.equal(deck.summary.report, undefined);
+  assert.equal(deck.task.replayed, true, "the restart time is unknown: no live clock");
+});

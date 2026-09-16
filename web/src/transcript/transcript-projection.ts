@@ -950,7 +950,12 @@ export function createTranscriptProjection(): TranscriptProjection {
         // The mark also arrives on the wire (the ring's retained frame after
         // a full replay) and survives a reportless terminal frame: only this
         // attempt's own report ends it.
-        const fresh = msg.report === undefined && (restarted || msg.restarted === true || prior?.restarted === true);
+        // A new attempt is either seen locally (a terminal word, then
+        // running) or told by the wire (the ring's mark on a tail-resumed
+        // frame when this viewport last saw the old attempt still running):
+        // neither carries the old attempt's report or duration (PR #125).
+        const newAttempt = restarted || msg.restarted === true;
+        const fresh = msg.report === undefined && (newAttempt || prior?.restarted === true);
         const lifecycle: TaskLifecycle = {
           state: msg.state,
           ...(fresh ? { restarted: true } : {}),
@@ -963,18 +968,18 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
                 ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
               }
-            : prior?.report !== undefined && !restarted
+            : prior?.report !== undefined && !newAttempt
               ? {
                   report: prior.report,
                   ...(prior.reportTail !== undefined ? { reportTail: prior.reportTail } : {}),
                   ...(prior.reportOmittedBytes !== undefined ? { reportOmittedBytes: prior.reportOmittedBytes } : {}),
                 }
               : {}),
-          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined && !restarted ? { elapsedMs: prior.elapsedMs } : {}),
+          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined && !newAttempt ? { elapsedMs: prior.elapsedMs } : {}),
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
-        if (restarted) {
+        if (newAttempt) {
           // A new attempt's clock starts now — when the restart is live. A
           // replayed restart's real time is unknown, so the anchor reads as
           // replayed (no live clock) rather than counting from reconnection.

@@ -3975,7 +3975,11 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   it). Mutation-checked. **Round 3 (one finding, fixed):** a first `running`
   after the turn end's `unknown` guess read as a restart; only a terminal
   word (completed/failed/interrupted) starts a new attempt, in both
-  reducers. Mutation-checked.
+  reducers. Mutation-checked. **Round 4 (one finding, fixed):** a viewport
+  that last saw the old attempt still running and tail-resumed onto the
+  ring's wire-marked `running, restarted` frame still carried the old
+  attempt's report and clock (the wire mark now counts as a new attempt
+  for the carry guards and the anchor reset). Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 
