@@ -3934,6 +3934,28 @@ a TF regression, a gap CF.1 never covered.
   the review round went out on a 153/154 Tier 3 because the push was
   chained behind the run instead of gated on its result — corrected here.
 
+## Release 0.10.0 (2026-09-16; Kyle: "okay lets get it going then")
+
+Kyle chose 0.10.0 over 0.9.2: Phase TF's compact transcript, native Gemini
+sign-in, and the Codex child lane are feature-sized. Flow b per
+`docs/RELEASING.md`: `release/0.10.0` cut from `next` @ `7c4d59d`, notices
+regenerated (unchanged), version bumped, release PR #124 → `main`.
+
+- [x] **Release-review fixes (PR #124's Codex review, four findings, all
+  legitimate)** → `fix/release-review-0.10.0` off `next`, each with a
+  regression that fails without it: appended folder pages kept insertion
+  order (a directory on a later raw page sat below the earlier page's files;
+  the accumulation is re-sorted with the daemon's exact order); a task
+  restarted after a terminal word carried the old report and duration into
+  its `running` frame in BOTH the ring and the projection (a restart is a
+  new attempt); replayed `task_update` frames were skipped whole, so the
+  completion-note ledger was empty after a reload and a republished terminal
+  state read as news (`task-notes.ts`: replay seeds silently, live
+  transitions note); OpenCode's `startTurn` cleared child-owned parts and
+  message roles, so a background child's next snapshot re-announced its row
+  and its prompt echo replayed as narration (root-owned records only; a
+  child's records go with its terminal word). Gates: typecheck, unit, Tier 2.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

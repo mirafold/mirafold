@@ -24,6 +24,11 @@ type PartKind = "text" | "reasoning" | "tool" | "other";
 
 type PartTrack = {
   kind: PartKind;
+  // The deck this part rides (undefined = the root). A child's parts and
+  // roles outlive the root turn they started in — a background child keeps
+  // streaming after the user starts another turn — so a root turn's reset
+  // clears only root-owned records (release review, 0.10.0).
+  lane?: string;
   // Characters already sent as deltas — the final part snapshot repeats the
   // full text, so emission is always "the suffix beyond this mark". Handles
   // both live streams (delta events) and buffered parts (snapshot only).
@@ -47,7 +52,7 @@ export class OpenCodeEventMapper {
   // prompt — guidance prefix included — replays into the transcript as
   // text_delta. message.updated always precedes a message's parts (live
   // captures), so an unknown role is treated as assistant.
-  private roles = new Map<string, string>();
+  private roles = new Map<string, { role: string; lane?: string }>();
   // Per assistant message, latest token/cost report — summed at idle into the
   // turn's one `usage`. Cleared each startTurn so only this turn counts.
   private turnUsage = new Map<string, TurnTokens>();
@@ -120,8 +125,12 @@ export class OpenCodeEventMapper {
     // the maps otherwise grow unboundedly over a long session, but a
     // straggler snapshot arriving just after idle must
     // still find its track — a fresh default would re-emit its whole text.
-    this.parts.clear();
-    this.roles.clear();
+    // Root-owned records only: a background child's parts and roles stay
+    // until its own terminal word (`forgetLane`), or its next snapshot
+    // would re-announce an already-announced row and its prompt echo would
+    // replay as narration.
+    for (const [id, track] of [...this.parts]) if (track.lane === undefined) this.parts.delete(id);
+    for (const [id, entry] of [...this.roles]) if (entry.lane === undefined) this.roles.delete(id);
     // The narration budget is turn-scoped; the lane's session-edge maps are
     // deliberately NOT cleared here — see their declaration (a background
     // child outlives its turn and must stay routable).
@@ -280,7 +289,7 @@ export class OpenCodeEventMapper {
     // message is the task prompt, and its parts must never replay as the
     // subagent's own narration — the same echo rule the root obeys.
     if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
-      this.roles.set(String(info["id"]), info["role"]);
+      this.roles.set(String(info["id"]), { role: info["role"], ...(lane !== "root" ? { lane } : {}) });
     // Usage and model stay the ROOT conversation's: the status bar counts
     // the session's own context weight.
     if (lane !== "root") return;
@@ -330,14 +339,21 @@ export class OpenCodeEventMapper {
   // cap a new part is dropped — its text isn't relayed; a real turn never
   // approaches this, so only a flood degrades, and to silence, never to a
   // corrupt shared counter.
-  private track(partID: string, kind: PartKind): PartTrack | undefined {
+  private track(partID: string, kind: PartKind, lane?: string): PartTrack | undefined {
     let track = this.parts.get(partID);
     if (!track) {
       if (this.parts.size >= MAX_PARTS_PER_TURN) return undefined;
-      track = { kind, emitted: 0 };
+      track = { kind, emitted: 0, ...(lane ? { lane } : {}) };
       this.parts.set(partID, track);
     }
     return track;
+  }
+
+  /** A child settled: everything it owned in the per-part and per-message
+   *  tables goes with it (the tables are otherwise root-turn-scoped). */
+  private forgetLane(lane: string) {
+    for (const [id, track] of [...this.parts]) if (track.lane === lane) this.parts.delete(id);
+    for (const [id, entry] of [...this.roles]) if (entry.lane === lane) this.roles.delete(id);
   }
 
   private onPartSnapshot(p: Record<string, unknown>) {
@@ -348,7 +364,7 @@ export class OpenCodeEventMapper {
     const parentId = lane === "root" ? undefined : lane;
     const partID = String(part["id"]);
     const type = String(part["type"]);
-    const fromUser = this.roles.get(String(part["messageID"])) === "user";
+    const fromUser = this.roles.get(String(part["messageID"]))?.role === "user";
     switch (type) {
       case "step-start":
         // A child's step boundaries never steer the root activity line.
@@ -356,14 +372,14 @@ export class OpenCodeEventMapper {
         break;
       case "text": {
         if (fromUser) break; // the prompt's own echo — never replayed as output
-        const track = this.track(partID, "text");
+        const track = this.track(partID, "text", parentId);
         if (track) this.emitTextSuffix(track, String(part["text"] ?? ""), parentId);
         break;
       }
       case "reasoning": {
         if (fromUser) break;
         if (!parentId) this.status("thinking");
-        const track = this.track(partID, "reasoning");
+        const track = this.track(partID, "reasoning", parentId);
         if (!track) break;
         // A delta that beat this snapshot registered the part as "text";
         // the snapshot is authoritative — correct the lane for the rest of
@@ -385,10 +401,10 @@ export class OpenCodeEventMapper {
     if (lane === undefined) return;
     const parentId = lane === "root" ? undefined : lane;
     if (p["field"] !== "text") return;
-    if (this.roles.get(String(p["messageID"])) === "user") return;
+    if (this.roles.get(String(p["messageID"]))?.role === "user") return;
     // Deltas can beat the part's first snapshot; an unknown part defaults to
     // text (reasoning parts snapshot before streaming in the live capture).
-    const track = this.track(String(p["partID"]), "text");
+    const track = this.track(String(p["partID"]), "text", parentId);
     const delta = String(p["delta"] ?? "");
     if (!track || !delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
@@ -417,7 +433,7 @@ export class OpenCodeEventMapper {
   }
 
   private onToolPart(partID: string, part: Record<string, unknown>, parentId?: string) {
-    const track = this.track(partID, "tool");
+    const track = this.track(partID, "tool", parentId);
     if (!track) return;
     track.kind = "tool";
     const tool = String(part["tool"] ?? "");
@@ -531,6 +547,8 @@ export class OpenCodeEventMapper {
       ...(report?.tail !== undefined ? { reportTail: report.tail } : {}),
       ...(report?.omittedBytes !== undefined ? { reportOmittedBytes: report.omittedBytes } : {}),
     });
+    // The engine's terminal word on the child releases what it owned.
+    if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
   }
 
   private announceTool(

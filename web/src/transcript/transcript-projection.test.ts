@@ -586,6 +586,25 @@ test("PR #120 review: a partial task update keeps the report, duration, and iden
   assert.equal(rowsOf(scoped, "thinking").at(-1)?.done, false, "a request-scoped error ends nothing");
 });
 
+test("release review 0.10.0: a task running again after a terminal word is a new attempt — the old report and duration do not ride into it", () => {
+  const projection = createTranscriptProjection();
+  const failed = apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "task_update", id: "t1", state: "failed", report: "quota exceeded", elapsedMs: 9 },
+  );
+  assert.deepEqual(rowsOf(failed, "subagent-deck")[0]!.lifecycle, { state: "failed", label: "d", report: "quota exceeded", elapsedMs: 9 });
+  const restarted = apply(projection, { type: "task_update", id: "t1", state: "running" });
+  assert.deepEqual(rowsOf(restarted, "subagent-deck")[0]!.lifecycle, { state: "running", label: "d" }, "running again carries the identity, not the failure");
+  const done = apply(projection, { type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  assert.deepEqual(rowsOf(done, "subagent-deck")[0]!.lifecycle, { state: "completed", label: "d", report: "second time lucky" });
+  // A partial frame while still running keeps carrying, as before.
+  const again = apply(projection, { type: "task_update", id: "t1", state: "running", report: "progress" }, { type: "task_update", id: "t1", state: "running", action: "Grep" });
+  assert.equal(rowsOf(again, "subagent-deck")[0]!.lifecycle?.report, "progress");
+});
+
 test("PR #120 review: an outcome replayed before its task anchor settles the placeholder instead of vanishing", () => {
   const projection = createTranscriptProjection();
   const snapshot = apply(

@@ -176,8 +176,16 @@ export class ReplayRing {
         const [prior] = this.buffer.splice(stale, 1);
         this.bytes -= msgBytes(prior!);
         const { seq: _seq, action: _action, ...carried } = prior as SessionMsg & { seq?: number; action?: string };
+        // A task running AGAIN after a terminal word (a Codex child spoken
+        // to after it failed or completed) is a new attempt: the old
+        // report and duration are not this attempt's (release review,
+        // 0.10.0).
+        const restarted = msg.state === "running" && (prior as { state?: string }).state !== "running";
+        const { report: _r, reportTail: _rt, reportOmittedBytes: _ro, elapsedMs: _e, ...fresh } = carried as typeof carried & {
+          report?: string; reportTail?: string; reportOmittedBytes?: number; elapsedMs?: number;
+        };
         const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
-        retained = { ...carried, ...present } as SessionMsg;
+        retained = { ...(restarted ? fresh : carried), ...present } as SessionMsg;
       }
     }
     if (msg.type === "tool_update") {

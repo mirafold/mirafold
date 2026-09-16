@@ -181,3 +181,23 @@ test("an explicitly-undefined field in a superseding tool_update does not erase 
   assert.equal(kept.detail, "Updated a.ts");
   assert.deepEqual(kept.input, { changes: [] });
 });
+
+// Release review 0.10.0: a task running AGAIN after a terminal word (a Codex
+// child spoken to after it failed) is a new attempt; the retained frame must
+// not show the old failure report and duration under "running".
+test("a task restarted after a terminal state drops the prior report and duration from the retained frame", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "running", label: "job" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "quota exceeded", reportTail: "…", reportOmittedBytes: 2, elapsedMs: 9 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([kept.state, kept.label, kept.report, kept.reportTail, kept.reportOmittedBytes, kept.elapsedMs], ["running", "job", undefined, undefined, undefined, undefined]);
+  r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
+  const done = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([done.state, done.label, done.report], ["completed", "job", "second time lucky"]);
+  // Running → running still carries (a partial frame is not a restart).
+  r.offer({ type: "task_update", id: "t2", state: "running", report: "progress", elapsedMs: 3 });
+  r.offer({ type: "task_update", id: "t2", state: "running", action: "Grep" });
+  const partial = r.buffer.find((m) => m.type === "task_update" && m.id === "t2") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([partial.report, partial.elapsedMs, partial.action], ["progress", 3, "Grep"]);
+});

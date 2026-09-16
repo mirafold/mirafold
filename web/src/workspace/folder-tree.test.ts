@@ -130,10 +130,17 @@ test("continuations append later directories and replace repeated names without 
   store = applyDirReply(store, "", {
     entries: [{ name: "early.txt", kind: "file", status: "M" }, { name: "late-dir", kind: "dir" }],
   }, true);
+  // The accumulation keeps the daemon's order — directories first, then
+  // code-point name order — exactly as one page would have shown it
+  // (release review, 0.10.0): a directory found on a later raw page never
+  // sits below the earlier page's files.
   assert.deepEqual(shownListing(store.get("")!), {
-    entries: [{ name: "early.txt", kind: "file", status: "M" }, { name: "late-dir", kind: "dir" }],
+    entries: [{ name: "late-dir", kind: "dir" }, { name: "early.txt", kind: "file", status: "M" }],
     truncated: false,
   });
+  store = beginDirFetch(store, "", true);
+  store = applyDirReply(store, "", { entries: [{ name: "aardvark.txt", kind: "file" }, { name: "Zeta", kind: "dir" }] }, true);
+  assert.deepEqual(shownListing(store.get("")!)?.entries.map((e) => e.name), ["Zeta", "late-dir", "aardvark.txt", "early.txt"]);
 });
 
 test("empty pages preserve continuation; refresh and errors retire it while keeping prior rows", () => {

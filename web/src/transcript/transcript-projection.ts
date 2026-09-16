@@ -934,6 +934,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         // the transient current action are the newest frame's (PR #120
         // review).
         const prior = tasks.get(msg.id);
+        // A task running AGAIN after a terminal word is a new attempt: the
+        // earlier report and duration are not carried into it (release
+        // review, 0.10.0).
+        const restarted = msg.state === "running" && prior !== undefined && prior.state !== "running";
         const lifecycle: TaskLifecycle = {
           state: msg.state,
           ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
@@ -945,14 +949,14 @@ export function createTranscriptProjection(): TranscriptProjection {
                 ...(msg.reportTail !== undefined ? { reportTail: msg.reportTail } : {}),
                 ...(msg.reportOmittedBytes !== undefined ? { reportOmittedBytes: msg.reportOmittedBytes } : {}),
               }
-            : prior?.report !== undefined
+            : prior?.report !== undefined && !restarted
               ? {
                   report: prior.report,
                   ...(prior.reportTail !== undefined ? { reportTail: prior.reportTail } : {}),
                   ...(prior.reportOmittedBytes !== undefined ? { reportOmittedBytes: prior.reportOmittedBytes } : {}),
                 }
               : {}),
-          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined ? { elapsedMs: prior.elapsedMs } : {}),
+          ...(msg.elapsedMs !== undefined ? { elapsedMs: msg.elapsedMs } : prior?.elapsedMs !== undefined && !restarted ? { elapsedMs: prior.elapsedMs } : {}),
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);

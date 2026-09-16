@@ -1949,3 +1949,48 @@ test("TS.7: an event or part kind the mapper cannot place is reported once per s
   assert.equal(notices().length, 2, "a later turn re-reports nothing");
   session.close();
 });
+
+// Release review 0.10.0: startTurn cleared the per-part and per-message
+// tables wholesale, so a background child's part announced in one root turn
+// re-announced itself on its next snapshot after the user started another
+// turn, and the child's own prompt echo lost its user role and replayed as
+// the subagent's narration.
+test("a background child's announced part and prompt role survive a new root turn — no duplicate row, no echo", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    // The child's prompt message (user role) and a running bash call, both in turn 1.
+    ev("message.updated", { sessionID: "ses_bg", info: { id: "mu", sessionID: "ses_bg", role: "user" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "announced once in turn 1");
+  await prompt("meanwhile…");
+  feed(
+    // The prompt's own echo arrives (a user-role text part) after the new root turn began.
+    ev("message.part.updated", { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "mu", id: "pu", type: "text", text: "do the background thing" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "ma", id: "pc1", type: "tool", tool: "bash", callID: "cc1", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pc1").length, 1, "the completion did not re-announce the row");
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "pc1")!;
+  assert.deepEqual([result.parentId, result.output], ["prt_bg", "done"]);
+  assert.ok(!msgs.some((m) => m.type === "text_delta" && /background thing/.test(m.text)), "the child's prompt echo never replays as its narration");
+  session.close();
+});
