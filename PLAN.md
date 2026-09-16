@@ -4061,7 +4061,25 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   64 kB allowance and another elision marker every turn (the budget now
   keeps the lanes of children still running: Codex's `runningChildren`
   anchors, OpenCode's busy + unsettled background lanes). Five regression
-  tests, each mutation-checked.
+  tests, each mutation-checked. #126 merged into next (`366d358`); next
+  merged into the release branch (`75d2d6a`), Codex clean on it; its CI
+  Tier 2+3 failed `desktop-children.itest.ts` DA.3 a SECOND time
+  (`timed out waiting for error` after the prompt: the real engine child
+  has a 15 s budget to fail on stripped credentials — it took longer on the
+  runner; first: round-6 head, whose re-run passed). Same-commit re-run
+  PASSED (no code changed between runs) → **#124 MERGED into `main`
+  (`5a59e8d`)**. `npm pack` on main: sha256
+  `ec29873a5b3217cf49ccb9b51b9037ac29aad2810215e502793ea1da3469c2bb`; tag
+  `v0.10.0` signed with that hash as its message and pushed → Release run
+  35108876902: "verify + pack" green; "publish with provenance" waited on
+  the `npm-publish` environment, approved via the API on Kyle's word in
+  chat ("i approve"), then published `mirafold@0.10.0` with a signed
+  provenance statement (sigstore log index 2866050836). **Verified
+  (step 6):** `npm view mirafold version` = 0.10.0 (visible ~2 min after
+  publish, tarball ~2.5 min); the registry tarball's sha256 equals the tag
+  message; `node scripts/packaged-pass.mjs` against the global install of
+  the published package: 9/9. Sync `main` → `next` via
+  `sync/main-into-next-v0.10.0` (step 7) carries this record.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock
