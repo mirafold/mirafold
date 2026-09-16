@@ -174,9 +174,13 @@ export function useFollowTail() {
   // for the scroller's lifetime is enough.
   useEffect(() => {
     const content = contentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    const scroller = scrollerRef.current;
+    if (!content || !scroller || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(followTail);
     observer.observe(content);
+    // The scroller's own box shrinking (the composer growing a line, the
+    // phone keyboard, a window resize) moves the bottom too (cold review).
+    observer.observe(scroller);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs only
   }, []);

@@ -142,11 +142,17 @@ test("phone: the pill is centered for the thumb and still jumps to the tail", as
 // away from the tail once it has been reached).
 test("switching to a session whose paintings size themselves after mount stays at the tail", async () => {
   await withFreshMockSession(browser, "e2e-follow-tail-grow-4c8e", async (page) => {
-    for (const text of ["draw a diagram", "take a screenshot", "chart demo", "show an artifact", "draw a diagram"]) {
+    for (const text of ["draw a diagram", "take a screenshot", "chart demo", "show an artifact"]) {
       await typePrompt(page, text);
       await waitTurnIdle(page);
     }
     await fillTranscript(page);
+    // The LAST turn is a painting that sizes itself after mount, so its
+    // growth lands INSIDE the viewport: growth above the viewport is
+    // absorbed by the browser's own scroll anchoring and would let this
+    // proof pass without the observer (cold review).
+    await typePrompt(page, "draw a diagram");
+    await waitTurnIdle(page);
     // Plain JS: tsx's esbuild keepNames helper is not serialized into the
     // page (see NF.2 / SA.1 in PLAN.md).
     await page.addInitScript(`
@@ -179,17 +185,20 @@ test("switching to a session whose paintings size themselves after mount stays a
     const grew = painted[painted.length - 1]!.h - painted[firstAtTail]!.h;
     assert.ok(grew > 100, `the proof needs post-mount growth to follow (grew ${grew}px after first reaching the tail)`);
     // A rAF callback runs BEFORE the frame's layout and ResizeObserver
-    // step, so the one frame in which a painting grows can read as away
-    // (the read forces layout on the grown content; the re-pin follows in
-    // the same frame). A stranded reader is the other shape entirely: away
-    // on every frame until the next message. So: never two in a row.
+    // step, so the frame in which a painting grows reads as away (the read
+    // forces layout on the grown content; the re-pin follows in the same
+    // frame) — and several paintings can finish sizing on adjacent frames.
+    // A stranded reader is the other shape entirely: away on EVERY frame
+    // until the next message, hundreds here across the settle wait. So: no
+    // run of ten consecutive away frames (~170 ms) is allowed.
     const after = painted.slice(firstAtTail);
-    const strandedRun = after.findIndex((f, i) => i > 0 && f.h - f.top - f.c > 100 && after[i - 1]!.h - after[i - 1]!.top - after[i - 1]!.c > 100);
-    assert.equal(
-      strandedRun,
-      -1,
-      `the reader sat away from the tail across consecutive frames after growth: ${JSON.stringify(after.slice(Math.max(0, strandedRun - 1), strandedRun + 2))}`,
-    );
+    let run = 0;
+    let longest = 0;
+    for (const f of after) {
+      run = f.h - f.top - f.c > 100 ? run + 1 : 0;
+      longest = Math.max(longest, run);
+    }
+    assert.ok(longest < 10, `the reader sat away from the tail for ${longest} consecutive frames after growth`);
   });
 });
 

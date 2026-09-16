@@ -3914,6 +3914,18 @@ a TF regression, a gap CF.1 never covered.
   samples, all single-frame measurement artifacts. `follow-tail.e2e.ts`
   gained the growth case (fails without the observer); full Tier 3, the
   unit gate, and the UI gate green. Branch `fix/follow-tail-resize`.
+- [x] **Cold review (fresh agent, with its own headless-Chrome probes):**
+  no defect in the product change; two in the new test, both fixed — its
+  "no two consecutive away frames" rule failed correct behavior when two
+  paintings finished sizing on adjacent frames (now: no run of ten, since a
+  stranded reader is away for hundreds), and it could pass without the
+  observer when every painting sat above the viewport (Chrome's scroll
+  anchoring absorbs growth above the fold; the last turn is now a diagram,
+  so the growth lands inside the viewport). One adjacent pre-existing gap
+  taken along: the scroller's own box shrinking (composer autosize, phone
+  keyboard, window resize) never re-pinned; the observer watches the
+  scroller too. Growth e2e 3/3 with the fix, 3/3 failing without it; UI
+  gate 11/11 and full Tier 3 green on the final build.
 
 ## Post-release ideas (parked — organize after R.7)
 
