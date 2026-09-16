@@ -2206,3 +2206,37 @@ test("a lane completes only when its last busy descendant idles", async () => {
   assert.equal(states().at(-1), "completed", "the grandchild's idle completes the lane");
   session.close();
 });
+
+// Release review 0.10.0 (fix round B): startTurn cleared the narration
+// budget while a background child's lane stayed routable, so each new root
+// turn granted the same child a fresh allowance and another marker.
+test("a background child's narration cap holds across a new root turn", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  const childText = (id: string, text: string) =>
+    ev("message.part.updated", { sessionID: "ses_bg", part: { sessionID: "ses_bg", messageID: "ma", id, type: "text", text } });
+  const chunk = "n".repeat(1_000);
+  const laneLines = () => msgs.filter((m) => m.type === "text_delta" && m.parentId === "prt_bg");
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("message.updated", { sessionID: "ses_bg", info: { id: "ma", sessionID: "ses_bg", role: "assistant" } }),
+    ...Array.from({ length: 70 }, (_, i) => childText("pt1", chunk.repeat(i + 1))),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const before = laneLines().length;
+  assert.equal(laneLines().filter((m) => m.text.includes("narration cap reached")).length, 1, "capped in turn 1");
+  await prompt("meanwhile…");
+  feed(...Array.from({ length: 10 }, (_, i) => childText("pt2", chunk.repeat(i + 1))), idle());
+  await awaitTurnEnd(2);
+  assert.equal(laneLines().length, before, "an exhausted lane forwards nothing in the next root turn");
+  assert.equal(laneLines().filter((m) => m.text.includes("narration cap reached")).length, 1, "one marker for the child's lifetime");
+  session.close();
+});

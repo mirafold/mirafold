@@ -136,12 +136,20 @@ export class OpenCodeEventMapper {
     for (const [id, entry] of [...this.roles]) {
       if (entry.lane === undefined || this.settledLanes.has(entry.lane)) this.roles.delete(id);
     }
-    this.settledLanes.clear();
-    this.recount();
-    // The narration budget is turn-scoped; the lane's session-edge maps are
+    // The narration allowance is per SUBAGENT: a lane whose child is still
+    // busy or announced as background keeps its used budget across root
+    // turns (a fresh one every turn would let a looping child grow the
+    // transcript past the documented bound); a settled lane releases it at
+    // this boundary, with its records. The lane's session-edge maps are
     // deliberately NOT cleared here — see their declaration (a background
     // child outlives its turn and must stay routable).
-    this.subagentProse.clear();
+    const keep = new Set<string>([
+      ...[...this.busyByLane].flatMap(([lane, busy]) => (busy.size > 0 ? [lane] : [])),
+      ...[...this.backgroundTasks].filter((lane) => !this.settledLanes.has(lane)),
+    ]);
+    this.settledLanes.clear();
+    this.recount();
+    this.subagentProse.clear(keep);
   }
 
   /** Which lane a session's traffic belongs to: "root" for the session this

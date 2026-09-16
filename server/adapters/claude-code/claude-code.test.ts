@@ -1141,3 +1141,18 @@ test("TF2.2: task lifecycle frames become task_update on the spawn's own id; ela
   assert.equal(msgs.find((m) => m.type === "tool_use" && m.id === "task1")!.actions, undefined);
   s.close();
 });
+
+// Release review 0.10.0 (fix round B): the budget is per subagent, not per
+// root turn — a turn boundary keeps the lanes of children still running.
+test("the narration budget keeps the lanes it is told to across a turn boundary", async () => {
+  const { SubagentProseBudget } = await import("../types");
+  const budget = new SubagentProseBudget(4);
+  assert.equal(budget.take("bg", "abcd"), "abcd");
+  assert.match(budget.take("bg", "e"), /narration cap reached/);
+  assert.equal(budget.take("done", "abcd"), "abcd");
+  budget.clear(["bg"]);
+  assert.equal(budget.take("bg", "f"), "", "a kept lane stays exhausted: no second allowance, no second marker");
+  assert.equal(budget.take("done", "gh"), "gh", "a lane not kept starts over");
+  budget.clear();
+  assert.equal(budget.take("bg", "ij"), "ij", "a plain clear releases everything");
+});
