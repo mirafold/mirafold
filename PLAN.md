@@ -3925,7 +3925,14 @@ a TF regression, a gap CF.1 never covered.
   taken along: the scroller's own box shrinking (composer autosize, phone
   keyboard, window resize) never re-pinned; the observer watches the
   scroller too. Growth e2e 3/3 with the fix, 3/3 failing without it; UI
-  gate 11/11 and full Tier 3 green on the final build.
+  gate 11/11. Watching the scroller exposed one test that had leaned on
+  the old gap: `activity.e2e.ts`'s keyboard-scrolling case demanded more
+  than 200 px of scrollback after ONE PageUp in a 220 px viewport (one
+  PageUp is 192 px), which only held because the permission bar's arrival
+  used to leave the reader 52 px above the tail; the threshold now says what
+  it means (past the follow slack, 100 px). Process note: the first push of
+  the review round went out on a 153/154 Tier 3 because the push was
+  chained behind the run instead of gated on its result — corrected here.
 
 ## Post-release ideas (parked — organize after R.7)
 
