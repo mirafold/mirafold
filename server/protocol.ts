@@ -134,6 +134,11 @@ export type SessionMsgBody =
       input?: Record<string, unknown>;
       parentId?: string;
       actions?: ToolAction[];
+      // Optional/additive (release review, 0.10.0): for a subagent's call,
+      // the parent task's attempt number at the time (see task_update),
+      // stamped by the replay ring — so a call replayed out of order with
+      // its task's frame is still known to belong to the current attempt.
+      attempt?: number;
     }
   // An in-place refresh of an announced tool row. Some engines publish a
   // running call's structured input as successive authoritative snapshots

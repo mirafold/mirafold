@@ -1052,3 +1052,30 @@ test("a full replay of a restarted task keeps the current attempt's open call ru
   assert.equal(deck.summary.currentAction, "Bash sleep 5", "the current attempt's call is still what the task is doing");
   assert.equal(deck.summary.report, undefined, "and the anchor's old output is still not this attempt's report");
 });
+
+// PR #125 round 9: on a tail resume the ring's re-appended task frame can
+// trail the current attempt's call; the call carries its attempt, so the
+// boundary retires only earlier attempts' open calls.
+test("a resumed call stamped with the new attempt survives the boundary; the old attempt's call is retired", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "old attempt", parentId: "t1" },
+  );
+  // Disconnected through the failure and restart; the resume delivers the
+  // new attempt's call (stamped) before the re-appended task frame.
+  const resumed = projection.apply(
+    [
+      { type: "tool_use", id: "c2", name: "Bash", detail: "new attempt", parentId: "t1", attempt: 2, replay: true },
+      { type: "task_update", id: "t1", state: "running", attempt: 2, replay: true },
+    ],
+    () => NOW + 5_000,
+  ).snapshot;
+  const deck = rowsOf(resumed, "subagent-deck")[0]!;
+  assert.equal(deck.summary.currentAction, "Bash new attempt", "the current attempt's call is still running");
+  const old = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "the old attempt's call is retired");
+});

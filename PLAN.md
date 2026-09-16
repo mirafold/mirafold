@@ -4010,7 +4010,13 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   attempt's (retirement and the clock reset happen only across a KNOWN
   prior); an OpenCode child busy again after a root turn had consumed its
   settled marker never completed on its idle (a lane that ever settled
-  re-arms idle-completion). Mutation-checked.
+  re-arms idle-completion). Mutation-checked. **Round 9 (one finding,
+  fixed):** on a tail resume the ring's re-appended task frame can trail
+  the current attempt's own call, and with a known prior the boundary
+  retired that call — a subagent's `tool_use` now carries its parent's
+  `attempt` (optional/additive, stamped by the ring; schema widened) and
+  the boundary retires only earlier attempts' open calls.
+  Mutation-checked.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock

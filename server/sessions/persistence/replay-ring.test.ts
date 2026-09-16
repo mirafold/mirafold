@@ -262,3 +262,16 @@ test("a terminal frame evicted before the next running one still advances the at
   const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
   assert.equal(kept.attempt, 3, "terminal (evicted) → running is the third attempt");
 });
+
+// PR #125 round 9: a subagent's call is stamped with its parent's attempt.
+test("a child call carries its parent task's attempt number", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "tool_use", id: "t1", name: "Agent" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "tool_use", id: "c1", name: "Bash", parentId: "t1" });
+  assert.equal((r.buffer.find((m) => m.type === "tool_use" && m.id === "c1") as { attempt?: number }).attempt, undefined, "attempt 1 is unmarked");
+  r.offer({ type: "task_update", id: "t1", state: "failed" });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "tool_use", id: "c2", name: "Bash", parentId: "t1" });
+  assert.equal((r.buffer.find((m) => m.type === "tool_use" && m.id === "c2") as { attempt?: number }).attempt, 2);
+});

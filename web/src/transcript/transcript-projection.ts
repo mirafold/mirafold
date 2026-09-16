@@ -67,6 +67,8 @@ export type ToolRow = {
   isError?: boolean;
   startedAt: number;
   replayed?: boolean;
+  /** For a subagent's call: the parent task's attempt it belongs to. */
+  attempt?: number;
   /** Output streamed while the call runs (tool_output_delta); `output` is
    *  still the engine's authoritative text once the call completes. */
   streamed?: string;
@@ -828,6 +830,11 @@ export function createTranscriptProjection(): TranscriptProjection {
           input: msg.input,
           parentId: msg.parentId,
           ...(msg.actions?.length ? { actions: msg.actions } : {}),
+          // The wire's stamp first (the ring knows the attempt even when the
+          // task frame trails this call on replay), else the task as known here.
+          ...((msg.attempt ?? (msg.parentId ? tasks.get(msg.parentId)?.attempt : undefined)) !== undefined
+            ? { attempt: msg.attempt ?? tasks.get(msg.parentId!)?.attempt }
+            : {}),
           batchId,
           settled: false,
           startedAt: placeholder >= 0 ? (entries[placeholder] as ToolEntry).startedAt : readNow(),
@@ -989,6 +996,8 @@ export function createTranscriptProjection(): TranscriptProjection {
         // re-appended task frame can trail the current attempt's own calls,
         // so a first-seen marked frame must not retire them (round 8).
         const attemptBoundary = restarted || (prior !== undefined && newAttempt);
+        // What this boundary starts: the wire's number, else one past the last.
+        const startingAttempt = msg.attempt ?? (prior?.attempt ?? 1) + 1;
         if (attemptBoundary) {
           // A new attempt's clock starts now — when the restart is live. A
           // replayed restart's real time is unknown, so the anchor reads as
@@ -1002,7 +1011,9 @@ export function createTranscriptProjection(): TranscriptProjection {
             // Retired as settled, not as an error: an errored child call is
             // surfaced at the root by design (`nested`), and this one is
             // the old attempt's leftover, not something the reader must act on.
-            if (entry.parentId === msg.id && entry.output === undefined) {
+            // Only an EARLIER attempt's open call is retired: a call the ring
+            // stamped with this attempt may precede the frame on a resume.
+            if (entry.parentId === msg.id && entry.output === undefined && (entry.attempt ?? 1) < startingAttempt) {
               return { ...entry, settled: true, ...interruptedOutcome(entry), streamed: undefined, live: undefined };
             }
             return entry;

@@ -177,6 +177,13 @@ export class ReplayRing {
     // update carries the prior durable fields under the newest state (PR
     // #120 review). `action` is the one transient: it describes the running
     // moment and is dropped when the newest frame does not carry it.
+    // A subagent's call carries its parent task's attempt: the ring
+    // re-appends the task frame on every update, so a resumer can meet the
+    // call before the frame that starts its attempt (PR #125 round 9).
+    if (msg.type === "tool_use" && msg.parentId && msg.attempt === undefined) {
+      const parentAttempt = this.attempts.get(msg.parentId)?.attempt;
+      if (parentAttempt !== undefined) retained = { ...msg, attempt: parentAttempt };
+    }
     if (msg.type === "task_update") {
       const id = msg.id;
       const stale = this.buffer.findIndex((m) => m.type === "task_update" && m.id === id);
