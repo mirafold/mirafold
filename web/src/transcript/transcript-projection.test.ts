@@ -949,3 +949,21 @@ test("a restart replayed as one marked running frame, or settled without a repor
   const tail = resumed.apply([{ type: "task_update", id: "t3", state: "running", replay: true }], () => NOW + 9_000).snapshot;
   assert.equal(rowsOf(tail, "subagent-deck")[0]!.task.replayed, true, "a tail-replayed restart's real time is unknown: no live clock");
 });
+
+// PR #125 round 3: `unknown` (the turn end's word for a task that never
+// spoke) is not a terminal attempt; its first `running` is the same attempt.
+test("a task's first running word after an unknown state is not a restart", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "tool_result", id: "t1", output: "launched" },
+    { type: "task_update", id: "t1", state: "unknown", label: "d" },
+  );
+  const running = projection.apply([{ type: "task_update", id: "t1", state: "running" }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(running, "subagent-deck")[0]!;
+  assert.equal(deck.lifecycle?.restarted, undefined);
+  assert.equal(deck.summary.report?.text, "launched", "the anchor's output is still this attempt's evidence");
+  assert.equal(deck.task.startedAt, NOW, "the clock is not reset");
+});

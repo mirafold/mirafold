@@ -3972,7 +3972,10 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   clock at reconnection time (the anchor now reads as replayed — no clock);
   an OpenCode child running again before the next root prompt was still
   marked settled and lost its records at that boundary (running unmarks
-  it). Mutation-checked.
+  it). Mutation-checked. **Round 3 (one finding, fixed):** a first `running`
+  after the turn end's `unknown` guess read as a restart; only a terminal
+  word (completed/failed/interrupted) starts a new attempt, in both
+  reducers. Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 

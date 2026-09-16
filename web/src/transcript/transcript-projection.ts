@@ -937,7 +937,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         // A task running AGAIN after a terminal word is a new attempt: the
         // earlier report and duration are not carried into it (release
         // review, 0.10.0).
-        const restarted = msg.state === "running" && prior !== undefined && prior.state !== "running";
+        // Only a TERMINAL word starts a new attempt: `unknown` is the turn
+        // end's guess for a task that never spoke, and its first `running`
+        // afterwards is the same attempt (PR #125 review).
+        const restarted =
+          msg.state === "running" &&
+          prior !== undefined &&
+          (prior.state === "completed" || prior.state === "failed" || prior.state === "interrupted");
         // The "new attempt" mark holds until this attempt reports something
         // of its own, so the anchor call's earlier output is not shown as
         // its report meanwhile.

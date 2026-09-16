@@ -180,7 +180,9 @@ export class ReplayRing {
         // to after it failed or completed) is a new attempt: the old
         // report and duration are not this attempt's (release review,
         // 0.10.0).
-        const restarted = msg.state === "running" && (prior as { state?: string }).state !== "running";
+        const priorState = (prior as { state?: string }).state;
+        const restarted =
+          msg.state === "running" && (priorState === "completed" || priorState === "failed" || priorState === "interrupted");
         const { report: _r, reportTail: _rt, reportOmittedBytes: _ro, elapsedMs: _e, ...fresh } = carried as typeof carried & {
           report?: string; reportTail?: string; reportOmittedBytes?: number; elapsedMs?: number;
         };

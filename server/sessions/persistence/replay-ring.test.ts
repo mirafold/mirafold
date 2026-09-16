@@ -219,3 +219,11 @@ test("the retained restarted frame says so until this attempt reports", () => {
   r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
   assert.equal(kept().restarted, undefined, "this attempt's report ends it");
 });
+
+test("PR #125 round 3: unknown → running is the same attempt — the retained frame keeps its fields and gets no restart mark", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
+  r.offer({ type: "task_update", id: "t1", state: "unknown", label: "job", report: "so far", elapsedMs: 4 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.deepEqual([kept.state, kept.report, kept.elapsedMs, kept.restarted], ["running", "so far", 4, undefined]);
+});
