@@ -426,7 +426,12 @@ than all of it (a deliberate trade: one budget, both ends of the evidence) —
 `tail` / `omittedBytes` carry the trailing text and the dropped middle. The
 counts are of what THIS cap dropped — never a guess at what the engine
 already truncated. Task reports use the same shape (`report`,
-`reportTail`, `reportOmittedBytes`). The replay ring keeps its existing
+`reportTail`, `reportOmittedBytes`). A task that runs AGAIN after a terminal
+word is a new attempt: the replay ring drops the old report and duration
+from the retained frame and stamps `task_update.attempt` (2, 3, …) on every
+frame of the new attempt, so a viewport that missed the boundary still
+starts it clean — no old report, a fresh clock, the old attempt's open calls
+retired. The replay ring keeps its existing
 count and byte caps; a full replay past evicted history carries
 `replay_complete.evicted`, and an outcome whose opening row was evicted
 becomes an explicit "(earlier call)" record rather than vanishing. There is

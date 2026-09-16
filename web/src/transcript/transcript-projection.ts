@@ -954,11 +954,13 @@ export function createTranscriptProjection(): TranscriptProjection {
         // running) or told by the wire (the ring's mark on a tail-resumed
         // frame when this viewport last saw the old attempt still running):
         // neither carries the old attempt's report or duration (PR #125).
-        const newAttempt = restarted || msg.restarted === true;
+        const newAttempt = restarted || (msg.attempt !== undefined && msg.attempt !== prior?.attempt);
         const fresh = msg.report === undefined && (newAttempt || prior?.restarted === true);
+        const attempt = msg.attempt ?? prior?.attempt;
         const lifecycle: TaskLifecycle = {
           state: msg.state,
           ...(fresh ? { restarted: true } : {}),
+          ...(attempt !== undefined ? { attempt } : {}),
           ...(msg.label !== undefined ? { label: msg.label } : prior?.label !== undefined ? { label: prior.label } : {}),
           ...(msg.agentType !== undefined ? { agentType: msg.agentType } : prior?.agentType !== undefined ? { agentType: prior.agentType } : {}),
           ...(msg.action !== undefined ? { action: msg.action } : {}),
@@ -980,11 +982,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
         // The attempt BOUNDARY is the terminal-to-running transition seen
-        // here, or the wire mark newly observed — not every later reportless
-        // frame that still carries the mark (the ring keeps it until this
-        // attempt reports), or the clock would restart on each progress
-        // frame (PR #125 round 5).
-        const attemptBoundary = restarted || (msg.restarted === true && prior?.restarted !== true);
+        // here, or the wire's attempt number changing — not every later
+        // frame of the same attempt, or the clock would restart on each
+        // progress frame (PR #125 rounds 5–6).
+        const attemptBoundary = newAttempt;
         if (attemptBoundary) {
           // A new attempt's clock starts now — when the restart is live. A
           // replayed restart's real time is unknown, so the anchor reads as

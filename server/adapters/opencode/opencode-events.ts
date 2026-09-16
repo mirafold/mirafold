@@ -190,6 +190,10 @@ export class OpenCodeEventMapper {
         if (this.statusType(p) === "busy") {
           const lane = this.laneOf(p["sessionID"]);
           if (lane && lane !== "root") {
+            // A lane whose task had settled and runs again (a descendant
+            // going busy after the child idled) must complete again on its
+            // last idle: it re-enters the idle-completes set (round 6).
+            if (this.settledLanes.has(lane) || this.settleWanted.has(lane)) this.backgroundTasks.add(lane);
             this.noteLaneSession(lane, String(p["sessionID"]), true);
             this.emitTask(lane, "running");
           }

@@ -205,19 +205,21 @@ test("a task restarted after a terminal state drops the prior report and duratio
 // PR #125 review: after a full replay the ring's retained frame is a lone
 // `running` with the terminal update coalesced away — the restart's
 // provenance must ride that frame, and end only with this attempt's report.
-test("the retained restarted frame says so until this attempt reports", () => {
+test("the retained frame carries the attempt number from the first restart on, through this attempt's report", () => {
   const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m) });
   r.offer({ type: "task_update", id: "t1", state: "running", label: "job" });
   r.offer({ type: "task_update", id: "t1", state: "failed", report: "quota exceeded" });
   r.offer({ type: "task_update", id: "t1", state: "running" });
   const kept = () => r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
-  assert.equal(kept().restarted, true);
+  assert.equal(kept().attempt, 2);
   r.offer({ type: "task_update", id: "t1", state: "running", action: "Grep" });
-  assert.equal(kept().restarted, true, "a reportless frame keeps the mark");
+  assert.equal(kept().attempt, 2, "a reportless frame keeps the attempt");
   r.offer({ type: "task_update", id: "t1", state: "completed" });
-  assert.equal(kept().restarted, true, "a reportless terminal frame keeps it too");
+  assert.equal(kept().attempt, 2, "a reportless terminal frame keeps it too");
   r.offer({ type: "task_update", id: "t1", state: "completed", report: "second time lucky" });
-  assert.equal(kept().restarted, undefined, "this attempt's report ends it");
+  assert.equal(kept().attempt, 2, "and so does this attempt's report — a late resumer must still see the attempt change (round 6)");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  assert.deepEqual([kept().attempt, kept().report], [3, undefined], "a third attempt counts on");
 });
 
 test("PR #125 round 3: unknown → running is the same attempt — the retained frame keeps its fields and gets no restart mark", () => {
@@ -225,5 +227,5 @@ test("PR #125 round 3: unknown → running is the same attempt — the retained 
   r.offer({ type: "task_update", id: "t1", state: "unknown", label: "job", report: "so far", elapsedMs: 4 });
   r.offer({ type: "task_update", id: "t1", state: "running" });
   const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
-  assert.deepEqual([kept.state, kept.report, kept.elapsedMs, kept.restarted], ["running", "so far", 4, undefined]);
+  assert.deepEqual([kept.state, kept.report, kept.elapsedMs, kept.attempt], ["running", "so far", 4, undefined]);
 });

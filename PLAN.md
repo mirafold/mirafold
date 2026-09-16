@@ -3987,7 +3987,17 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   action (retired as settled with the interrupted outcome, kept inside the
   deck); an OpenCode lane settled while a grandchild routed to it was still
   busy, releasing its records at the next root turn (a lane waits for every
-  busy descendant before it counts as settled). Mutation-checked.
+  busy descendant before it counts as settled). Mutation-checked. **Round 6
+  (two findings, fixed):** the ring dropped the restart mark once the new
+  attempt reported, so a viewport resuming after that saw an ordinary frame
+  and kept the old clock and the old attempt's open calls — the boolean
+  mark is replaced by `task_update.attempt?: number` (optional/additive;
+  stamped by the ring at each terminal-to-running transition and carried on
+  every later frame of that attempt; schema widened), and the projection's
+  attempt boundary is "the attempt number changed" or the local transition;
+  an OpenCode lane whose child idled before a descendant went busy never
+  completed again on the descendant's idle (a re-run lane re-enters the
+  idle-completes set). Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 

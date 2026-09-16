@@ -38,6 +38,8 @@ export type TaskLifecycle = {
    *  the anchor call's earlier output is the previous attempt's, not this
    *  one's (release review, 0.10.0). */
   restarted?: boolean;
+  /** The wire's attempt number (from the first restart on). */
+  attempt?: number;
 };
 
 export type SubagentState = "running" | "done" | "failed" | "interrupted" | "unknown";

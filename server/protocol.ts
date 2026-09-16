@@ -227,12 +227,14 @@ export type SessionMsgBody =
       reportOmittedBytes?: number;
       elapsedMs?: number;
       parentId?: string;
-      // Optional/additive (release review, 0.10.0): the task is running
-      // AGAIN after a terminal word and has not reported for this attempt
-      // yet, so the anchor call's earlier output is not its report. Set by
-      // the replay ring on the retained frame (which coalesces the earlier
-      // terminal update away) so a full replay keeps that provenance.
-      restarted?: true;
+      // Optional/additive (release review, 0.10.0): which ATTEMPT this
+      // frame belongs to — present from the first restart on (2, then 3…),
+      // stamped by the replay ring at each terminal-to-running transition
+      // and carried on every later frame of that attempt. A viewport that
+      // missed the boundary (a full replay, a tail resume) still sees the
+      // attempt change and starts the new attempt clean: no old report or
+      // duration, a fresh clock, the old attempt's open calls retired.
+      attempt?: number;
     }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`

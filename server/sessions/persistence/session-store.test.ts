@@ -262,7 +262,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "tool_output_snapshot", id: "t2", revision: 4, head: "a\n", tail: "z\n", omittedBytes: 99, parentId: "t1" },
     { type: "tool_result", output: "head", id: "t2", tail: "tail", omittedBytes: 12, exitCode: 1, durationMs: 40 },
     { type: "task_update", id: "t1", state: "completed", label: "find auth", agentType: "Explore", action: "Grep", report: "done", reportTail: "…", reportOmittedBytes: 1, elapsedMs: 3000, parentId: "t0" },
-    { type: "task_update", id: "t3", state: "running", label: "again", restarted: true },
+    { type: "task_update", id: "t3", state: "running", label: "again", attempt: 2 },
   ];
   stored.buffer = bodies.map((body, index) => ({ ...body, seq: index + 1 }) as SessionMsg);
   stored.nextSeq = stored.buffer.length + 1;
