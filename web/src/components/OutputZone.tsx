@@ -628,6 +628,9 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
         onKeyDown={handleTranscriptKeyDown}
         onPointerUp={handleTranscriptPointerUp}
       >
+      {/* The one element the scroller scrolls: its size is what the tail
+          follows when a painting sizes itself after mount (use-follow-tail). */}
+      <div className="zone-content" ref={tail.contentRef}>
         {!transcript.hasTranscriptContent && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral.
@@ -685,6 +688,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
             </ResponseDocument>
           ),
         )}
+      </div>
       </div>
       {/* The way back down: shown only while the reader is up in scrollback
           — the one fact use-follow-tail already tracks — bottom-right of the

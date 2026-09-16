@@ -131,6 +131,77 @@ test("phone: the pill is centered for the thumb and still jumps to the tail", as
   );
 });
 
+// 2026-09-15 (Kyle: the "lightning fast scroll from way up to down low" on a
+// cockpit switch): the switched-to page DID land at the tail, but paintings
+// that size themselves after mount — a diagram rendering in its frame, an
+// image loading, an artifact — grew the transcript afterwards with no
+// transcript change to re-follow, so the reader sat hundreds of pixels
+// above the bottom until the next message jumped them down. The content
+// box's resize is followed now. Sampled per animation frame (a
+// ResizeObserver re-pins inside the frame, so no painted frame may sit
+// away from the tail once it has been reached).
+test("switching to a session whose paintings size themselves after mount stays at the tail", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-grow-4c8e", async (page) => {
+    for (const text of ["draw a diagram", "take a screenshot", "chart demo", "show an artifact"]) {
+      await typePrompt(page, text);
+      await waitTurnIdle(page);
+    }
+    await fillTranscript(page);
+    // The LAST turn is a painting that sizes itself after mount, so its
+    // growth lands INSIDE the viewport: growth above the viewport is
+    // absorbed by the browser's own scroll anchoring and would let this
+    // proof pass without the observer (cold review).
+    await typePrompt(page, "draw a diagram");
+    await waitTurnIdle(page);
+    // Plain JS: tsx's esbuild keepNames helper is not serialized into the
+    // page (see NF.2 / SA.1 in PLAN.md).
+    await page.addInitScript(`
+      (function () {
+        var frames = []; window.__mfRafFrames = frames;
+        function tick() {
+          var el = document.querySelector(".output-zone");
+          if (el && frames.length < 5000) frames.push({ top: el.scrollTop, h: el.scrollHeight, c: el.clientHeight, rows: el.querySelectorAll(".turn-user").length });
+          requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+    `);
+    await page.reload();
+    await page.locator(".output-zone .turn-user").first().waitFor({ timeout: 15_000 });
+    // Everything that sizes itself has done so: no diagram still rendering,
+    // every image complete, and the geometry quiet for a moment.
+    await page.waitForFunction(() => document.querySelectorAll(".rc-diagram-loading").length === 0, undefined, { timeout: 20_000 });
+    await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete), undefined, { timeout: 20_000 });
+    await page.waitForTimeout(600);
+    const gap = await bottomGap(page);
+    assert.ok(gap <= 24, `after the paintings settled the reader is still at the tail (gap=${gap})`);
+    const frames = await page.evaluate(
+      () => (window as unknown as { __mfRafFrames: { top: number; h: number; c: number; rows: number }[] }).__mfRafFrames,
+    );
+    const painted = frames.filter((f) => f.rows > 0 && f.h - f.c > 200);
+    assert.ok(painted.length > 0, "the sampler saw the painted, overflowing transcript");
+    const firstAtTail = painted.findIndex((f) => f.h - f.top - f.c <= 24);
+    assert.ok(firstAtTail >= 0, "the transcript reached the tail");
+    const grew = painted[painted.length - 1]!.h - painted[firstAtTail]!.h;
+    assert.ok(grew > 100, `the proof needs post-mount growth to follow (grew ${grew}px after first reaching the tail)`);
+    // A rAF callback runs BEFORE the frame's layout and ResizeObserver
+    // step, so the frame in which a painting grows reads as away (the read
+    // forces layout on the grown content; the re-pin follows in the same
+    // frame) — and several paintings can finish sizing on adjacent frames.
+    // A stranded reader is the other shape entirely: away on EVERY frame
+    // until the next message, hundreds here across the settle wait. So: no
+    // run of ten consecutive away frames (~170 ms) is allowed.
+    const after = painted.slice(firstAtTail);
+    let run = 0;
+    let longest = 0;
+    for (const f of after) {
+      run = f.h - f.top - f.c > 100 ? run + 1 : 0;
+      longest = Math.max(longest, run);
+    }
+    assert.ok(longest < 10, `the reader sat away from the tail for ${longest} consecutive frames after growth`);
+  });
+});
+
 test("switching to a session with a transcript lands at the tail with no top-to-bottom flash", async () => {
   await withFreshMockSession(browser, "e2e-follow-tail-switch-9d21", async (page) => {
     await fillTranscript(page);
