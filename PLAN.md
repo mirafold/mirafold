@@ -3979,7 +3979,15 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   that last saw the old attempt still running and tail-resumed onto the
   ring's wire-marked `running, restarted` frame still carried the old
   attempt's report and clock (the wire mark now counts as a new attempt
-  for the carry guards and the anchor reset). Mutation-checked.
+  for the carry guards and the anchor reset). Mutation-checked. **Round 5
+  (three findings, fixed):** every reportless frame carrying the ring's
+  mark reset the clock again (the reset happens on the attempt boundary
+  only — the terminal-to-running transition or the mark newly observed);
+  the old attempt's still-open child call read as the new attempt's current
+  action (retired as settled with the interrupted outcome, kept inside the
+  deck); an OpenCode lane settled while a grandchild routed to it was still
+  busy, releasing its records at the next root turn (a lane waits for every
+  busy descendant before it counts as settled). Mutation-checked.
 
 ## Post-release ideas (parked — organize after R.7)
 

@@ -979,15 +979,30 @@ export function createTranscriptProjection(): TranscriptProjection {
           ...(msg.replay ? { replayed: true } : {}),
         };
         tasks = new Map(tasks).set(msg.id, lifecycle);
-        if (newAttempt) {
+        // The attempt BOUNDARY is the terminal-to-running transition seen
+        // here, or the wire mark newly observed — not every later reportless
+        // frame that still carries the mark (the ring keeps it until this
+        // attempt reports), or the clock would restart on each progress
+        // frame (PR #125 round 5).
+        const attemptBoundary = restarted || (msg.restarted === true && prior?.restarted !== true);
+        if (attemptBoundary) {
           // A new attempt's clock starts now — when the restart is live. A
           // replayed restart's real time is unknown, so the anchor reads as
           // replayed (no live clock) rather than counting from reconnection.
-          entries = entries.map((entry) =>
-            entry.kind === "tool" && entry.toolId === msg.id
-              ? { ...entry, startedAt: readNow(), replayed: msg.replay ? true : undefined }
-              : entry,
-          );
+          // The old attempt's still-open child calls are retired: no turn
+          // end will close them (the root turn may be long over), and the
+          // deck must not claim the new attempt is running the old command.
+          entries = entries.map((entry) => {
+            if (entry.kind !== "tool") return entry;
+            if (entry.toolId === msg.id) return { ...entry, startedAt: readNow(), replayed: msg.replay ? true : undefined };
+            // Retired as settled, not as an error: an errored child call is
+            // surfaced at the root by design (`nested`), and this one is
+            // the old attempt's leftover, not something the reader must act on.
+            if (entry.parentId === msg.id && entry.output === undefined) {
+              return { ...entry, settled: true, ...interruptedOutcome(entry), streamed: undefined, live: undefined };
+            }
+            return entry;
+          });
         }
         if (!toolEntry(msg.id)) {
           // An outcome that arrived before this anchor (its opening was

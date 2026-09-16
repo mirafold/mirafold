@@ -985,3 +985,30 @@ test("a wire-marked restart on a locally-running task drops the old attempt's re
   assert.equal(deck.summary.report, undefined);
   assert.equal(deck.task.replayed, true, "the restart time is unknown: no live clock");
 });
+
+// PR #125 round 5: the ring keeps the restart mark on every reportless frame
+// of the new attempt, so a progress frame must not restart the clock again;
+// and the old attempt's still-open child call must not become the new
+// attempt's "current action".
+test("a restarted attempt resets its clock once and retires the old attempt's open child call", () => {
+  const projection = createTranscriptProjection();
+  apply(
+    projection,
+    { type: "user_prompt", text: "go" },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" } },
+    { type: "task_update", id: "t1", state: "running", label: "d" },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "sleep 99", parentId: "t1" },
+    { type: "task_update", id: "t1", state: "failed", report: "boom" },
+  );
+  const restarted = projection.apply([{ type: "task_update", id: "t1", state: "running", restarted: true }], () => NOW + 5_000).snapshot;
+  const deck = rowsOf(restarted, "subagent-deck")[0]!;
+  assert.equal(deck.task.startedAt, NOW + 5_000);
+  assert.notEqual(deck.summary.currentAction, "Bash sleep 99", "the old attempt's open call is not this attempt's action");
+  const oldCall = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(oldCall && oldCall.kind === "tool" && /interrupted/.test(oldCall.output ?? ""), "the old attempt's call is retired with an honest outcome");
+  // Two more reportless frames still carrying the ring's mark: no clock reset.
+  const later = projection.apply([{ type: "task_update", id: "t1", state: "running", restarted: true, action: "Grep" }], () => NOW + 30_000).snapshot;
+  assert.equal(rowsOf(later, "subagent-deck")[0]!.task.startedAt, NOW + 5_000, "a progress frame does not restart the clock");
+  const again = projection.apply([{ type: "task_update", id: "t1", state: "running", restarted: true }], () => NOW + 60_000).snapshot;
+  assert.equal(rowsOf(again, "subagent-deck")[0]!.task.startedAt, NOW + 5_000);
+});

@@ -2085,3 +2085,44 @@ test("a child running again after settling keeps its records across the next roo
   assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "pc2")?.output, "done");
   session.close();
 });
+
+// PR #125 round 5: a grandchild rides its parent's lane; the parent settling
+// must not release the lane's records while the grandchild is still busy.
+test("a lane with a busy grandchild is not released when its child settles", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    // The child spawns a grandchild that keeps working after the child idles.
+    ev("session.created", { sessionID: "ses_gc", info: { id: "ses_gc", parentID: "ses_bg" } }),
+    ev("session.status", { sessionID: "ses_gc", status: { type: "busy" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_gc",
+      part: { sessionID: "ses_gc", messageID: "mg", id: "pg1", type: "tool", tool: "bash", callID: "cg1", state: { status: "running", input: { command: "sleep 5" } } },
+    }),
+    ev("session.idle", { sessionID: "ses_bg" }), // the child is done; its grandchild is not
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pg1").length, 1);
+  await prompt("meanwhile…");
+  feed(
+    ev("message.part.updated", {
+      sessionID: "ses_gc",
+      part: { sessionID: "ses_gc", messageID: "mg", id: "pg1", type: "tool", tool: "bash", callID: "cg1", state: { status: "completed", input: { command: "sleep 5" }, output: "done" } },
+    }),
+    ev("session.idle", { sessionID: "ses_gc" }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "pg1").length, 1, "the grandchild's row was not re-announced after the child settled");
+  assert.deepEqual([msgs.find((m) => m.type === "tool_result" && m.id === "pg1")?.parentId, msgs.find((m) => m.type === "tool_result" && m.id === "pg1")?.output], ["prt_bg", "done"]);
+  session.close();
+});

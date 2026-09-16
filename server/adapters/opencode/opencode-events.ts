@@ -189,7 +189,10 @@ export class OpenCodeEventMapper {
         // own words (TF2.5); its completion is the task part's settlement.
         if (this.statusType(p) === "busy") {
           const lane = this.laneOf(p["sessionID"]);
-          if (lane && lane !== "root") this.emitTask(lane, "running");
+          if (lane && lane !== "root") {
+            this.noteLaneSession(lane, String(p["sessionID"]), true);
+            this.emitTask(lane, "running");
+          }
         }
         break;
       }
@@ -241,6 +244,7 @@ export class OpenCodeEventMapper {
             // Terminal: a later idle must not read the failure as success
             // (round 3).
             this.backgroundTasks.delete(lane);
+            this.noteLaneSession(lane, String(p["sessionID"]), false);
             this.emitTask(lane, "failed", capOutput(sessionErrorText(p)));
           }
           break;
@@ -255,6 +259,7 @@ export class OpenCodeEventMapper {
           // own idle is the engine's word that its work finished (PR #120
           // review round 2).
           const lane = this.laneOf(p["sessionID"]);
+          if (lane && lane !== "root") this.noteLaneSession(lane, String(p["sessionID"]), false);
           if (lane && lane !== "root" && this.backgroundTasks.has(lane)) {
             this.backgroundTasks.delete(lane);
             this.emitTask(lane, "completed");
@@ -384,10 +389,31 @@ export class OpenCodeEventMapper {
 
   // Lanes the engine has settled; their records are released at the next
   // root-turn boundary, not on the spot — a final snapshot can trail the
-  // terminal word, and treating it as new would re-announce the row.
+  // terminal word, and treating it as new would re-announce the row. A lane
+  // with a descendant session still busy (a grandchild routes to its nearest
+  // stream-visible ancestor's deck) is not settled until that descendant
+  // goes quiet too (PR #125 round 5).
   private settledLanes = new Set<string>();
+  private settleWanted = new Set<string>();
+  private busyByLane = new Map<string, Set<string>>();
+  private noteLaneSession(lane: string, sessionID: string, busy: boolean) {
+    let set = this.busyByLane.get(lane);
+    if (busy) {
+      if (!set) this.busyByLane.set(lane, (set = new Set()));
+      if (set.size < MAX_PARTS_PER_TURN) set.add(sessionID);
+      this.settledLanes.delete(lane);
+      return;
+    }
+    if (!set) return;
+    set.delete(sessionID);
+    if (set.size === 0) {
+      this.busyByLane.delete(lane);
+      if (this.settleWanted.delete(lane)) this.settledLanes.add(lane);
+    }
+  }
   private forgetLane(lane: string) {
-    this.settledLanes.add(lane);
+    if ((this.busyByLane.get(lane)?.size ?? 0) > 0) this.settleWanted.add(lane);
+    else this.settledLanes.add(lane);
   }
 
   private onPartSnapshot(p: Record<string, unknown>) {
@@ -583,8 +609,10 @@ export class OpenCodeEventMapper {
     });
     // The engine's terminal word on the child releases what it owned — at
     // the next root-turn boundary; running again before then keeps it.
-    if (state === "running") this.settledLanes.delete(id);
-    else if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
+    if (state === "running") {
+      this.settledLanes.delete(id);
+      this.settleWanted.delete(id);
+    } else if (state === "completed" || state === "failed" || state === "interrupted") this.forgetLane(id);
   }
 
   private announceTool(
