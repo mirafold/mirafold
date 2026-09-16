@@ -229,3 +229,21 @@ test("PR #125 round 3: unknown → running is the same attempt — the retained 
   const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
   assert.deepEqual([kept.state, kept.report, kept.elapsedMs, kept.attempt], ["running", "so far", 4, undefined]);
 });
+
+// PR #125 round 7: the attempt counter must outlive the frame's eviction, or
+// a task really on attempt 3 restarts at "2" and a viewport that saw 2 reads
+// the resumed frame as the same attempt.
+test("a task's attempt number survives its frame being evicted from the ring", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m), countCap: 3 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "first" });
+  r.offer({ type: "task_update", id: "t1", state: "running" }); // attempt 2
+  const kept = () => r.buffer.find((m) => m.type === "task_update" && m.id === "t1") as Extract<WireMsg, { type: "task_update" }> | undefined;
+  assert.equal(kept()?.attempt, 2);
+  for (let i = 0; i < 4; i++) r.offer({ type: "text_delta", text: `filler ${i}` });
+  assert.equal(kept(), undefined, "the task's frame was evicted");
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "second" });
+  assert.equal(kept()?.attempt, 2, "the recreated frame carries the attempt the ring remembered");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  assert.equal(kept()?.attempt, 3, "and the next restart counts on from it");
+});

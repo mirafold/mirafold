@@ -3997,7 +3997,20 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   attempt boundary is "the attempt number changed" or the local transition;
   an OpenCode lane whose child idled before a descendant went busy never
   completed again on the descendant's idle (a re-run lane re-enters the
-  idle-completes set). Mutation-checked.
+  idle-completes set). Mutation-checked. **Round 7 (one finding, fixed):**
+  the attempt number lived only on the evictable frame, so a task whose
+  earlier frame the ring evicted restarted at "2" when really on 3 (the
+  ring keeps a bounded per-task attempt map beside the buffer, restores it
+  onto a recreated frame, and rebuilds it from a checkpoint).
+  Mutation-checked.
+  **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
+  (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
+  its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock
+  turns painted NO scrollback at all — while the same file passed CI on
+  #123, #124, and every other #125 head, and passes 3/3 locally on the
+  round-6 tree. Zero (not "a little short") overflow after idle turns would
+  mean the turns rendered nothing; one occurrence, cause unnamed. Same
+  family as IH.F / CR.2 until it recurs with evidence.
 
 ## Post-release ideas (parked — organize after R.7)
 
