@@ -4002,7 +4002,15 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   earlier frame the ring evicted restarted at "2" when really on 3 (the
   ring keeps a bounded per-task attempt map beside the buffer, restores it
   onto a recreated frame, and rebuilds it from a checkpoint).
-  Mutation-checked.
+  Mutation-checked. **Round 8 (three findings, fixed):** the side map kept
+  the attempt but not the last state, so a terminal frame evicted before
+  the next running one could not count as the boundary (it remembers both);
+  on a full replay the ring's re-appended task frame trails the current
+  attempt's own calls, so a first-seen marked frame retired them as the old
+  attempt's (retirement and the clock reset happen only across a KNOWN
+  prior); an OpenCode child busy again after a root turn had consumed its
+  settled marker never completed on its idle (a lane that ever settled
+  re-arms idle-completion). Mutation-checked.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock
@@ -4010,7 +4018,16 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   #123, #124, and every other #125 head, and passes 3/3 locally on the
   round-6 tree. Zero (not "a little short") overflow after idle turns would
   mean the turns rendered nothing; one occurrence, cause unnamed. Same
-  family as IH.F / CR.2 until it recurs with evidence.
+  family as IH.F / CR.2 until it recurs with evidence. Two more on later
+  heads, each a different test in code this branch never touches: the
+  round-6 head's Tier 2 `desktop-children.itest` DA.3 timed out waiting for
+  the engine's error; the round-7 head's `follow-tail.e2e` growth case (the
+  #123 fix, green on #123/#124 CI and 3/3 locally) settled with gap=510 —
+  and the SAME commit's re-run passed 158/158. A scroll-anchoring
+  hypothesis for that one (a shift above the viewport detaching the reader)
+  was probed deterministically and held, so it stays as a guard test, not
+  an explanation. Verdict: runner flakiness on 2026-09-16; three different
+  tests, one re-run green, no cause named.
 
 ## Post-release ideas (parked — organize after R.7)
 

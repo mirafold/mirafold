@@ -1033,3 +1033,22 @@ test("a resumed frame that already carries the new attempt's report is still an 
   const later = projection.apply([{ type: "task_update", id: "t1", state: "running", attempt: 2, action: "Grep" }], () => NOW + 20_000).snapshot;
   assert.equal(rowsOf(later, "subagent-deck")[0]!.summary.report?.text, "second attempt progress", "same attempt: the report carries");
 });
+
+// PR #125 round 8: on a full replay the ring's re-appended task frame trails
+// the current attempt's own calls; a first-seen marked frame must not retire
+// them as the "old attempt's" leftovers.
+test("a full replay of a restarted task keeps the current attempt's open call running", () => {
+  const projection = createTranscriptProjection();
+  const replayed = apply(
+    projection,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_result", id: "t1", output: "launched", replay: true },
+    { type: "tool_use", id: "c2", name: "Bash", detail: "sleep 5", parentId: "t1", replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(replayed, "subagent-deck")[0]!;
+  assert.equal(deck.summary.currentAction, "Bash sleep 5", "the current attempt's call is still what the task is doing");
+  assert.equal(deck.summary.report, undefined, "and the anchor's old output is still not this attempt's report");
+});

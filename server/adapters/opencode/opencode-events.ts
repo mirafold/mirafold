@@ -193,7 +193,7 @@ export class OpenCodeEventMapper {
             // A lane whose task had settled and runs again (a descendant
             // going busy after the child idled) must complete again on its
             // last idle: it re-enters the idle-completes set (round 6).
-            if (this.settledLanes.has(lane) || this.settleWanted.has(lane)) this.backgroundTasks.add(lane);
+            if (this.settledOnce.has(lane)) this.backgroundTasks.add(lane);
             this.noteLaneSession(lane, String(p["sessionID"]), true);
             this.emitTask(lane, "running");
           }
@@ -415,7 +415,11 @@ export class OpenCodeEventMapper {
       if (this.settleWanted.delete(lane)) this.settledLanes.add(lane);
     }
   }
+  // Lanes whose task settled at least once: busy again later (even after a
+  // root turn consumed the settled marker) means idle completes it again.
+  private settledOnce = new Set<string>();
   private forgetLane(lane: string) {
+    if (this.settledOnce.size < MAX_PARTS_PER_TURN) this.settledOnce.add(lane);
     if ((this.busyByLane.get(lane)?.size ?? 0) > 0) this.settleWanted.add(lane);
     else this.settledLanes.add(lane);
   }

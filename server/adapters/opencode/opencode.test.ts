@@ -2152,3 +2152,29 @@ test("a lane re-run by a descendant after the child idled completes on the desce
   assert.deepEqual(states.slice(-3), ["completed", "running", "completed"], "the descendant's idle completes the lane again");
   session.close();
 });
+
+// PR #125 round 8: a child that completed, then a root turn consumed its
+// settled marker, then it runs again — its next idle must still complete it.
+test("a child busy again after a later root turn still completes on its idle", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.idle", { sessionID: "ses_bg" }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  await prompt("meanwhile…"); // consumes the settled marker
+  feed(ev("session.status", { sessionID: "ses_bg", status: { type: "busy" } }), ev("session.idle", { sessionID: "ses_bg" }), idle());
+  await awaitTurnEnd(2);
+  const states = msgs.filter((m) => m.type === "task_update" && m.id === "prt_bg").map((m) => m.state);
+  assert.deepEqual(states.slice(-3), ["completed", "running", "completed"]);
+  session.close();
+});

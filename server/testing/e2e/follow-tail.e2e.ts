@@ -251,3 +251,36 @@ test("switching to a session with a transcript lands at the tail with no top-to-
     );
   });
 });
+
+// A guard the 2026-09-16 CI stranding of the growth case (gap=510 after
+// settle, not reproduced locally) prompted: a painting ABOVE the viewport
+// shrinking makes Chrome's scroll anchoring lower scrollTop with no input
+// behind it, and the backstop must not read that as the reader steering up.
+// It held (the content observer re-pins and updates the backstop's last
+// position before the scroll event runs), so this pins that ordering rather
+// than explaining the CI failure.
+test("a layout shift above the viewport does not detach a following reader", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-anchor-7a1c", async (page) => {
+    await fillTranscript(page);
+    await page.waitForFunction(() => { const el = document.querySelector(".output-zone") as HTMLElement; return el.scrollHeight - el.scrollTop - el.clientHeight <= 24; });
+    // Shrink the first (out-of-view) turn by 400 px: scroll anchoring keeps
+    // the visible content still by lowering scrollTop.
+    await page.evaluate(() => {
+      const first = document.querySelector(".output-zone .zone-content > *") as HTMLElement;
+      first.style.height = "8px";
+      first.style.overflow = "hidden";
+    });
+    await page.waitForTimeout(200);
+    // Now the tail grows: a following reader must still be brought down.
+    await page.evaluate(() => {
+      const content = document.querySelector(".output-zone .zone-content") as HTMLElement;
+      const filler = document.createElement("div");
+      filler.style.height = "600px";
+      filler.textContent = "late growth";
+      content.appendChild(filler);
+    });
+    await page.waitForTimeout(300);
+    const gap = await bottomGap(page);
+    assert.ok(gap <= 24, `still following after a layout shift above the viewport (gap=${gap})`);
+  });
+});

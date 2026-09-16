@@ -95,15 +95,17 @@ export class ReplayRing {
     },
   ) {}
 
-  // Per-task attempt numbers, kept beyond the frame's eviction (see push).
-  private attempts = new Map<string, number>();
+  // Per-task attempt number AND last state, kept beyond the frame's
+  // eviction (see push): a terminal frame evicted before the next running
+  // one must still count as the boundary it was.
+  private attempts = new Map<string, { attempt?: number; state: string }>();
 
   /** A ring rebuilt from a checkpoint: full-replay only for this lifetime. */
   static restore(buffer: SessionMsg[], nextSeq: number, opts: ReplayRing["opts"]): ReplayRing {
     const ring = new ReplayRing(opts);
     ring.buffer = buffer;
     for (const m of buffer) {
-      if (m.type === "task_update" && m.attempt !== undefined) ring.attempts.set(m.id, m.attempt);
+      if (m.type === "task_update") ring.attempts.set(m.id, { ...(m.attempt !== undefined ? { attempt: m.attempt } : {}), state: m.state });
     }
     ring.bytes = buffer.reduce((sum, msg) => sum + msgBytes(msg), 0);
     ring.nextSeq = nextSeq;
@@ -182,9 +184,14 @@ export class ReplayRing {
       // earlier frame the ring evicted must not restart at attempt 2 when it
       // is really on 3, or a viewport that saw 2 would read the resumed
       // frame as the same attempt (PR #125 round 7). Bounded like the ring.
-      const known = this.attempts.get(id);
-      if (stale < 0 && known !== undefined && msg.attempt === undefined) {
-        retained = { ...msg, attempt: known };
+      const remembered = this.attempts.get(id);
+      const known = remembered?.attempt;
+      if (stale < 0 && remembered !== undefined && msg.attempt === undefined) {
+        // The frame was evicted: the remembered state still says whether
+        // this running frame is a new attempt (round 8).
+        const terminal = remembered.state === "completed" || remembered.state === "failed" || remembered.state === "interrupted";
+        const attempt = msg.state === "running" && terminal ? (known ?? 1) + 1 : known;
+        retained = attempt !== undefined ? { ...msg, attempt } : msg;
       }
       if (stale >= 0) {
         const [prior] = this.buffer.splice(stale, 1);
@@ -212,12 +219,10 @@ export class ReplayRing {
         retained = merged;
       }
       const attempt = (retained as { attempt?: number }).attempt;
-      if (attempt !== undefined && attempt !== known) {
-        if (!this.attempts.has(id) && this.attempts.size >= (this.opts.countCap ?? BUFFER_CAP)) {
-          this.attempts.delete(this.attempts.keys().next().value as string);
-        }
-        this.attempts.set(id, attempt);
+      if (!this.attempts.has(id) && this.attempts.size >= (this.opts.countCap ?? BUFFER_CAP)) {
+        this.attempts.delete(this.attempts.keys().next().value as string);
       }
+      this.attempts.set(id, { ...(attempt !== undefined ? { attempt } : {}), state: (retained as { state: string }).state });
     }
     if (msg.type === "tool_update") {
       const id = msg.id;

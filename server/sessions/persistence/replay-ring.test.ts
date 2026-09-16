@@ -247,3 +247,18 @@ test("a task's attempt number survives its frame being evicted from the ring", (
   r.offer({ type: "task_update", id: "t1", state: "running" });
   assert.equal(kept()?.attempt, 3, "and the next restart counts on from it");
 });
+
+// PR #125 round 8: the side map must remember the last STATE too — a terminal
+// frame evicted before the next running one is still the boundary it was.
+test("a terminal frame evicted before the next running one still advances the attempt", () => {
+  const r = new ReplayRing({ coalesceMs: 0, deliver: (m) => r.push(m), countCap: 3 });
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "first" });
+  r.offer({ type: "task_update", id: "t1", state: "running" }); // attempt 2
+  r.offer({ type: "task_update", id: "t1", state: "failed", report: "second" }); // still attempt 2, terminal
+  for (let i = 0; i < 4; i++) r.offer({ type: "text_delta", text: `filler ${i}` });
+  assert.equal(r.buffer.some((m) => m.type === "task_update"), false, "evicted");
+  r.offer({ type: "task_update", id: "t1", state: "running" });
+  const kept = r.buffer.find((m) => m.type === "task_update") as Extract<WireMsg, { type: "task_update" }>;
+  assert.equal(kept.attempt, 3, "terminal (evicted) → running is the third attempt");
+});

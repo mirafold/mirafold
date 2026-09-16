@@ -985,7 +985,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         // here, or the wire's attempt number changing — not every later
         // frame of the same attempt, or the clock would restart on each
         // progress frame (PR #125 rounds 5–6).
-        const attemptBoundary = newAttempt;
+        // …and only across a KNOWN prior: on a full replay the ring's
+        // re-appended task frame can trail the current attempt's own calls,
+        // so a first-seen marked frame must not retire them (round 8).
+        const attemptBoundary = restarted || (prior !== undefined && newAttempt);
         if (attemptBoundary) {
           // A new attempt's clock starts now — when the restart is live. A
           // replayed restart's real time is unknown, so the anchor reads as
