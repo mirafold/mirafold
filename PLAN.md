@@ -4033,7 +4033,18 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   the same Chrome 152.0.7977.82 + playwright-core 1.61.1. The growth test
   now carries its evidence out on failure (frame timeline around the first
   departure from the tail, per-row heights, pill state). Kyle chose to push
-  and observe (`fbdd8b6`) rather than probe further blind.
+  and observe (`fbdd8b6`) rather than probe further blind. That run passed
+  the growth test and failed the NEW shrink guard at its precondition —
+  `overflow=0 after 6 turns`, the round-5 signature, now twice — which named
+  a cause: `waitTurnIdle` waits only for `.activity-line` to DETACH, and
+  that line mounts on the daemon's `user_prompt` echo, not on Enter. A
+  probe measured a 30–50 ms window after `press("Enter")` with no line yet
+  (3 of 4 turns locally), inside which the idle wait resolves on a turn
+  not yet started; a slow runner sends the next prompt in that window and
+  a burst of six ends with nothing rendered. Fix (test harness only):
+  `typePrompt` and `fillTranscript` wait for the echoed user row before
+  the idle wait (probe 4/4 after). Plausibly the same window behind the
+  growth e2e's `gap=510` (its prompt loop uses the same pair) — not proven.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock

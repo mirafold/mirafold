@@ -32,7 +32,11 @@ const fillTranscript = async (
   let n = 0;
   while (n < 6 && (n < 3 || (await overflow()) <= 300)) {
     n += 1;
+    const before = await page.locator(".turn-user").count();
     await send(`tell me about the fold, take ${n}`);
+    // A bare Enter resolves before the daemon's echo renders; wait for the
+    // user row so the idle wait below cannot pass on a turn not yet started.
+    await page.waitForFunction((k) => document.querySelectorAll(".turn-user").length > k, before, { timeout: 15_000 });
     await waitTurnIdle(page);
   }
   const got = await overflow();
