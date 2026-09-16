@@ -174,10 +174,23 @@ test("switching to a session whose paintings size themselves after mount stays a
     await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete), undefined, { timeout: 20_000 });
     await page.waitForTimeout(600);
     const gap = await bottomGap(page);
-    assert.ok(gap <= 24, `after the paintings settled the reader is still at the tail (gap=${gap})`);
     const frames = await page.evaluate(
       () => (window as unknown as { __mfRafFrames: { top: number; h: number; c: number; rows: number }[] }).__mfRafFrames,
     );
+    if (gap > 24) {
+      // CI stranded this twice on 2026-09-16 (gap=510) while local runs
+      // never did; two hypotheses (a shift above the viewport, a clamped
+      // shrink) were probed and held. Carry the evidence out with the
+      // failure: the frame timeline around the first departure from the
+      // tail, and which rows changed height.
+      const departed = frames.findIndex((f, i) => i > 0 && frames[i - 1]!.h - frames[i - 1]!.top - frames[i - 1]!.c <= 24 && f.h - f.top - f.c > 100);
+      const window_ = frames.slice(Math.max(0, departed - 3), departed + 6).map((f) => `top=${f.top} h=${f.h} c=${f.c}`).join(" | ");
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".output-zone .zone-content > *")).map((el) => `${String((el as HTMLElement).className).slice(0, 24)}:${Math.round(el.getBoundingClientRect().height)}`).join(" "),
+      );
+      const detached = await page.evaluate(() => Boolean(document.querySelector(".jump-to-latest.is-visible")));
+      assert.fail(`after the paintings settled the reader is still at the tail (gap=${gap}); pill visible (reader detached)=${detached}; frames=${frames.length}, first departure at #${departed}: ${window_}; rows: ${rows}`);
+    }
     const painted = frames.filter((f) => f.rows > 0 && f.h - f.c > 200);
     assert.ok(painted.length > 0, "the sampler saw the painted, overflowing transcript");
     const firstAtTail = painted.findIndex((f) => f.h - f.top - f.c <= 24);
@@ -282,5 +295,39 @@ test("a layout shift above the viewport does not detach a following reader", asy
     await page.waitForTimeout(300);
     const gap = await bottomGap(page);
     assert.ok(gap <= 24, `still following after a layout shift above the viewport (gap=${gap})`);
+  });
+});
+
+// CI 2026-09-16, twice, identical gap=510 on the growth case. Hypothesis: a
+// painting swaps its placeholder for its rendered frame and the content
+// SHRINKS for a moment; a script-forced layout (any geometry read) clamps
+// scrollTop at once, the next frame dispatches that scroll event BEFORE its
+// ResizeObserver step, and the backstop reads the drop as the reader
+// steering up — detaching, so the growth that follows is never followed.
+test("a content shrink clamped by a forced layout does not detach a following reader", async () => {
+  await withFreshMockSession(browser, "e2e-follow-tail-clamp-3e9b", async (page) => {
+    await fillTranscript(page);
+    await page.waitForFunction(() => { const el = document.querySelector(".output-zone") as HTMLElement; return el.scrollHeight - el.scrollTop - el.clientHeight <= 24; });
+    // Shrink the LAST row and force layout in the same script: scrollTop is
+    // clamped down before any observer can run.
+    await page.evaluate(() => {
+      const rows = document.querySelectorAll(".output-zone .zone-content > *");
+      const last = rows[rows.length - 1] as HTMLElement;
+      last.style.height = "8px";
+      last.style.overflow = "hidden";
+      void (document.querySelector(".output-zone") as HTMLElement).scrollHeight;
+    });
+    await page.waitForTimeout(200);
+    // The tail grows again: a following reader must be brought down.
+    await page.evaluate(() => {
+      const content = document.querySelector(".output-zone .zone-content") as HTMLElement;
+      const filler = document.createElement("div");
+      filler.style.height = "600px";
+      filler.textContent = "late growth";
+      content.appendChild(filler);
+    });
+    await page.waitForTimeout(300);
+    const gap = await bottomGap(page);
+    assert.ok(gap <= 24, `still following after a clamped shrink (gap=${gap})`);
   });
 });
