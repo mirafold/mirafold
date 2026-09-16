@@ -47,6 +47,9 @@
 
   .output-zone {
     padding: 14px 2px;
+  }
+
+  .zone-content {
     gap: 12px;
   }
 

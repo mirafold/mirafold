@@ -3891,6 +3891,30 @@ titles — no engine exposes one on these surfaces, so the label is
 
 ---
 
+## Session-switch tail follow (2026-09-15; Kyle-reported, diagnosed by probe)
+
+Kyle: a cockpit-panel session switch "does the lightning fast scroll from
+way up to down low" (the old flash, back) and "doesn't transition fluidly".
+Measured, not guessed: a scroll-geometry probe on the real built app (mock
+agent, two overflowing sessions, an actual cockpit-link click, rAF + 4 ms +
+MutationObserver sampling from document start) on BOTH the current `next`
+and the pre-TF `d3ec718`. Plain prose transcripts land at the tail on the
+first painted frame in both trees (the CF.1 layout effect holds). A target
+with paintings that size themselves after mount (a diagram rendering in its
+frame, an image, an artifact, a chart in a response document) also lands
+at the tail — and then grows by ~560 px over the next second with NO
+transcript change, so nothing re-follows and the reader sits above the
+bottom until the next message jumps them down. Identical in both trees: not
+a TF regression, a gap CF.1 never covered.
+
+- [x] **Fix:** the scroller's content is one `.zone-content` box (flex-fill,
+  same column rhythm; visual baselines pixel-identical, 11/11) and
+  `useFollowTail` observes it with a ResizeObserver that re-pins the tail
+  inside the same frame while following. Probe after: 1,191 → ≤5 away
+  samples, all single-frame measurement artifacts. `follow-tail.e2e.ts`
+  gained the growth case (fails without the observer); full Tier 3, the
+  unit gate, and the UI gate green. Branch `fix/follow-tail-resize`.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

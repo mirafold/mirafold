@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Follow-the-tail for a scrolling transcript, CONDITIONAL the way a terminal's
@@ -6,11 +6,18 @@ import { useRef, useState } from "react";
  * at the bottom. Scroll up and the view freezes where they put it — output
  * keeps landing below, out of sight — until they come back down.
  *
- * Wire up all five parts: `scrollerRef` on the scrolling element, and
- * `onScroll` / `onWheel` / `onTouchStart` / `onTouchMove` as its handlers.
- * Then call `followTail()` from a LAYOUT effect keyed on whatever changes the
- * content (it must land before the browser paints, or a whole-buffer replay
- * paints top-anchored for a frame), `armFollow()` when the reader is
+ * Wire up all six parts: `scrollerRef` on the scrolling element,
+ * `contentRef` on the one element that wraps everything it scrolls, and
+ * `onScroll` / `onWheel` / `onTouchStart` / `onTouchMove` as the scroller's
+ * handlers. Then call `followTail()` from a LAYOUT effect keyed on whatever
+ * changes the content (it must land before the browser paints, or a
+ * whole-buffer replay paints top-anchored for a frame). Content also grows
+ * with NO transcript change — a diagram renders in its frame, an image
+ * loads, an artifact sizes itself — and each of those left a following
+ * reader stranded above the tail until the next message jumped them down
+ * (the "fast scroll" after a session switch, 2026-09-15); a ResizeObserver
+ * on `contentRef` re-pins the tail inside the same frame instead.
+ * `armFollow()` when the reader is
  * conceptually back at the bottom (they sent a message), and `resetTail()`
  * when the content is replaced wholesale. `detached` is the same fact as render state — true while the
  * reader is up in scrollback — so the shell can offer a way back
@@ -80,6 +87,7 @@ export function touchIntentReachesBottom(
 
 export function useFollowTail() {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [detached, setDetached] = useState(false);
   const setFollowing = (next: boolean) => {
@@ -160,6 +168,19 @@ export function useFollowTail() {
     lastTop.current = el.scrollTop;
   };
 
+  // The content's own size changes are followed too (see the header). A
+  // ResizeObserver callback runs after layout and before paint, so the
+  // re-pin is never visible; the refs are read live, so one subscription
+  // for the scroller's lifetime is enough.
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(followTail);
+    observer.observe(content);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs only
+  }, []);
+
   const armFollow = () => {
     navigationTop.current = null;
     setFollowing(true);
@@ -203,6 +224,7 @@ export function useFollowTail() {
 
   return {
     scrollerRef,
+    contentRef,
     onScroll,
     onWheel,
     onTouchStart,
