@@ -4024,6 +4024,16 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   deck's current action (now that every subagent call carries its attempt,
   the first-seen frame is a boundary that retires only older attempts'
   calls). Mutation-checked.
+  **Growth e2e on CI (2026-09-16, under observation):** the round-9 head
+  (`d5007b4`) failed the #123 growth e2e a second time with the identical
+  `gap=510` (first: round-7 head, whose same-commit re-run passed); local
+  runs never fail it. Two hypotheses were pinned as deterministic e2e
+  guards and both PASS (a layout shift above the viewport; a content shrink
+  clamped by a forced layout), so neither is the cause. CI and local run
+  the same Chrome 152.0.7977.82 + playwright-core 1.61.1. The growth test
+  now carries its evidence out on failure (frame timeline around the first
+  departure from the tail, per-row heights, pill state). Kyle chose to push
+  and observe (`fbdd8b6`) rather than probe further blind.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock
