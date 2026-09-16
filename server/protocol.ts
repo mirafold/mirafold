@@ -134,6 +134,11 @@ export type SessionMsgBody =
       input?: Record<string, unknown>;
       parentId?: string;
       actions?: ToolAction[];
+      // Optional/additive (release review, 0.10.0): for a subagent's call,
+      // the parent task's attempt number at the time (see task_update),
+      // stamped by the replay ring — so a call replayed out of order with
+      // its task's frame is still known to belong to the current attempt.
+      attempt?: number;
     }
   // An in-place refresh of an announced tool row. Some engines publish a
   // running call's structured input as successive authoritative snapshots
@@ -227,6 +232,14 @@ export type SessionMsgBody =
       reportOmittedBytes?: number;
       elapsedMs?: number;
       parentId?: string;
+      // Optional/additive (release review, 0.10.0): which ATTEMPT this
+      // frame belongs to — present from the first restart on (2, then 3…),
+      // stamped by the replay ring at each terminal-to-running transition
+      // and carried on every later frame of that attempt. A viewport that
+      // missed the boundary (a full replay, a tail resume) still sees the
+      // attempt change and starts the new attempt clean: no old report or
+      // duration, a fresh clock, the old attempt's open calls retired.
+      attempt?: number;
     }
   // The turn is paused on a gated tool call until the browser answers (or
   // the server times out to deny). Drawn by the trusted shell. `parentId`

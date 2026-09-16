@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentCapabilities, AgentName, PromptOption } from "@protocol";
 import { loadDetailsMode, saveDetailsMode } from "../transcript/disclosure-store";
+import { taskNoteFor } from "../transcript/task-notes";
 import { ActivityLine, activityLabel } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
@@ -358,18 +359,11 @@ export function Shell() {
             agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
-        } else if (m.type === "task_update" && live) {
-          const noted = notedTaskStates.current;
-          const changed = noted.get(m.id) !== m.state;
-          if (changed) {
-            if (noted.size >= 2_000) noted.delete(noted.keys().next().value as string);
-            noted.set(m.id, m.state);
-          }
-          if (changed && m.state !== "running") {
-            const what = m.label ?? "a task";
-            const word = m.state === "completed" ? "finished" : m.state === "failed" ? "failed" : m.state === "interrupted" ? "was interrupted" : "ended";
-            noteCompletion(`${what} ${word}`, m.state === "failed");
-          }
+        } else if (m.type === "task_update") {
+          // Replayed frames seed the ledger silently; only a live transition
+          // into a terminal state is noted (release review, 0.10.0).
+          const note = taskNoteFor(notedTaskStates.current, { id: m.id, state: m.state, label: m.label, replay: !live });
+          if (note) noteCompletion(note.text, note.failed);
         } else if (m.type === "render" && live && m.component === "todo-list") {
           // A KNOWN completion signal — the shell's own checklist component
           // with every item done — never an inference from agent-authored

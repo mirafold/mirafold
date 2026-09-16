@@ -3934,6 +3934,135 @@ a TF regression, a gap CF.1 never covered.
   the review round went out on a 153/154 Tier 3 because the push was
   chained behind the run instead of gated on its result — corrected here.
 
+## Release 0.10.0 (2026-09-16; Kyle: "okay lets get it going then")
+
+Kyle chose 0.10.0 over 0.9.2: Phase TF's compact transcript, native Gemini
+sign-in, and the Codex child lane are feature-sized. Flow b per
+`docs/RELEASING.md`: `release/0.10.0` cut from `next` @ `7c4d59d`, notices
+regenerated (unchanged), version bumped, release PR #124 → `main`.
+
+- [x] **Release-review fixes (PR #124's Codex review, four findings, all
+  legitimate)** → `fix/release-review-0.10.0` off `next`, each with a
+  regression that fails without it: appended folder pages kept insertion
+  order (a directory on a later raw page sat below the earlier page's files;
+  the accumulation is re-sorted with the daemon's exact order); a task
+  restarted after a terminal word carried the old report and duration into
+  its `running` frame in BOTH the ring and the projection (a restart is a
+  new attempt); replayed `task_update` frames were skipped whole, so the
+  completion-note ledger was empty after a reload and a republished terminal
+  state read as news (`task-notes.ts`: replay seeds silently, live
+  transitions note); OpenCode's `startTurn` cleared child-owned parts and
+  message roles, so a background child's next snapshot re-announced its row
+  and its prompt echo replayed as narration (root-owned records only; a
+  child's records go with its terminal word). Gates: typecheck, unit, Tier 2.
+  **Fix PR #125's own review (four findings, all legitimate, fixed):** a
+  child's final snapshot can trail its terminal word, so its records are
+  released at the next root-turn boundary (the root's own straggler rule),
+  not on the spot; retained child records counted against the root turn's
+  per-turn cap and could starve it (root and child records are capped
+  separately); a restarted task still showed the anchor call's earlier
+  output as "report so far" (`lifecycle.restarted` suppresses the fallback
+  until this attempt reports); its live clock kept the first attempt's
+  start (the anchor's `startedAt` refreshes on restart). Mutation-checked.
+  **Round 2 (three findings, all legitimate, fixed):** the restart mark did
+  not survive a full replay (the ring coalesces the terminal frame away) or
+  a reportless terminal frame — `task_update.restarted?: true`
+  (optional/additive, checkpoint schema widened) rides the ring's retained
+  frame until this attempt reports; a tail-replayed restart started a live
+  clock at reconnection time (the anchor now reads as replayed — no clock);
+  an OpenCode child running again before the next root prompt was still
+  marked settled and lost its records at that boundary (running unmarks
+  it). Mutation-checked. **Round 3 (one finding, fixed):** a first `running`
+  after the turn end's `unknown` guess read as a restart; only a terminal
+  word (completed/failed/interrupted) starts a new attempt, in both
+  reducers. Mutation-checked. **Round 4 (one finding, fixed):** a viewport
+  that last saw the old attempt still running and tail-resumed onto the
+  ring's wire-marked `running, restarted` frame still carried the old
+  attempt's report and clock (the wire mark now counts as a new attempt
+  for the carry guards and the anchor reset). Mutation-checked. **Round 5
+  (three findings, fixed):** every reportless frame carrying the ring's
+  mark reset the clock again (the reset happens on the attempt boundary
+  only — the terminal-to-running transition or the mark newly observed);
+  the old attempt's still-open child call read as the new attempt's current
+  action (retired as settled with the interrupted outcome, kept inside the
+  deck); an OpenCode lane settled while a grandchild routed to it was still
+  busy, releasing its records at the next root turn (a lane waits for every
+  busy descendant before it counts as settled). Mutation-checked. **Round 6
+  (two findings, fixed):** the ring dropped the restart mark once the new
+  attempt reported, so a viewport resuming after that saw an ordinary frame
+  and kept the old clock and the old attempt's open calls — the boolean
+  mark is replaced by `task_update.attempt?: number` (optional/additive;
+  stamped by the ring at each terminal-to-running transition and carried on
+  every later frame of that attempt; schema widened), and the projection's
+  attempt boundary is "the attempt number changed" or the local transition;
+  an OpenCode lane whose child idled before a descendant went busy never
+  completed again on the descendant's idle (a re-run lane re-enters the
+  idle-completes set). Mutation-checked. **Round 7 (one finding, fixed):**
+  the attempt number lived only on the evictable frame, so a task whose
+  earlier frame the ring evicted restarted at "2" when really on 3 (the
+  ring keeps a bounded per-task attempt map beside the buffer, restores it
+  onto a recreated frame, and rebuilds it from a checkpoint).
+  Mutation-checked. **Round 8 (three findings, fixed):** the side map kept
+  the attempt but not the last state, so a terminal frame evicted before
+  the next running one could not count as the boundary (it remembers both);
+  on a full replay the ring's re-appended task frame trails the current
+  attempt's own calls, so a first-seen marked frame retired them as the old
+  attempt's (retirement and the clock reset happen only across a KNOWN
+  prior); an OpenCode child busy again after a root turn had consumed its
+  settled marker never completed on its idle (a lane that ever settled
+  re-arms idle-completion). Mutation-checked. **Round 9 (one finding,
+  fixed):** on a tail resume the ring's re-appended task frame can trail
+  the current attempt's own call, and with a known prior the boundary
+  retired that call — a subagent's `tool_use` now carries its parent's
+  `attempt` (optional/additive, stamped by the ring; schema widened) and
+  the boundary retires only earlier attempts' open calls.
+  Mutation-checked. **Round 10 (two findings, fixed):** an OpenCode child
+  idling while a grandchild on its lane was still busy completed the task
+  early (a lane completes only when nothing routed to it is busy; the last
+  descendant's idle completes it); a first-seen replayed attempt frame
+  skipped the boundary wholesale and left attempt 1's open call as the
+  deck's current action (now that every subagent call carries its attempt,
+  the first-seen frame is a boundary that retires only older attempts'
+  calls). Mutation-checked.
+  **Growth e2e on CI (2026-09-16, under observation):** the round-9 head
+  (`d5007b4`) failed the #123 growth e2e a second time with the identical
+  `gap=510` (first: round-7 head, whose same-commit re-run passed); local
+  runs never fail it. Two hypotheses were pinned as deterministic e2e
+  guards and both PASS (a layout shift above the viewport; a content shrink
+  clamped by a forced layout), so neither is the cause. CI and local run
+  the same Chrome 152.0.7977.82 + playwright-core 1.61.1. The growth test
+  now carries its evidence out on failure (frame timeline around the first
+  departure from the tail, per-row heights, pill state). Kyle chose to push
+  and observe (`fbdd8b6`) rather than probe further blind. That run passed
+  the growth test and failed the NEW shrink guard at its precondition —
+  `overflow=0 after 6 turns`, the round-5 signature, now twice — which named
+  a cause: `waitTurnIdle` waits only for `.activity-line` to DETACH, and
+  that line mounts on the daemon's `user_prompt` echo, not on Enter. A
+  probe measured a 30–50 ms window after `press("Enter")` with no line yet
+  (3 of 4 turns locally), inside which the idle wait resolves on a turn
+  not yet started; a slow runner sends the next prompt in that window and
+  a burst of six ends with nothing rendered. Fix (test harness only):
+  `typePrompt` and `fillTranscript` wait for the echoed user row before
+  the idle wait (probe 4/4 after). Plausibly the same window behind the
+  growth e2e's `gap=510` (its prompt loop uses the same pair) — not proven.
+  **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
+  (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
+  its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock
+  turns painted NO scrollback at all — while the same file passed CI on
+  #123, #124, and every other #125 head, and passes 3/3 locally on the
+  round-6 tree. Zero (not "a little short") overflow after idle turns would
+  mean the turns rendered nothing; one occurrence, cause unnamed. Same
+  family as IH.F / CR.2 until it recurs with evidence. Two more on later
+  heads, each a different test in code this branch never touches: the
+  round-6 head's Tier 2 `desktop-children.itest` DA.3 timed out waiting for
+  the engine's error; the round-7 head's `follow-tail.e2e` growth case (the
+  #123 fix, green on #123/#124 CI and 3/3 locally) settled with gap=510 —
+  and the SAME commit's re-run passed 158/158. A scroll-anchoring
+  hypothesis for that one (a shift above the viewport detaching the reader)
+  was probed deterministically and held, so it stays as a guard test, not
+  an explanation. Verdict: runner flakiness on 2026-09-16; three different
+  tests, one re-run green, no cause named.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

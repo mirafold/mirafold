@@ -95,10 +95,18 @@ export class ReplayRing {
     },
   ) {}
 
+  // Per-task attempt number AND last state, kept beyond the frame's
+  // eviction (see push): a terminal frame evicted before the next running
+  // one must still count as the boundary it was.
+  private attempts = new Map<string, { attempt?: number; state: string }>();
+
   /** A ring rebuilt from a checkpoint: full-replay only for this lifetime. */
   static restore(buffer: SessionMsg[], nextSeq: number, opts: ReplayRing["opts"]): ReplayRing {
     const ring = new ReplayRing(opts);
     ring.buffer = buffer;
+    for (const m of buffer) {
+      if (m.type === "task_update") ring.attempts.set(m.id, { ...(m.attempt !== undefined ? { attempt: m.attempt } : {}), state: m.state });
+    }
     ring.bytes = buffer.reduce((sum, msg) => sum + msgBytes(msg), 0);
     ring.nextSeq = nextSeq;
     ring.tailResumeSafe = false;
@@ -169,16 +177,59 @@ export class ReplayRing {
     // update carries the prior durable fields under the newest state (PR
     // #120 review). `action` is the one transient: it describes the running
     // moment and is dropped when the newest frame does not carry it.
+    // A subagent's call carries its parent task's attempt: the ring
+    // re-appends the task frame on every update, so a resumer can meet the
+    // call before the frame that starts its attempt (PR #125 round 9).
+    if (msg.type === "tool_use" && msg.parentId && msg.attempt === undefined) {
+      const parentAttempt = this.attempts.get(msg.parentId)?.attempt;
+      if (parentAttempt !== undefined) retained = { ...msg, attempt: parentAttempt };
+    }
     if (msg.type === "task_update") {
       const id = msg.id;
       const stale = this.buffer.findIndex((m) => m.type === "task_update" && m.id === id);
+      // The attempt counter lives OUTSIDE the evictable buffer: a task whose
+      // earlier frame the ring evicted must not restart at attempt 2 when it
+      // is really on 3, or a viewport that saw 2 would read the resumed
+      // frame as the same attempt (PR #125 round 7). Bounded like the ring.
+      const remembered = this.attempts.get(id);
+      const known = remembered?.attempt;
+      if (stale < 0 && remembered !== undefined && msg.attempt === undefined) {
+        // The frame was evicted: the remembered state still says whether
+        // this running frame is a new attempt (round 8).
+        const terminal = remembered.state === "completed" || remembered.state === "failed" || remembered.state === "interrupted";
+        const attempt = msg.state === "running" && terminal ? (known ?? 1) + 1 : known;
+        retained = attempt !== undefined ? { ...msg, attempt } : msg;
+      }
       if (stale >= 0) {
         const [prior] = this.buffer.splice(stale, 1);
         this.bytes -= msgBytes(prior!);
         const { seq: _seq, action: _action, ...carried } = prior as SessionMsg & { seq?: number; action?: string };
+        // A task running AGAIN after a terminal word (a Codex child spoken
+        // to after it failed or completed) is a new attempt: the old
+        // report and duration are not this attempt's (release review,
+        // 0.10.0).
+        const priorState = (prior as { state?: string }).state;
+        const restarted =
+          msg.state === "running" && (priorState === "completed" || priorState === "failed" || priorState === "interrupted");
+        const { report: _r, reportTail: _rt, reportOmittedBytes: _ro, elapsedMs: _e, ...fresh } = carried as typeof carried & {
+          report?: string; reportTail?: string; reportOmittedBytes?: number; elapsedMs?: number;
+        };
         const present = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined));
-        retained = { ...carried, ...present } as SessionMsg;
+        const merged = { ...(restarted ? fresh : carried), ...present } as SessionMsg & { attempt?: number };
+        // The attempt number rides the retained frame from the first
+        // restart on, and every later frame of that attempt: a full replay
+        // sees one `running` frame with the terminal update coalesced away,
+        // and a tail resume may land after this attempt already reported —
+        // either way the viewport sees the attempt change (round 6).
+        if (restarted) merged.attempt = (known ?? (prior as { attempt?: number }).attempt ?? 1) + 1;
+        else if (merged.attempt === undefined && known !== undefined) merged.attempt = known;
+        retained = merged;
       }
+      const attempt = (retained as { attempt?: number }).attempt;
+      if (!this.attempts.has(id) && this.attempts.size >= (this.opts.countCap ?? BUFFER_CAP)) {
+        this.attempts.delete(this.attempts.keys().next().value as string);
+      }
+      this.attempts.set(id, { ...(attempt !== undefined ? { attempt } : {}), state: (retained as { state: string }).state });
     }
     if (msg.type === "tool_update") {
       const id = msg.id;
