@@ -992,10 +992,10 @@ export function createTranscriptProjection(): TranscriptProjection {
         // here, or the wire's attempt number changing — not every later
         // frame of the same attempt, or the clock would restart on each
         // progress frame (PR #125 rounds 5–6).
-        // …and only across a KNOWN prior: on a full replay the ring's
-        // re-appended task frame can trail the current attempt's own calls,
-        // so a first-seen marked frame must not retire them (round 8).
-        const attemptBoundary = restarted || (prior !== undefined && newAttempt);
+        // A first-seen marked frame (a full replay) is a boundary too: with
+        // every subagent call carrying its attempt, retirement below spares
+        // the current attempt's calls and retires only older ones (round 10).
+        const attemptBoundary = newAttempt;
         // What this boundary starts: the wire's number, else one past the last.
         const startingAttempt = msg.attempt ?? (prior?.attempt ?? 1) + 1;
         if (attemptBoundary) {

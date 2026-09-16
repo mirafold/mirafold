@@ -2178,3 +2178,31 @@ test("a child busy again after a later root turn still completes on its idle", a
   assert.deepEqual(states.slice(-3), ["completed", "running", "completed"]);
   session.close();
 });
+
+// PR #125 round 10: a child idling while its grandchild still works is not
+// the task finishing; the last busy descendant's idle is.
+test("a lane completes only when its last busy descendant idles", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES, messageID: "m1", id: "prt_bg", type: "tool", tool: "task", callID: "c1",
+        state: { status: "completed", input: { description: "bg child" }, output: "started in background", metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true } },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    ev("session.created", { sessionID: "ses_gc", info: { id: "ses_gc", parentID: "ses_bg" } }),
+    ev("session.status", { sessionID: "ses_gc", status: { type: "busy" } }),
+    ev("session.idle", { sessionID: "ses_bg" }), // the child idles; its grandchild is still busy
+    idle(),
+  );
+  await awaitTurnEnd();
+  const states = () => msgs.filter((m) => m.type === "task_update" && m.id === "prt_bg").map((m) => m.state);
+  assert.ok(!states().includes("completed"), "not completed while the grandchild works");
+  feed(ev("session.idle", { sessionID: "ses_gc" }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(states().at(-1), "completed", "the grandchild's idle completes the lane");
+  session.close();
+});

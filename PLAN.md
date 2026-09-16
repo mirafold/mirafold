@@ -4016,7 +4016,14 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   retired that call — a subagent's `tool_use` now carries its parent's
   `attempt` (optional/additive, stamped by the ring; schema widened) and
   the boundary retires only earlier attempts' open calls.
-  Mutation-checked.
+  Mutation-checked. **Round 10 (two findings, fixed):** an OpenCode child
+  idling while a grandchild on its lane was still busy completed the task
+  early (a lane completes only when nothing routed to it is busy; the last
+  descendant's idle completes it); a first-seen replayed attempt frame
+  skipped the boundary wholesale and left attempt 1's open call as the
+  deck's current action (now that every subagent call carries its attempt,
+  the first-seen frame is a boundary that retires only older attempts'
+  calls). Mutation-checked.
   **Recorded intermittent (not chased):** the round-5 head's CI Tier 2+3
   (run 35060430431) failed `follow-tail.e2e.ts` "desktop: the pill…" at
   its own precondition — `overflow=0 after 6 turns`, i.e. six completed mock

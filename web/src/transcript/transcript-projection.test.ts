@@ -1044,7 +1044,9 @@ test("a full replay of a restarted task keeps the current attempt's open call ru
     { type: "user_prompt", text: "go", replay: true },
     { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
     { type: "tool_result", id: "t1", output: "launched", replay: true },
-    { type: "tool_use", id: "c2", name: "Bash", detail: "sleep 5", parentId: "t1", replay: true },
+    // The ring stamps a subagent's call with its attempt (round 9), so the
+    // replayed current-attempt call says which attempt it belongs to.
+    { type: "tool_use", id: "c2", name: "Bash", detail: "sleep 5", parentId: "t1", attempt: 2, replay: true },
     { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
     { type: "replay_complete" },
   );
@@ -1078,4 +1080,24 @@ test("a resumed call stamped with the new attempt survives the boundary; the old
   assert.equal(deck.summary.currentAction, "Bash new attempt", "the current attempt's call is still running");
   const old = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
   assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "the old attempt's call is retired");
+});
+
+// PR #125 round 10: a full replay of attempt 2 can still carry attempt 1's
+// unanswered call; with calls carrying their attempt, the first-seen marked
+// frame retires that older call while sparing attempt 2's.
+test("a first-seen replayed attempt retires an older attempt's open call but not its own", () => {
+  const projection = createTranscriptProjection();
+  const replayed = apply(
+    projection,
+    { type: "user_prompt", text: "go", replay: true },
+    { type: "tool_use", id: "t1", name: "Agent", input: { description: "d" }, replay: true },
+    { type: "tool_use", id: "c1", name: "Bash", detail: "old attempt", parentId: "t1", replay: true },
+    { type: "tool_use", id: "c2", name: "Bash", detail: "new attempt", parentId: "t1", attempt: 2, replay: true },
+    { type: "task_update", id: "t1", state: "running", label: "d", attempt: 2, replay: true },
+    { type: "replay_complete" },
+  );
+  const deck = rowsOf(replayed, "subagent-deck")[0]!;
+  const old = deck.items.find((item) => item.kind === "tool" && item.toolId === "c1");
+  assert.ok(old && old.kind === "tool" && /interrupted/.test(old.output ?? ""), "attempt 1's open call is retired");
+  assert.equal(deck.summary.currentAction, "Bash new attempt", "attempt 2's call is what the task is doing");
 });

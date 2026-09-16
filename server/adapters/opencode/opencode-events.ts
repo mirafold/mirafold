@@ -264,7 +264,10 @@ export class OpenCodeEventMapper {
           // review round 2).
           const lane = this.laneOf(p["sessionID"]);
           if (lane && lane !== "root") this.noteLaneSession(lane, String(p["sessionID"]), false);
-          if (lane && lane !== "root" && this.backgroundTasks.has(lane)) {
+          // The lane is done only when nothing routed to it is still busy: a
+          // child idling while its grandchild works is not the task
+          // finishing (round 10); the last descendant's idle completes it.
+          if (lane && lane !== "root" && this.backgroundTasks.has(lane) && (this.busyByLane.get(lane)?.size ?? 0) === 0) {
             this.backgroundTasks.delete(lane);
             this.emitTask(lane, "completed");
           }
