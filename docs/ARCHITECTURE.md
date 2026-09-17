@@ -121,16 +121,39 @@ the stream-derived activity state — status, turn counters, pending
 permissions, usage — computed by the pure reducer in
 [`session-state.ts`](../server/sessions/persistence/session-state.ts).
 
-Measured costs (2026-08-25, one machine, for sizing decisions): a checkpoint
-of a 4,000-message text ring (0.6 MB) takes ~14 ms; a ring holding fifteen
-2 MB image renders (30 MB, near the byte cap) takes ~300 ms synchronously
-(~156 ms `JSON.stringify` + ~181 ms write and fsync), and the debounced
-interior checkpoint can run every 250 ms while such a session streams.
-Boundary checkpoints are synchronous on purpose (a `turn_end` must not be
-observable before its record is durable); moving the interior ones off the
-loop would need a generation guard so an older async write can never land
-over a newer boundary write, and has not been done because only image-heavy
-sessions pay the cost. Streamed deltas are coalesced twice before the
+Checkpoints take two paths (Phase CPERF, 2026-09-17). Boundary checkpoints —
+`user_prompt`, `turn_end`, `error`, permission frames, `bang_start`/`bang_end`,
+plus activation, metadata, rename, detach, idle unload, and End Session —
+are synchronous on purpose: a `turn_end` must not be observable before its
+record is durable, and a failed rename or delete must roll back in place.
+Interior stream frames share the 250 ms debounce, and that routine save
+serializes on the loop but prepares its temp file with asynchronous I/O
+(exclusive owner-only open, write, fsync, close) and commits with the
+same synchronous rename — only if no synchronous save or delete for that
+session ran meanwhile. Every `write()`/`delete()` invalidates the routine
+save still preparing, the validity check and the rename share one
+uninterrupted turn (an asynchronous rename after the check could still land
+after a newer boundary save), and a superseded save is an expected
+cancellation, not a success or a disk error. One routine save per session
+is in flight at a time; requests during it only mark newer state dirty, and
+a save that settles with dirty state schedules one further attempt through
+the same timer, so continuous output still saves and the last message after
+a boundary is never stranded. A failed routine save logs once and waits for
+the next stream event or boundary — no retry loop.
+
+Measured (2026-09-17, one machine, `checkpoint-load.bench.ts`: five mock
+sessions with fixed histories, one delta each every 20 ms for 6 s, three
+paired runs): with ~5 MB rings the run took 14.2–14.9 s and the loop stalled
+up to 405–507 ms (p99 331–358 ms) before, versus 8.8–9.0 s and 149–172 ms
+(p99 96–109 ms) after; with ~20 MB rings, 38.4–39.0 s and stalls of
+1.5–1.7 s (p99 ~1.4 s) before, versus 12.2–13.7 s and 444–585 ms (p99
+145–289 ms) after. Of the checkpoint time that used to occupy the loop
+(~8 s at 5 MB, ~32 s at 20 MB), the write-and-fsync share (~75 %) left the
+loop; what remains on it is `JSON.stringify` of the whole ring (~20 ms per
+5 MB save, ~150 ms per 20 MB save), plus the rename. That serialization —
+and the boundary saves — are the remaining synchronous cost; the 2026-08-25
+sizing note (a 30 MB image-heavy ring costs ~156 ms to stringify) still
+applies to it. Streamed deltas are coalesced twice before the
 projection sees them: the registry merges same-lane deltas for
 `DELTA_COALESCE_MS` (33 ms by default) before broadcasting, and the browser's
 [`delta-queue.ts`](../web/src/transcript/delta-queue.ts) batches what arrives

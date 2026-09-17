@@ -4098,6 +4098,129 @@ regenerated (unchanged), version bumped, release PR #124 → `main`.
   an explanation. Verdict: runner flakiness on 2026-09-16; three different
   tests, one re-run green, no cause named.
 
+## Phase CPERF — Checkpoint performance (opened 2026-09-17; Kyle-directed: "execute on this" on `mirafold-checkpoint-performance-spec.md`; branch `feature/checkpoint-performance` → `next`)
+
+Kyle's symptom: ~30 s of unresponsiveness with five busy long-running
+sessions, then recovery. Not reproduced as such; the spec's inspected
+bottleneck IS real at `next` @ `8008d49` (package 0.10.0, clean tree apart
+from the untracked `decks/`): the 250 ms interior debounce called the same
+synchronous `store.write()` as every boundary — whole-ring `JSON.stringify`,
+then open/write/fsync/rename on the loop — once per session per 250 ms, and
+five streaming sessions with real histories starve the loop that serves
+every session and browser. Attribution of the original freeze to this path
+stays unproven; the fix removes a measured bottleneck.
+
+- [x] **CPERF.1 — Baseline (✅ 2026-09-17).** `checkpoint-load.bench.ts`
+  (no glob matches `.bench.ts`; asserts nothing): the real registry + store,
+  five mock sessions, rings seeded to ~5 MB / ~20 MB with tool results, one
+  delta per session every 20 ms for 6 s (300 ticks), event-loop delay from
+  `monitorEventLoopDelay`, sync/routine saves timed from outside the store.
+  Before, three runs each — 5 MB: 14.2–14.9 s wall for the 6 s workload,
+  loop max 405–507 ms, p99 331–358 ms, 115–120 sync saves totalling
+  7.9–8.6 s on the loop (serialize ~2.0 s, write+fsync ~6.1 s). 20 MB:
+  38.4–39.0 s wall, loop max 1.5–1.7 s, p99 ~1.4 s, 115 sync saves
+  totalling 31.6–32.2 s on the loop (serialize ~9.4 s, write+fsync
+  ~22.4 s). Every session saved repeatedly; all files ≤ 20.2 MB, within the
+  count/byte caps. Focused Tier 1 (store + registry) 73/73 and `yarn
+  typecheck` clean before any change. **Checkpoint A: scope confirmed.**
+- [x] **CPERF.2 — Store: `writeRoutine()` (✅ 2026-09-17).** Serialize
+  before the first yield (the snapshot shares the live ring array); prepare
+  a uniquely named sibling temp with `fs/promises` (mkdir/chmod, exclusive
+  owner-only open, `writeFile`, `sync`, close); then check the per-id
+  validity token and `renameSync` in the SAME turn. `write()`/`delete()`
+  invalidate the pending routine save before their own work, including
+  work that then fails; one routine save per id at a time (`busy` before
+  any serialization while one — valid or superseded — is unsettled);
+  identity-checked bookkeeping release; temp removed on every outcome;
+  `superseded` is a cancellation, never a success or an error. The sync
+  path's disk stage became `writeRecordSync()` (same fd bookkeeping as the
+  async path) so a test can fail it below the invalidation. Test seam:
+  `routineHold()` (production adds no yield). Regressions: held save vs
+  newer sync save, vs delete, snapshot stability, owner-only atomic
+  round-trip, failure before/after the temp exists plus a real rename
+  failure (temp gone, id not stuck busy, no unhandled rejection), busy/
+  independence/identity.
+- [x] **CPERF.3 — Registry routing and coalescing (✅ 2026-09-17).** Only
+  the 250 ms timer takes the new path; the seven boundary types and every
+  lifecycle save are untouched (turn_end still lands before fanout). State
+  is one in-flight promise plus `checkpointDirty`: a request while one is
+  preparing only marks dirty; dirty is cleared when an attempt starts or a
+  sync save succeeds, never in a completion; a save that settles
+  committed/superseded with dirty state re-arms the timer once; a failed
+  save logs once, marks dirty, and waits for the next stream event or
+  boundary; a failed sync save/delete marks dirty. Regressions: 50-message
+  burst during a held save → one payload, one follow-up with the latest
+  state; continuous output saves without quiet; a boundary suppresses the
+  redundant follow-up but a later message saves; boundary supersession +
+  one message + settlement + silence saves that message (both orders:
+  settle before and after the debounce fires); failure without retry spin.
+- [x] **CPERF.4 — Lifecycle and recovery races (✅ 2026-09-17).** End while
+  held (file stays gone); failed End via a real EACCES (directory write bit
+  dropped) while held — session live, last good file intact, next routine
+  save proceeds; failed rename via the sync disk stage — rollback kept by
+  both the canceled save and the later fresh one; idle unload + reopen of
+  the same id while the old preparation is held — the new entry's request
+  reads busy, keeps its own dirty/timer state, and saves after the old work
+  settles without touching it; a viewport's `turn_end` reads the complete
+  record at once while an unrelated session keeps flowing during the held
+  preparation. Tier 2: `session-recovery.itest.ts` now reads the record
+  from disk right after the socket sees `turn_end`, before detaching, and
+  checks no temp file outlives the stop; recovery itest + cockpit itest
+  11/11. **Checkpoint B: integrity preserved** — diff read against the
+  lifecycle table: no yield between the validity check and the rename;
+  no completion path clears newer dirty state; every rejection caught.
+- [x] **CPERF.5 — User-visible improvement (✅ 2026-09-17).** Same fixture,
+  same machine, three paired runs after — 5 MB: 8.8–9.0 s wall, loop max
+  149–172 ms, p99 96–109 ms, 105–114 routine saves all committed, on-loop
+  2.3–2.5 s (serialization; max single 42–61 ms), off-loop wait 22–25 s,
+  max 5 in flight (one per session). 20 MB: 12.2–13.7 s wall, loop max
+  444–585 ms, p99 145–289 ms, 55–60 saves all committed, on-loop 4.5–5.6 s
+  (max single ~155 ms), max 5 in flight. Improvement beyond run-to-run
+  noise at both sizes; the residue is `JSON.stringify` of the whole ring
+  plus the rename, exactly the spec's explicit limit. Real Chrome
+  (`cockpit-five-sessions.e2e.ts`): five tabs each streaming a 10 s mock
+  subagent turn while the driver tab switches through all five from the
+  cockpit panel and types into each destination; click-to-destination-ready
+  (destination's prompt echo on screen + usable prompt box) 255–634 ms
+  after vs 235–437 ms on the baseline build — tiny mock histories, so this
+  case is functional evidence, not a discriminator; replies ~1.1 s (the
+  mock's scripted delay); all five checkpoints on disk, no temp left.
+- [x] **CPERF.6 — Review and final gates (✅ 2026-09-17).**
+  `docs/ARCHITECTURE.md` checkpoint paragraph rewritten (two paths, the
+  guard, the measurements, the remaining synchronous costs).
+  `itest-harness.ts` gained `startDaemon(env, { built: true })`;
+  `packaged-checkpoint.e2e.ts` runs five sessions to `turn_end` against
+  `dist-server/index.js` + the built bundle, checks each record, restarts,
+  recovers all five, prompts one. **Cold review (fresh agent, read-only,
+  ran typecheck + the focused unit file itself):** no data-integrity
+  defect — it traced the check→rename turn, snapshot stability, both
+  invalidations, the dirty-flag rules, the old-entry guard, and every
+  lifecycle row, and confirmed the guard tests fail when the guard is
+  removed. One real finding, fixed: a routine save's temp now lives for the
+  whole asynchronous preparation, so a daemon killed mid-stream (no SIGTERM
+  handler) orphaned `.tmp` files nothing ever swept; `loadAll()` now removes
+  temps matching the store's OWN naming whose embedded pid no longer exists
+  (never our pid, never a live process's, never a foreign name) — tested
+  with a real exited child pid. Recovery semantics and crash/shutdown
+  behavior are otherwise unchanged; if Kyle reads the sweep as outside the
+  spec's "no crash/shutdown policy change", it is one method to drop. Three
+  nits fixed: a superseded save whose temp cannot be removed now warns
+  instead of reporting a failed checkpoint (disk already holds the newer
+  record); the "bookkeeping released" test proved it on a fresh instance
+  (now the same one); four `sleep(50)`s became `await entry.routineSave`.
+  Kept as-is with reasons: the cross-incarnation `busy` re-arm is a bounded
+  250 ms poll (one fsync long), not a failure retry; the identity check in
+  `finally` is unreachable under the busy gate but is what the spec asks
+  for; the two "loop stays free" assertions are tautological under the hold
+  seam — the bench, not those lines, is the evidence for that claim.
+  **Final gates on the final inputs** (tree = this branch's head): `yarn
+  typecheck` clean; `yarn test` 1441/1441; `yarn test:server` 198/198;
+  `yarn test:e2e` 162/162 (includes the five-session Chrome case and the
+  packaged-daemon smoke against the freshly built `dist-server/index.js`).
+  **Checkpoint C: ready for owner review.** Built and tested locally; the
+  PR into `next` is Kyle's to merge. No version bump, tag, publish, or
+  daemon restart was part of this work.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of
