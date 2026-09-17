@@ -1,15 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { spawnSync } from "node:child_process";
 import { restoreBackend, type Backend } from "../../adapters/index";
 import { SessionRegistry } from "../registry";
 import { MAX_NEXT_SEQ, SessionCheckpointStore, type StoredSession } from "./session-store";
@@ -630,4 +635,492 @@ test("AUDIT: a saved discovered endpoint restores when it is a current MIRAFOLD_
   } finally {
     if (prior === undefined) delete process.env.MIRAFOLD_LOCAL_ENDPOINTS; else process.env.MIRAFOLD_LOCAL_ENDPOINTS = prior;
   }
+});
+
+// ---- Phase CPERF: the routine (interior-stream) save leaves the loop ------
+// Every race below is deterministic: HeldStore parks a prepared routine save
+// just before its validity check, the test performs the competing operation,
+// then releases it. The temp file exists on disk while held, exactly as it
+// would mid-fsync in production.
+
+class HeldStore extends SessionCheckpointStore {
+  holding = true;
+  prepared = 0;
+  private holds = new Map<string, () => void>();
+  private waiters: (() => void)[] = [];
+
+  protected override routineHold(id: string): Promise<void> | undefined {
+    this.prepared++;
+    if (!this.holding) return undefined;
+    return new Promise<void>((resolve) => {
+      this.holds.set(id, resolve);
+      for (const wake of this.waiters.splice(0)) wake();
+    });
+  }
+
+  isHeld(id: string) {
+    return this.holds.has(id);
+  }
+
+  async whenHeld(id: string, timeoutMs = 3_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.holds.has(id)) {
+      if (Date.now() > deadline) throw new Error(`routine save for ${id} was never held`);
+      await Promise.race([
+        new Promise<void>((wake) => this.waiters.push(wake)),
+        new Promise((r) => setTimeout(r, 50)),
+      ]);
+    }
+  }
+
+  release(id: string) {
+    const resolve = this.holds.get(id);
+    assert.ok(resolve, `no held routine save for ${id}`);
+    this.holds.delete(id);
+    resolve();
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const tempFiles = (dir: string) => readdirSync(dir).filter((name) => name.endsWith(".tmp"));
+const onDisk = (store: SessionCheckpointStore, id: string) => store.loadAll().sessions.get(id);
+
+test("CPERF.2: a held routine save leaves the loop free, and a newer synchronous save wins", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new HeldStore(dir);
+  const v1 = fixture();
+  const v2 = { ...fixture(), name: "newer boundary state" };
+
+  const routine = store.writeRoutine(v1);
+  await store.whenHeld(v1.id);
+  assert.equal(tempFiles(dir).length, 1, "the prepared record waits as a sibling temp file");
+  // A separate callback runs while the preparation is parked.
+  let ticked = false;
+  await new Promise<void>((r) => setImmediate(() => ((ticked = true), r())));
+  assert.equal(ticked, true);
+
+  store.write(v2);
+  store.release(v1.id);
+  assert.equal(await routine, "superseded");
+  assert.deepEqual(onDisk(store, v1.id), v2, "the older preparation never landed over the boundary save");
+  assert.deepEqual(tempFiles(dir), [], "the superseded temp file is removed");
+});
+
+test("CPERF.2: a held routine save cannot resurrect a deleted session", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new HeldStore(dir);
+  const v1 = fixture();
+  store.write(v1);
+
+  const routine = store.writeRoutine({ ...v1, name: "streamed after" });
+  await store.whenHeld(v1.id);
+  store.delete(v1.id);
+  store.release(v1.id);
+  assert.equal(await routine, "superseded");
+  assert.equal(existsSync(path.join(dir, `${v1.id}.json`)), false, "no file reappears");
+  assert.deepEqual(tempFiles(dir), []);
+});
+
+test("CPERF.2: the routine snapshot is serialized before the first yield", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new HeldStore(dir);
+  const session = fixture();
+  const expected = structuredClone(session);
+
+  const routine = store.writeRoutine(session);
+  // The registry's snapshot shares the live ring array: mutate it the way
+  // streaming would while the save is still preparing.
+  session.buffer.push({ type: "text_delta", text: "arrived later", seq: 4 });
+  session.nextSeq = 5;
+  session.name = "renamed mid-flight";
+  await store.whenHeld(session.id);
+  store.release(session.id);
+  assert.equal(await routine, "committed");
+  assert.deepEqual(onDisk(store, session.id), expected);
+});
+
+test("CPERF.2: a committed routine save is one owner-only atomic record", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new HeldStore(dir);
+  store.holding = false;
+  const stored = fixture();
+  assert.equal(await store.writeRoutine(stored), "committed");
+  assert.deepEqual(readdirSync(dir), [`${stored.id}.json`], "no temp file survives the rename");
+  assert.deepEqual(onDisk(store, stored.id), stored);
+  if (process.platform !== "win32") {
+    assert.equal(statSync(dir).mode & 0o777, 0o700);
+    assert.equal(statSync(path.join(dir, `${stored.id}.json`)).mode & 0o777, 0o600);
+  }
+});
+
+test("CPERF.2: a routine save that fails before replacement keeps the last good file and releases everything", async () => {
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  try {
+    for (const stage of ["before the temp file exists", "after the payload is written"] as const) {
+      const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+      class FailingPrepare extends SessionCheckpointStore {
+        failing = true;
+        protected override async prepareRoutineFile(temp: string, data: string) {
+          if (!this.failing) return super.prepareRoutineFile(temp, data);
+          if (stage === "after the payload is written") await super.prepareRoutineFile(temp, data);
+          throw Object.assign(new Error(`disk failed ${stage}`), { code: "EIO" });
+        }
+      }
+      const store = new FailingPrepare(dir);
+      const good = fixture();
+      store.write(good);
+      await assert.rejects(store.writeRoutine({ ...good, name: "never lands" }), /disk failed/);
+      assert.deepEqual(onDisk(store, good.id), good, `last good file intact (${stage})`);
+      assert.deepEqual(tempFiles(dir), [], `temp removed (${stage})`);
+      // Bookkeeping released on this instance: the next save is admitted, not "busy".
+      store.failing = false;
+      assert.equal(await store.writeRoutine(good), "committed");
+    }
+
+    // A real rename failure: the target path is occupied by a directory.
+    const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+    const store = new HeldStore(dir);
+    store.holding = false;
+    const stored = fixture();
+    mkdirSync(path.join(dir, `${stored.id}.json`));
+    await assert.rejects(store.writeRoutine(stored));
+    assert.deepEqual(tempFiles(dir), [], "the temp is removed after a failed rename");
+    rmSync(path.join(dir, `${stored.id}.json`), { recursive: true });
+    assert.equal(await store.writeRoutine(stored), "committed", "the id is not stuck busy after a failure");
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+  assert.deepEqual(rejections, [], "every asynchronous rejection is caught");
+});
+
+test("CPERF.2: one routine save per session at a time; other sessions prepare independently", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new HeldStore(dir);
+  const a = fixture("session-a");
+  const b = fixture("session-b");
+
+  const first = store.writeRoutine(a);
+  await store.whenHeld(a.id);
+  assert.equal(await store.writeRoutine({ ...a, name: "second request" }), "busy");
+  assert.equal(store.prepared, 1, "a busy request serializes and prepares nothing");
+  assert.equal(tempFiles(dir).length, 1);
+
+  // A superseded-but-unsettled save still counts as in flight.
+  store.write(a);
+  assert.equal(await store.writeRoutine({ ...a, name: "third request" }), "busy");
+  assert.equal(store.prepared, 1);
+
+  const other = store.writeRoutine(b);
+  await store.whenHeld(b.id);
+  assert.equal(store.prepared, 2, "a different session prepares while the first is held");
+  store.release(b.id);
+  assert.equal(await other, "committed");
+
+  store.release(a.id);
+  assert.equal(await first, "superseded");
+  // The old completion released only its own bookkeeping: a new save for
+  // the id is admitted, and while it is held the id reads busy again.
+  const next = store.writeRoutine({ ...a, name: "after settlement" });
+  await store.whenHeld(a.id);
+  assert.equal(await store.writeRoutine(a), "busy", "the newer operation's bookkeeping is intact");
+  store.release(a.id);
+  assert.equal(await next, "committed");
+  assert.equal(onDisk(store, a.id)?.name, "after settlement");
+  assert.deepEqual(tempFiles(dir), []);
+});
+
+test("CPERF.6: loading sweeps only this store's own temp files left by a process that no longer exists", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-"));
+  const store = new SessionCheckpointStore(dir);
+  const stored = fixture();
+  store.write(stored);
+  const uuid = "0f2b3a44-9c1e-4a7b-8d55-1c2d3e4f5a6b";
+  // A pid from a process that exited: allocate a child, let it exit.
+  const gone = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  const orphan = `.${stored.id}.${gone}.${uuid}.tmp`;
+  const ours = `.${stored.id}.${process.pid}.${uuid}.tmp`;
+  const foreign = `${stored.id}.${gone}.tmp`; // not the store's naming
+  for (const name of [orphan, ours, foreign]) writeFileSync(path.join(dir, name), "{");
+
+  const loaded = store.loadAll();
+  assert.deepEqual(loaded.sessions.get(stored.id), stored);
+  assert.equal(loaded.errors.size, 0);
+  assert.deepEqual(readdirSync(dir).sort(), [ours, `${stored.id}.json`, foreign].sort());
+});
+
+// Registry-level: routing, coalescing, and the lifecycle races. Real 250 ms
+// debounce, mock engine (inert until prompted), deltas straight through.
+
+function heldRegistry(options: { idleTimeoutMs?: number; store?: HeldStore } = {}) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-reg-"));
+  const store = options.store ?? new HeldStore(dir);
+  const registry = new SessionRegistry({
+    backend: MOCK_BACKEND,
+    deltaCoalesceMs: 0,
+    store,
+    ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
+  });
+  const entry = registry.create({ cwd: dir });
+  const seen: WireMsg[] = [];
+  const viewport = (msg: WireMsg) => void seen.push(msg);
+  registry.attach(entry, viewport);
+  const delta = (text: string) => registry.broadcast(entry, { type: "text_delta", text });
+  const bufferOnDisk = () => onDisk(store, entry.id)?.buffer ?? [];
+  return { dir, store, registry, entry, seen, viewport, delta, bufferOnDisk };
+}
+
+test("CPERF.3: a burst during an in-flight routine save is coalesced into one later save of the latest state", async () => {
+  const { store, registry, entry, delta, bufferOnDisk } = heldRegistry();
+  delta("first");
+  await store.whenHeld(entry.id);
+  assert.equal(store.prepared, 1);
+  for (let i = 0; i < 50; i++) delta(`burst ${i}`);
+  await sleep(350); // past the debounce: the request must only mark state dirty
+  assert.equal(store.prepared, 1, "no second preparation while one is in flight");
+  assert.equal(entry.checkpointDirty, true);
+
+  store.release(entry.id);
+  await store.whenHeld(entry.id); // exactly one follow-up, through the timer
+  assert.equal(store.prepared, 2);
+  store.release(entry.id);
+  await waitUntil(() => bufferOnDisk().length === 51, 3_000);
+  assert.equal((bufferOnDisk().at(-1) as { text: string }).text, "burst 49");
+  await sleep(350);
+  assert.equal(store.prepared, 2, "a completed save does not spawn another without new state");
+  registry.end(entry.id);
+});
+
+test("CPERF.3: continuous output saves without waiting for quiet", async () => {
+  const { store, registry, entry, delta, bufferOnDisk } = heldRegistry();
+  store.holding = false;
+  let n = 0;
+  const stream = setInterval(() => delta(`line ${n++}`), 10);
+  try {
+    await waitUntil(() => bufferOnDisk().length > 0, 3_000);
+    const first = bufferOnDisk().length;
+    await waitUntil(() => bufferOnDisk().length > first, 3_000);
+  } finally {
+    clearInterval(stream);
+  }
+  assert.ok(n > 0);
+  registry.end(entry.id);
+});
+
+test("CPERF.3: a successful boundary suppresses its redundant routine follow-up; a later message causes a new save", async () => {
+  const { store, registry, entry, delta, bufferOnDisk } = heldRegistry();
+  delta("interior");
+  await store.whenHeld(entry.id);
+  registry.broadcast(entry, { type: "turn_end" }); // synchronous, covers everything so far
+  assert.equal(bufferOnDisk().length, 2, "the boundary landed before fanout");
+  store.release(entry.id);
+  await sleep(400);
+  assert.equal(store.prepared, 1, "no follow-up: the boundary already covers the state");
+  assert.equal(bufferOnDisk().length, 2);
+
+  delta("after the boundary");
+  await store.whenHeld(entry.id);
+  assert.equal(store.prepared, 2);
+  store.release(entry.id);
+  await waitUntil(() => bufferOnDisk().length === 3, 3_000);
+  registry.end(entry.id);
+});
+
+test("CPERF.3: boundary supersession, one new message, old-work settlement, then silence — the message is saved", async () => {
+  for (const order of ["settle before the debounce fires", "settle after the debounce fires"] as const) {
+    const { store, registry, entry, delta, bufferOnDisk } = heldRegistry();
+    delta("interior");
+    await store.whenHeld(entry.id);
+    registry.broadcast(entry, { type: "turn_end" });
+    delta("the one message after the boundary");
+    if (order === "settle after the debounce fires") {
+      await sleep(350);
+      assert.equal(store.prepared, 1, "the debounce found the old save in flight and only marked dirty");
+    }
+    store.release(entry.id);
+    await store.whenHeld(entry.id);
+    assert.equal(store.prepared, 2, `exactly one follow-up (${order})`);
+    store.release(entry.id);
+    await waitUntil(() => bufferOnDisk().length === 3, 3_000);
+    assert.equal((bufferOnDisk().at(-1) as { text: string }).text, "the one message after the boundary");
+    registry.end(entry.id);
+  }
+});
+
+test("CPERF.3: a failed routine save logs once, does not retry on its own, and the next event saves the state", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-reg-"));
+  class FlakyStore extends HeldStore {
+    failures = 0;
+    failNext = true;
+    protected override async prepareRoutineFile(temp: string, data: string) {
+      if (this.failNext) {
+        this.failNext = false;
+        this.failures++;
+        throw Object.assign(new Error("no space left"), { code: "ENOSPC" });
+      }
+      await super.prepareRoutineFile(temp, data);
+    }
+  }
+  const store = new FlakyStore(dir);
+  store.holding = false;
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  const { registry, entry, delta, bufferOnDisk } = heldRegistry({ store });
+  try {
+    delta("lost to the failure");
+    await sleep(700);
+    assert.equal(store.failures, 1);
+    assert.equal(store.prepared, 0, "no automatic retry after the failure");
+    assert.equal(bufferOnDisk().length, 0);
+    assert.equal(entry.checkpointDirty, true, "the state stays eligible");
+
+    delta("the next event");
+    await waitUntil(() => bufferOnDisk().length === 2, 3_000);
+    assert.equal(store.prepared, 1);
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+  assert.deepEqual(rejections, []);
+  registry.end(entry.id);
+});
+
+test("CPERF.4: End Session while a routine save is held — deletion sticks", async () => {
+  const { dir, store, registry, entry, delta } = heldRegistry();
+  delta("streamed");
+  await store.whenHeld(entry.id);
+  assert.equal(registry.end(entry.id), true);
+  assert.equal(existsSync(path.join(dir, `${entry.id}.json`)), false);
+  store.release(entry.id);
+  await entry.routineSave;
+  assert.equal(existsSync(path.join(dir, `${entry.id}.json`)), false, "old work cannot recreate the file");
+  assert.deepEqual(tempFiles(dir), []);
+  assert.equal(registry.get(entry.id), undefined);
+});
+
+// A real unlink refusal (the directory loses its write bit) rather than an
+// overridden delete(): the failure must happen BELOW the store's own
+// invalidation of the held save, exactly where a disk error would.
+const cannotDropPermissions = process.platform === "win32" || process.getuid?.() === 0;
+
+test("CPERF.4: a failed End Session while a routine save is held keeps the session saveable", { skip: cannotDropPermissions }, async () => {
+  const { dir, store, registry, entry, delta, bufferOnDisk } = heldRegistry();
+  registry.broadcast(entry, { type: "turn_end" });
+  delta("streamed");
+  await store.whenHeld(entry.id);
+  chmodSync(dir, 0o500);
+  try {
+    assert.throws(() => registry.end(entry.id), /EACCES|EPERM/);
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+  assert.equal(registry.get(entry.id), entry, "the session remains live");
+  store.release(entry.id);
+  await entry.routineSave;
+  assert.equal(bufferOnDisk().length, 1, "the last good file survives; the superseded save did not land");
+  assert.deepEqual(tempFiles(dir), []);
+
+  // The still-live state is saved by the next routine attempt.
+  await store.whenHeld(entry.id);
+  store.release(entry.id);
+  await waitUntil(() => bufferOnDisk().length === 2, 3_000);
+  assert.equal(registry.end(entry.id), true);
+  assert.equal(existsSync(path.join(dir, `${entry.id}.json`)), false);
+});
+
+test("CPERF.4: a failed rename rolls back, and neither the canceled save nor a later one overwrites the rollback", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-reg-"));
+  class FailingSyncDisk extends HeldStore {
+    failWrites = false;
+    protected override writeRecordSync(temp: string, data: string) {
+      if (this.failWrites) throw Object.assign(new Error("disk is read-only"), { code: "EROFS" });
+      super.writeRecordSync(temp, data);
+    }
+  }
+  const store = new FailingSyncDisk(dir);
+  const { registry, entry, delta } = heldRegistry({ store });
+  const original = entry.name;
+  registry.broadcast(entry, { type: "turn_end" });
+  delta("streamed");
+  await store.whenHeld(entry.id);
+
+  store.failWrites = true;
+  assert.equal(registry.rename(entry.id, "a name that must not lie"), false);
+  assert.equal(entry.name, original);
+  store.release(entry.id);
+  await entry.routineSave;
+  assert.equal(onDisk(store, entry.id)?.name, original, "the canceled save did not land its stale record");
+  assert.equal(onDisk(store, entry.id)?.buffer.length, 1);
+  assert.deepEqual(tempFiles(dir), []);
+
+  store.failWrites = false;
+  await store.whenHeld(entry.id); // the still-live streamed state is saved fresh
+  store.release(entry.id);
+  await waitUntil(() => onDisk(store, entry.id)?.buffer.length === 2, 3_000);
+  assert.equal(onDisk(store, entry.id)?.name, original);
+  assert.equal(registry.rename(entry.id, "renamed for real"), true);
+  assert.equal(onDisk(store, entry.id)?.name, "renamed for real");
+  registry.end(entry.id);
+});
+
+test("CPERF.4: idle unload and reopen of the same id while old preparation is held — the old callback never touches the new entry", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-cperf-reg-"));
+  const store = new HeldStore(dir);
+  const registry = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store, idleTimeoutMs: 450 });
+  const first = registry.create({ cwd: dir }); // no viewport: the idle unload is armed
+  registry.broadcast(first, { type: "text_delta", text: "before unload" });
+  await store.whenHeld(first.id);
+  await waitUntil(() => registry.get(first.id) === undefined, 3_000); // unloaded: its sync save superseded the held one
+  assert.equal(store.loadAll().sessions.get(first.id)?.buffer.length, 1);
+
+  const second = registry.open(first.id)!;
+  assert.notEqual(second, first);
+  registry.attach(second, () => undefined); // viewed: no idle unload this time
+  registry.broadcast(second, { type: "text_delta", text: "after reopen" });
+  await sleep(350); // the new entry's debounce fires while the old id is still busy
+  assert.equal(store.prepared, 1, "the new entry's request found the old preparation still in flight");
+  assert.equal(second.checkpointDirty, true);
+  assert.ok(second.checkpointTimer || second.routineSave, "the new entry keeps its own pending state");
+
+  store.release(first.id);
+  await store.whenHeld(second.id);
+  assert.equal(store.prepared, 2);
+  assert.equal(first.routineSave, undefined, "the old entry's bookkeeping was released by its own completion");
+  store.release(second.id);
+  // Recovery closed the interrupted turn (notice + turn_end) before the new
+  // delta, so the record is the reopened ring, ending with the new message.
+  const saved = () => store.loadAll().sessions.get(first.id)?.buffer ?? [];
+  await waitUntil(() => saved().length === second.ring.buffer.length, 3_000);
+  assert.equal((saved().at(-1) as { text: string }).text, "after reopen");
+  assert.deepEqual(tempFiles(dir), []);
+  registry.end(first.id);
+});
+
+test("CPERF.4: a viewport observing turn_end can read the complete checkpoint at once; unrelated sessions keep flowing during a held save", async () => {
+  const { dir, store, registry, entry, delta } = heldRegistry();
+  const other = registry.create({ cwd: dir });
+  const otherSeen: WireMsg[] = [];
+  registry.attach(other, (msg) => void otherSeen.push(msg));
+
+  delta("streamed");
+  await store.whenHeld(entry.id);
+  let observedOnDisk: SessionMsg[] | undefined;
+  registry.attach(entry, (msg) => {
+    if (msg.type === "turn_end") observedOnDisk = onDisk(store, entry.id)?.buffer;
+  });
+  registry.broadcast(entry, { type: "turn_end" });
+  assert.equal(observedOnDisk?.at(-1)?.type, "turn_end", "the record was durable before the viewport saw the frame");
+
+  const before = otherSeen.length;
+  registry.broadcast(other, { type: "text_delta", text: "another session streams" });
+  registry.broadcast(other, { type: "turn_end" });
+  assert.equal(otherSeen.length, before + 2, "an unrelated session is not blocked by the held preparation");
+  assert.equal(onDisk(store, other.id)?.buffer.length, 2);
+
+  store.release(entry.id);
+  await entry.routineSave;
+  assert.deepEqual(tempFiles(dir), []);
+  registry.end(entry.id);
+  registry.end(other.id);
 });
