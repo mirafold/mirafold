@@ -199,7 +199,7 @@ export type SessionEntry = SessionActivityState & {
   // like a terminal). `cancel` is the whole-session Stop path: unlike the
   // Bang bar's PTY-only kill, it also prevents a non-silent command's partial
   // transcript from starting a fresh model turn after cancellation.
-  bang?: { id: string; proc: BangProc; silent: boolean; cancel: () => void };
+  bang?: { id: string; command: string; proc: BangProc; silent: boolean; tail: string; cancel: () => void };
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ZoneMsg } from "../transport/session-bus";
 import {
   createTranscriptProjection,
+  ORPHAN_BANG_COMMAND,
   type TextRow,
   type OutputZoneRow,
   type ToolRow,
@@ -1142,4 +1143,74 @@ test("a terminal error settles the turn like turn_end: in-flight calls interrupt
   assert.equal(rowKinds(trailing).length, rowKinds(ended).length + 3, "no extra rows from the trailing turn_end");
   const after = apply(projection, { type: "user_prompt", text: "still works" }, ...routineTurn("D"), { type: "turn_end" });
   assert.equal(rowsOf(after, "tool-fold").slice(-1)[0]?.live, false, "a turn after the trailing turn_end still settles its own calls");
+});
+
+test("a `!` command's output whose start was evicted becomes an orphan row that later frames still address", () => {
+  const projection = createTranscriptProjection();
+  const replayed = apply(
+    projection,
+    { type: "zone_reset" },
+    { type: "text_delta", text: "traffic that followed the start", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "bang_output", id: "b-gone", data: "line one\n", replay: true },
+    { type: "bang_output", id: "b-gone", data: "line two\n", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  // Its start predates everything retained: it sits at the top, after the notice.
+  assert.deepEqual(rowKinds(replayed), ["notice", "bang", "text"]);
+  const [row] = rowsOf(replayed, "bang");
+  assert.deepEqual([row!.bangId, row!.command, row!.output, row!.done], ["b-gone", ORPHAN_BANG_COMMAND, "line one\nline two\n", false]);
+  assert.equal(rowsOf(replayed, "bang").length, 1, "one row, however many frames arrive before its end");
+
+  const ended = apply(projection, { type: "bang_output", id: "b-gone", data: "done\n" }, { type: "bang_end", id: "b-gone", exitCode: 0 });
+  const [closed] = rowsOf(ended, "bang");
+  assert.deepEqual([closed!.output, closed!.done, closed!.exitCode], ["line one\nline two\ndone\n", true, 0]);
+
+  // A command whose start WAS retained is never mistaken for an orphan.
+  const known = apply(projection, { type: "bang_start", id: "b-k", command: "ls" }, { type: "bang_output", id: "b-k", data: "a\n" });
+  assert.deepEqual(rowsOf(known, "bang").map((r) => [r.bangId, r.command]), [["b-gone", ORPHAN_BANG_COMMAND], ["b-k", "ls"]]);
+});
+
+test("an orphan `!` row takes its command and silent flag from the attach snapshot when the daemon gave one", () => {
+  const projection = createTranscriptProjection();
+  const seeded = apply(
+    projection,
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-run", command: "tail -f build.log", silent: true } },
+    { type: "zone_reset" },
+    { type: "bang_output", id: "b-run", data: "still building\n", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  const [row] = rowsOf(seeded, "bang");
+  assert.deepEqual([row!.bangId, row!.command, row!.silent, row!.output, row!.done], ["b-run", "tail -f build.log", true, "still building\n", false]);
+  // Output for a different evicted command still gets the honest placeholder.
+  const other = apply(projection, { type: "bang_output", id: "b-old", data: "x\n", replay: true });
+  assert.deepEqual(rowsOf(other, "bang").map((r) => [r.bangId, r.command, r.silent]), [["b-old", ORPHAN_BANG_COMMAND, undefined], ["b-run", "tail -f build.log", true]]);
+});
+
+test("a running `!` known only from the attach snapshot gets its row at replay_complete, so its end has a place to land", () => {
+  const projection = createTranscriptProjection();
+  const quiet = apply(
+    projection,
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-quiet", command: "sudo make install", tail: "[sudo] password: " } },
+    { type: "zone_reset" },
+    { type: "text_delta", text: "unrelated history", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  // The snapshot's tail is the last of what the command showed: the row's output.
+  assert.deepEqual(rowsOf(quiet, "bang").map((r) => [r.bangId, r.command, r.output, r.done]), [["b-quiet", "sudo make install", "[sudo] password: ", false]]);
+  // It began before everything retained: top of history, after the notice.
+  assert.deepEqual(rowKinds(quiet), ["notice", "bang", "text"]);
+  const ended = apply(projection, { type: "bang_end", id: "b-quiet", exitCode: null });
+  assert.deepEqual(rowsOf(ended, "bang").map((r) => [r.done, r.exitCode]), [[true, null]]);
+  // With the start retained, replay_complete adds nothing.
+  const fresh = createTranscriptProjection();
+  const kept = apply(
+    fresh,
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-k", command: "ls" } },
+    { type: "zone_reset" },
+    { type: "bang_start", id: "b-k", command: "ls", replay: true },
+    { type: "replay_complete" },
+  );
+  assert.equal(rowsOf(kept, "bang").length, 1);
 });

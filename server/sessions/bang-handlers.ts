@@ -158,6 +158,9 @@ const startBang = (
   // Per-command wire budget (bytes broadcast / bytes withheld).
   let wireSent = 0;
   let wireElided = 0;
+  // The last few hundred characters actually broadcast: what a viewport
+  // adopting this command at attach needs for password-prompt masking.
+  const PROMPT_TAIL_CHARS = 400;
   // Head-kept wire cap. Past it nothing is broadcast (so
   // nothing enters the ring); the marker announces the cut the
   // moment it happens, and the exit path reports the total.
@@ -171,13 +174,15 @@ const startBang = (
           : new TextDecoder().decode(Buffer.from(data, "utf8").subarray(0, room));
       wireSent += Math.min(bytes, room);
       wireElided += Math.max(0, bytes - room);
+      const keepTail = (shown: string) => {
+        if (e.bang?.id === id) e.bang.tail = (e.bang.tail + shown).slice(-PROMPT_TAIL_CHARS);
+      };
+      keepTail(head);
       registry.broadcast(e, { type: "bang_output", data: head, id });
       if (wireSent >= BANG_OUTPUT_CAP_BYTES) {
-        registry.broadcast(e, {
-          type: "bang_output",
-          data: `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`,
-          id,
-        });
+        const marker = `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`;
+        keepTail(marker); // the marker is the last line shown, so it is the tail too
+        registry.broadcast(e, { type: "bang_output", data: marker, id });
       }
     } else {
       wireElided += bytes;
@@ -243,8 +248,10 @@ const startBang = (
     );
     e.bang = {
       id,
+      command,
       proc,
       silent,
+      tail: "",
       cancel: () => {
         handoffToAgent = false;
         proc.kill();

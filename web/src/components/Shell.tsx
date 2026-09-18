@@ -171,18 +171,31 @@ export function Shell() {
 
   // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
-    // The bang THIS viewport issued, if still running — only the issuer gets
-    // the stdin affordance (a sudo prompt must never fan out to a second tab
-    // or, later, a phone via the relay). Lost on refresh: Tier 1.
+    // The running bang this viewport controls: the one it issued, or the one
+    // the daemon reported at attach (a cockpit switch back, a reload, a
+    // second tab). A live bang_start from ANOTHER viewport is not claimed —
+    // its stdin stays with the tab that typed the command — but a viewport
+    // arriving mid-command must be able to drive or stop it, or the session
+    // is stuck with a terminal nobody can reach and no way to start a new one.
     my: { id: string; command: string } | null;
-    // Tail of the running command's output — drives the password-prompt
-    // detection that masks the stdin field. One bang per session, so untagged.
+    // Tail of the latest command's output, tagged with its id — drives the
+    // password-prompt detection that masks the stdin field. Tracked for
+    // every command seen (a viewport may adopt one it was only watching), but
+    // applied to the bar only when it belongs to the controlled command.
     tail: string;
-  }>({ my: null, tail: "" });
-  // A bang_start is broadcast to every viewport, so only ids minted by this
-  // viewport may claim its stdin/kill controls. Keep each id until the daemon
-  // either accepts it with bang_start or rejects it with a private bang_end.
+    tailId: string | null;
+  }>({ my: null, tail: "", tailId: null });
+  // A LIVE bang_start is broadcast to every viewport; only ids minted by this
+  // viewport claim it (the tab that typed `!sudo …` keeps the password
+  // field — another open tab watching does not get one). A viewport that
+  // ATTACHES while a command runs claims it from session_created instead.
+  // Keep each id until the daemon either accepts it with bang_start or
+  // rejects it with a private bang_end.
   const ownBangRequests = useRef(new Set<string>());
+  // Whether this daemon reports the running `!` at attach (session_created
+  // .bang present, even as null). Against an older daemon that does not, a
+  // replayed start of our own request is the only way to get the bar back.
+  const bangSnapshotKnown = useRef(false);
 
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
@@ -344,6 +357,45 @@ export function Shell() {
             capabilities: m.capabilities,
           });
           setDetailsMode(loadDetailsMode(m.sessionId));
+          // The daemon's word on a still-running `!`. Claim its controls when
+          // it is news (a cockpit switch back, a reload, a second tab — the
+          // replayed bang_output frames refill the prompt-detection tail);
+          // keep them untouched when a resumed reconnect names the command
+          // already held (a reset tail would unmask a password field mid-
+          // typing); drop a stale bar when the daemon reports nothing running
+          // (a restart killed the PTY, or a refusal was lost with the socket).
+          // An older daemon says nothing at all (field absent): leave the bar
+          // as it is — it may well still be running that command.
+          const running = m.bang;
+          bangSnapshotKnown.current = running !== undefined;
+          if (running !== undefined) {
+            setBang((b) =>
+              running
+                ? b.my?.id === running.id
+                  ? // Already controlled: keep it, but a tail the daemon sends
+                    // is newer than ours (output shown while the socket was
+                    // down may be gone from the replayable history).
+                    running.tail !== undefined
+                    ? { ...b, tail: running.tail, tailId: running.id }
+                    : b
+                  : {
+                      my: { id: running.id, command: running.command },
+                      // The daemon's tail is what the command has shown so far,
+                      // whether or not history still holds it; this page's own
+                      // tail for that id, if any, is the same stream.
+                      tail: running.tail ?? (b.tailId === running.id ? b.tail : ""),
+                      tailId: running.id,
+                    }
+                : b.my
+                  ? { ...b, my: null }
+                  : b,
+            );
+          } else if (ledgerSession.current !== m.sessionId) {
+            // An older daemon says nothing about `!`, but a DIFFERENT session
+            // (a fallback after the old one ended elsewhere) cannot be running
+            // the command this page controlled.
+            setBang({ my: null, tail: "", tailId: null });
+          }
           // Task and plan ids are session-scoped: a DIFFERENT session starts
           // a fresh ledger (round 2); a resume of the same one keeps it.
           if (ledgerSession.current !== m.sessionId) {
@@ -389,13 +441,21 @@ export function Shell() {
           // render in the output zone (the turn reducer brought busy down).
           setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
-          const mine = ownBangRequests.current.delete(m.id);
-          setBang((b) =>
-            mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
-          );
+          // A start already held (claimed from session_created, or armed on
+          // send) keeps its state — a resumed reconnect replays it, and a
+          // reset tail would unmask a password field. A REPLAYED start never
+          // claims: the attach acknowledgement already said what is running,
+          // and a request that left with a dropped socket may be replayed
+          // finished while another viewport's later command is the live one.
+          // Against a daemon that gave no snapshot, the replayed start is all
+          // there is, so it still claims.
+          const mine = ownBangRequests.current.delete(m.id) && (!m.replay || !bangSnapshotKnown.current);
+          setBang((b) => (b.my?.id === m.id ? b : mine ? { ...b, my: { id: m.id, command: m.command } } : b));
         } else if (m.type === "bang_output") {
-          // Only the tail matters (prompt detection) — keep it tiny.
-          setBang((b) => ({ ...b, tail: (b.tail + m.data).slice(-400) }));
+          // Only the tail matters (prompt detection) — keep it tiny, and
+          // per command: a new id starts a fresh tail, so an earlier command's
+          // replayed "Password:" can never mask the bar of a later one.
+          setBang((b) => ({ ...b, tailId: m.id, tail: ((b.tailId === m.id ? b.tail : "") + m.data).slice(-400) }));
         } else if (m.type === "bang_end") {
           ownBangRequests.current.delete(m.id);
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
@@ -507,9 +567,7 @@ export function Shell() {
       ownBangRequests.current.add(id);
       // The daemon may reject this request because the previous PTY is still
       // running. Keep that PTY's stdin/kill controls until its own bang_end.
-      setBang((current) =>
-        current.my ? current : { my: { id, command }, tail: "" },
-      );
+      setBang((current) => (current.my ? current : { ...current, my: { id, command } }));
     } else {
       bus.sendPrompt(text);
     }
@@ -635,9 +693,12 @@ export function Shell() {
             <ActivityLine busy={busy} label={activityLabel(activity)} note={taskNote} />
             <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
+              // Keyed by command: adopting a different running command must
+              // not inherit the previous bar's typed input or mask override.
               <BangBar
+                key={bang.my.id}
                 command={bang.my.command}
-                tail={bang.tail}
+                tail={bang.tailId === bang.my.id ? bang.tail : ""}
                 onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
                 onKill={() => bus.killBang(bang.my!.id)}
               />

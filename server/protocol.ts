@@ -364,6 +364,20 @@ export type ViewportMsgBody =
       // implying silence means nothing happened. Absent = unknown (older
       // daemon): the shell makes no capability claim either way.
       capabilities?: AgentCapabilities;
+      // Optional/additive: the `!` command still running in this session at
+      // attach time, so a viewport that arrives mid-command (a cockpit
+      // switch back, a reload, a second tab) gets its stdin/stop controls
+      // instead of a terminal it can neither drive nor replace. The replayed
+      // bang_start carries the same facts unless history evicted it; this is
+      // the authoritative copy. `null` = this daemon reports nothing running;
+      // ABSENT = an older daemon that does not report at all (the hosted app
+      // can be newer than the daemon it reaches over the relay), so a client
+      // must not read absence as "nothing running".
+      // `tail`: the last few hundred characters the command has shown (the
+      // same head-capped stream every viewport receives), so a bar adopted
+      // after that output left the bounded history still masks a waiting
+      // password prompt.
+      bang?: { id: string; command: string; silent?: true; tail?: string } | null;
     }
   // Per-viewport boundary after attach history, including an empty replay.
   // Never sequenced or retained: it describes delivery, not session content.

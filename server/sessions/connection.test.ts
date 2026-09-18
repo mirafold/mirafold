@@ -213,3 +213,39 @@ test("DA.4C: the invalid-token state uses a new local field that the previous cl
   assert.equal(Object.hasOwn(remoteHello, "relayOff"), false);
   assert.equal(Object.hasOwn(remoteHello, "relayConfigProblem"), false);
 });
+
+test("attach reports the `!` command still running so a returning viewport can drive or stop it", (t) => {
+  const reg = new SessionRegistry({
+    backend: { agent: "claude-code", kind: "none", live: false },
+    deltaCoalesceMs: 0,
+  });
+  const entry = reg.create({ cwd: mkdtempSync(join(tmpdir(), "mirafold-bang-reclaim-")) });
+  const seen: WireMsg[] = [];
+  const conn = openConnection(reg, (message) => seen.push(message));
+  t.after(() => { conn.close(); reg.end(entry.id); });
+  const created = () => {
+    const m = seen.find((msg) => msg.type === "session_created");
+    if (m?.type !== "session_created") throw new Error("missing identity");
+    return m;
+  };
+
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  assert.equal(created().bang, null, "nothing running is said explicitly: absence means an older daemon");
+
+  // A running PTY, as bang-handlers.ts records it (no real process needed).
+  const proc = { write() {}, kill() {} };
+  entry.bang = { id: "b-1", command: "npm test", proc, silent: false, tail: "", cancel() {} };
+  seen.length = 0;
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  assert.deepEqual(created().bang, { id: "b-1", command: "npm test" }, "no tail yet: no tail field");
+
+  entry.bang = { id: "b-2", command: "sudo ls", proc, silent: true, tail: "[sudo] password for kyle: ", cancel() {} };
+  seen.length = 0;
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  assert.deepEqual(created().bang, { id: "b-2", command: "sudo ls", silent: true, tail: "[sudo] password for kyle: " });
+
+  entry.bang = undefined;
+  seen.length = 0;
+  conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
+  assert.equal(created().bang, null, "the command never lingers past its end");
+});

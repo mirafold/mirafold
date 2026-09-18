@@ -218,6 +218,14 @@ export function openConnection(
       capabilities: agentCapabilities(e.agent),
       replayPending: true,
       ...(resumed ? { resumed: true } : {}),
+      bang: e.bang
+        ? {
+            id: e.bang.id,
+            command: e.bang.command,
+            ...(e.bang.silent ? { silent: true as const } : {}),
+            ...(e.bang.tail ? { tail: e.bang.tail } : {}),
+          }
+        : null,
       ...(e.live ? {} : { demo: true }),
       // The caller asked for a session that no longer exists and got a
       // fresh one — the shell shows a notice instead of a silent swap.

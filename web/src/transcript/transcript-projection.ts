@@ -517,11 +517,18 @@ export const EVICTED_HISTORY_NOTICE =
   "Earlier history is no longer retained — the daemon keeps a bounded replay, and this session's oldest messages have fallen off it.";
 export const ORPHAN_CALL_NAME = "(earlier call)";
 export const ORPHAN_CALL_DETAIL = "its start was not retained";
+/** A `!` command whose start fell out of the bounded history while it was
+ *  still running: its output must still land somewhere a reader can see. */
+export const ORPHAN_BANG_COMMAND = "(earlier command — its start was not retained)";
 
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
   let tasks = new Map<string, TaskLifecycle>();
   let orphans = new Map<string, PendingOrphan>();
+  // The `!` command the daemon reported running at attach (session_created
+  // .bang): the authoritative command and silent flag for a row whose start
+  // the bounded history no longer holds.
+  let attachBang: { id: string; command: string; silent?: true; tail?: string } | null = null;
   // Bounded like every other per-session ledger: a hostile stream minting
   // results for unknown ids must not grow memory without limit.
   const MAX_PENDING_ORPHANS = 500;
@@ -1170,6 +1177,27 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "bang_output": {
+        // Output for a command whose start was evicted gets an orphan row,
+        // like a tool call's — a viewport attaching mid-command (it holds
+        // the controls from session_created.bang) must see what it drives.
+        if (!entries.some((entry) => entry.kind === "bang" && entry.bangId === msg.id)) {
+          streamingId = null;
+          const known = attachBang?.id === msg.id ? attachBang : undefined;
+          // Its start is older than everything retained: top, with the
+          // other orphaned openings, never after traffic that followed it.
+          entries = [
+            {
+              kind: "bang",
+              id: nextTranscriptId++,
+              bangId: msg.id,
+              command: known?.command ?? ORPHAN_BANG_COMMAND,
+              output: "",
+              done: false,
+              ...(known?.silent ? { silent: true as const } : {}),
+            },
+            ...entries,
+          ];
+        }
         entries = entries.map((entry) =>
           entry.kind === "bang" && entry.bangId === msg.id
             ? { ...entry, output: entry.output + msg.data }
@@ -1204,6 +1232,20 @@ export function createTranscriptProjection(): TranscriptProjection {
         // their explicit rows now, and evicted older history is said once,
         // at the top, in the shell's own voice.
         let touched = materializeOrphans(readNow, false);
+        // A `!` the daemon reported running whose start (and any output) the
+        // history no longer holds still gets its row, so its end has a place
+        // to land instead of the command vanishing when its bar closes.
+        // It began before everything retained, so it sits at the top with
+        // the other orphaned openings, never after newer traffic.
+        // Nothing of its output was retained either, so the snapshot's tail
+        // — the last of what the command showed — is the row's output.
+        if (attachBang && !entries.some((entry) => entry.kind === "bang" && entry.bangId === attachBang!.id)) {
+          entries = [
+            { kind: "bang", id: nextTranscriptId++, bangId: attachBang.id, command: attachBang.command, output: attachBang.tail ?? "", done: false, ...(attachBang.silent ? { silent: true as const } : {}) },
+            ...entries,
+          ];
+          touched = true;
+        }
         if (msg.evicted && !entries.some((entry) => entry.kind === "notice" && entry.text === EVICTED_HISTORY_NOTICE)) {
           entries = [{ kind: "notice", id: nextTranscriptId++, text: EVICTED_HISTORY_NOTICE, noticeKind: "info" }, ...entries];
           touched = true;
@@ -1215,11 +1257,13 @@ export function createTranscriptProjection(): TranscriptProjection {
       // not create output-zone rows. Listing every arm keeps additions to the
       // wire union reviewable at compile time; a runtime-unknown arm still
       // reaches the inert default below for version-skew compatibility.
+      case "session_created":
+        attachBang = msg.bang ?? null;
+        return false;
       case "prompt_options":
       case "status":
       case "permission_request":
       case "permission_resolved":
-      case "session_created":
       case "shell_cwd":
       case "agents":
       case "folder_picked":

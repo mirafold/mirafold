@@ -4221,6 +4221,153 @@ stays unproven; the fix removes a measured bottleneck.
   PR into `next` is Kyle's to merge. No version bump, tag, publish, or
   daemon restart was part of this work.
 
+## Returning to a session mid-`!` (2026-09-18; Kyle-reported, diagnosed by reading the code; branch `fix/bang-reclaim` → `next`)
+
+Kyle: with an interactive `!` terminal open, switching to another session
+from the cockpit panel and coming back shows no terminal, and a new `!` is
+refused "because behind the scenes it's still open". Cause, from the code:
+the daemon keeps the PTY on the session entry (a session outlives its
+viewports, by design), but the browser showed the stdin/stop bar only for
+a command id it minted itself in this page lifetime, and a cockpit switch
+is a plain link — a full page load. The returning tab could neither drive
+nor stop the running command, and the one-PTY guard (correctly) refused a
+second. Reload and a second tab hit the same wall (the code's own comment
+said "Lost on refresh"). The Esc/Stop keys key off the model turn, which a
+bare `!` is not, so only the cockpit's Stop could end it.
+
+Kyle's first idea was to kill the PTY whenever the user leaves the session.
+Declined on the merits: detach also fires on a socket blip, a phone
+disconnect, or a second tab closing, so a Wi-Fi hiccup would abort a
+running build, and a killed non-silent `!` hands its partial transcript
+to the agent as a fresh turn the user never asked for. The session-outlives-
+viewports promise is the product; the returning tab should reclaim instead.
+
+- [x] **Fix:** `session_created` gains an additive `bang` field (id,
+  command, silent) filled from the still-running PTY at attach; `entry.bang`
+  now records the command; the shell claims the bar from that field. The
+  issuer-only rule was a browser convention, never enforced server-side (any
+  attached viewport with the id could already drive or kill it), and the
+  relay gate on `bang_input` for non-silent commands is untouched, so a
+  remote viewport gains nothing it could not do before. The "already
+  running" refusal already renders in the transcript, so no message change
+  was needed (the diagnosis had guessed otherwise). Tests: connection unit
+  (field present/absent/silent), browser reload mid-command (bar returns,
+  stdin reaches the process, stop ends it, a new `!` runs), browser cockpit
+  switch away and back mid-command (same). Both browser cases fail without
+  the shell change (verified by stashing it: 0/2), pass with it.
+- [x] **Cold review (fresh agent, read-only):** no race between the ack
+  and the replay (both are built in one synchronous attach; the PTY exit
+  clears the entry before its bang_end is broadcast), no new capability for
+  a remote viewport, no new exposure of the command string (bang_start
+  already carried it), the field is additive. Two real gaps in the shell's
+  claim, both fixed: a resumed reconnect that names the command already
+  held now leaves the bar untouched (resetting its tail would have flipped
+  a masked password field to clear text mid-typing); an ack that reports no
+  running command now clears a stale bar (a daemon restart that killed the
+  PTY, or a refusal lost with the socket, used to leave dead controls with
+  no way to start a new `!`). Stale "issuer-only" comments in Shell and
+  BangBar rewritten to the actual rule: a live bang_start from another tab
+  is not claimed; a viewport that attaches mid-command is. Kept: that rule
+  means a second tab gets the field only if it (re)attaches after the
+  start — a deliberate product reading, not a bug. The cockpit test's "no
+  bar on the other session" check now waits for the attach first.
+- [x] **Gates on the final tree:** `yarn typecheck` clean; `yarn test`
+  1442/1442; `yarn test:server` 198/198; `yarn test:e2e` 163/164 — the one
+  failure is `transcript-fidelity.e2e.ts` "TF5.1 noisy process", a
+  PRE-EXISTING intermittent case: run alone three times it passed 1/3 on
+  this branch and 1/3 on the unmodified `next` @ fbf0e61 (same build
+  procedure, no code changed between runs), while it passed in the full
+  Tier-3 run and in CI earlier the same day. Unrelated to this fix (it
+  exercises tool-output snapshots, not `!`); left untouched and noted here
+  as owed: characterize the 70 ms snapshot cadence vs the 10 s wait.
+- [x] **PR #129 Codex review, two findings, both legitimate and fixed:**
+  (P1) the hosted app can be newer than the daemon it reaches over the
+  relay, and such a daemon never sends the field — reading absence as
+  "nothing running" would have stripped a phone's controls for its own
+  command after a reconnect. The field is now tri-state: an object (running),
+  `null` (this daemon reports nothing running), absent (older daemon: leave
+  the bar alone). (P2) `BangBar` is unkeyed, so adopting a different
+  command id after a reconnect would have inherited the previous bar's
+  typed input and mask override; it is now keyed by the command id. Unit
+  test updated to the explicit `null`; both browser cases re-run green.
+- [x] **CI flake in the new reload case, diagnosed and fixed in the test:**
+  it failed once in CI and 3 of ~43 local runs, always on the final "a new
+  `!` is accepted" step. Captured on a failing run: the transcript held
+  "! commands are arriving too fast — wait a moment" — the daemon's burst
+  throttle (`BANG_MIN_INTERVAL_MS`, 400 ms since the last accepted start).
+  Measured: the whole sequence from the first `!!` through reload, reclaim,
+  stdin, and kill takes 376–546 ms on this machine, straddling the window,
+  so the second command was refused on the fast tail. Product behavior is
+  correct; the test now waits out the window before the second command
+  (both browser cases). Reload case 10/10 alone after, cockpit case 3/3.
+  The same local Tier-3 run also hit the documented recurrent CR.2 phone
+  file-review timeout once (`diff-panel.e2e.ts:751`, characterized as
+  active Changes-suite debt earlier in this plan), unrelated to this fix.
+- [x] **Codex round 3, two P2s, both legitimate and fixed:** (a) a request
+  that left with a dropped socket could be replayed as an already-finished
+  start after the ack had adopted another viewport's live command, and the
+  replayed start — still in `ownBangRequests` — stole the bar, whose end
+  then cleared it, leaving no controls for the running command. A replayed
+  `bang_start` no longer claims (the ack is authoritative), and a start for
+  the id already held keeps its state (no tail reset on a resumed replay).
+  (b) When a running command's start had fallen out of the bounded replay
+  ring, the returning viewport got the bar but no transcript row, and the
+  projection dropped its output. `bang_output` for an unknown id now opens
+  an orphan row ("(earlier command — its start was not retained)"), the
+  same convention as an evicted tool call; unit-tested in the projection.
+- [x] **Codex round 4, three P2s, all legitimate and fixed:** (a) the
+  orphan row discarded the command and silent flag the attach snapshot had
+  already supplied, so a `!!` could render as `!` (implying a transcript to
+  the agent); the projection now remembers `session_created.bang` and seeds
+  the row from it, placeholder only for a command the snapshot did not
+  name. (b) The bar's prompt-detection tail appended EVERY command's
+  output, so an earlier command's replayed "Password:" could mask and
+  focus the adopted command's bar; the tail now follows only the controlled
+  id. (c) Against an older daemon that gives no snapshot, a replayed start
+  of our own request is the only way back to the bar, so the replay-claim
+  suppression applies only when the attach did report (field present, even
+  as null). Projection suite 48/48 with the seeded case.
+- [x] **Codex round 5, three P2s, all legitimate and fixed:** (a) a viewport
+  that had only WATCHED another tab's interactive command kept no tail for
+  it, so adopting it after a resumed reconnect showed an unmasked, unfocused
+  password field; the tail is now tracked per command id for every command
+  seen and applied to the bar only when it belongs to the controlled one
+  (which also subsumes round 4b). (b) A running command whose start and
+  output were both evicted had no row for its end to land on; the
+  projection now materializes the snapshot's row at `replay_complete` when
+  none exists. (c) Against an older daemon that reports nothing, a reconnect
+  that fell back to a DIFFERENT session left the old bar mounted; a session
+  change now clears it. Projection suite 49/49.
+- [x] **Codex round 6, two P2s, both legitimate and fixed:** (a) a bar
+  adopted after the command's own output had left the bounded history had
+  no tail to mask a waiting password prompt; the daemon now keeps the last
+  400 characters it actually broadcast for the running command and sends
+  them in the attach snapshot (`bang.tail`, additive; the same head-capped
+  stream every viewport already receives — no new exposure), and the shell
+  seeds the bar's tail from it. (b) The snapshot-only row was appended after
+  newer retained history although the command began before all of it; it
+  now sits at the top with the other orphaned openings.
+- [x] **Codex round 7, two P2s, both legitimate and fixed:** (a) for a
+  command already controlled, the shell kept its own tail even when the
+  snapshot carried a newer one (output shown while the socket was down can
+  be gone from replayable history); a supplied tail now replaces it. (b)
+  The output-cap marker was broadcast but not appended to the saved tail,
+  so a snapshot could report a truncated "Password:" as the last line when
+  the marker was; every broadcast frame now feeds the tail.
+- [x] **Codex round 8, one P2, legitimate and fixed:** the row created from
+  retained output of an evicted start was appended after newer traffic
+  while the snapshot-only row was prepended; both now sit at the top with
+  the other orphaned openings (ordering asserted in the unit test).
+- [x] **Codex round 9, one P2, legitimate and fixed:** the snapshot-only
+  row started with empty output although the snapshot's tail is exactly
+  the last of what the command showed; the row now starts from that tail
+  (a waiting password prompt is visible, not only masking the bar).
+- [x] **Final state (2026-09-18, head 1d37ce7 + this note):** Codex round
+  10 completed with no findings. Gates on that head: `yarn typecheck`
+  clean; `yarn test` 1445/1445; `yarn test:server` 198/198; `yarn test:e2e`
+  164/164 (the two earlier intermittent cases passed this run); CI green
+  on all four checks. PR #129 open into `next`, merge is Kyle's call.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

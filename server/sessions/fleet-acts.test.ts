@@ -82,7 +82,9 @@ test("BUGHUNT: whole-session interrupt cancels PTY work as well as the model", (
   const installBang = () => {
     e.bang = {
       id: "b1",
+      command: "sleep 60",
       silent: false,
+      tail: "",
       proc: { write() {}, kill() {} },
       cancel: () => {
         bangCancels++;
