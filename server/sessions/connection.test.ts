@@ -234,15 +234,15 @@ test("attach reports the `!` command still running so a returning viewport can d
 
   // A running PTY, as bang-handlers.ts records it (no real process needed).
   const proc = { write() {}, kill() {} };
-  entry.bang = { id: "b-1", command: "npm test", proc, silent: false, cancel() {} };
+  entry.bang = { id: "b-1", command: "npm test", proc, silent: false, tail: "", cancel() {} };
   seen.length = 0;
   conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
-  assert.deepEqual(created().bang, { id: "b-1", command: "npm test" });
+  assert.deepEqual(created().bang, { id: "b-1", command: "npm test" }, "no tail yet: no tail field");
 
-  entry.bang = { id: "b-2", command: "tail -f log", proc, silent: true, cancel() {} };
+  entry.bang = { id: "b-2", command: "sudo ls", proc, silent: true, tail: "[sudo] password for kyle: ", cancel() {} };
   seen.length = 0;
   conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
-  assert.deepEqual(created().bang, { id: "b-2", command: "tail -f log", silent: true });
+  assert.deepEqual(created().bang, { id: "b-2", command: "sudo ls", silent: true, tail: "[sudo] password for kyle: " });
 
   entry.bang = undefined;
   seen.length = 0;

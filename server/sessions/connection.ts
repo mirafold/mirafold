@@ -219,7 +219,12 @@ export function openConnection(
       replayPending: true,
       ...(resumed ? { resumed: true } : {}),
       bang: e.bang
-        ? { id: e.bang.id, command: e.bang.command, ...(e.bang.silent ? { silent: true as const } : {}) }
+        ? {
+            id: e.bang.id,
+            command: e.bang.command,
+            ...(e.bang.silent ? { silent: true as const } : {}),
+            ...(e.bang.tail ? { tail: e.bang.tail } : {}),
+          }
         : null,
       ...(e.live ? {} : { demo: true }),
       // The caller asked for a session that no longer exists and got a

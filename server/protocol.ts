@@ -373,7 +373,11 @@ export type ViewportMsgBody =
       // ABSENT = an older daemon that does not report at all (the hosted app
       // can be newer than the daemon it reaches over the relay), so a client
       // must not read absence as "nothing running".
-      bang?: { id: string; command: string; silent?: true } | null;
+      // `tail`: the last few hundred characters the command has shown (the
+      // same head-capped stream every viewport receives), so a bar adopted
+      // after that output left the bounded history still masks a waiting
+      // password prompt.
+      bang?: { id: string; command: string; silent?: true; tail?: string } | null;
     }
   // Per-viewport boundary after attach history, including an empty replay.
   // Never sequenced or retained: it describes delivery, not session content.

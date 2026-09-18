@@ -1233,10 +1233,12 @@ export function createTranscriptProjection(): TranscriptProjection {
         // A `!` the daemon reported running whose start (and any output) the
         // history no longer holds still gets its row, so its end has a place
         // to land instead of the command vanishing when its bar closes.
+        // It began before everything retained, so it sits at the top with
+        // the other orphaned openings, never after newer traffic.
         if (attachBang && !entries.some((entry) => entry.kind === "bang" && entry.bangId === attachBang!.id)) {
           entries = [
-            ...entries,
             { kind: "bang", id: nextTranscriptId++, bangId: attachBang.id, command: attachBang.command, output: "", done: false, ...(attachBang.silent ? { silent: true as const } : {}) },
+            ...entries,
           ];
           touched = true;
         }

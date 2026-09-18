@@ -1194,6 +1194,8 @@ test("a running `!` known only from the attach snapshot gets its row at replay_c
     { type: "replay_complete", evicted: true },
   );
   assert.deepEqual(rowsOf(quiet, "bang").map((r) => [r.bangId, r.command, r.done]), [["b-quiet", "sleep 600", false]]);
+  // It began before everything retained: top of history, after the notice.
+  assert.deepEqual(rowKinds(quiet), ["notice", "bang", "text"]);
   const ended = apply(projection, { type: "bang_end", id: "b-quiet", exitCode: null });
   assert.deepEqual(rowsOf(ended, "bang").map((r) => [r.done, r.exitCode]), [[true, null]]);
   // With the start retained, replay_complete adds nothing.

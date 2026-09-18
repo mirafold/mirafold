@@ -373,7 +373,14 @@ export function Shell() {
               running
                 ? b.my?.id === running.id
                   ? b
-                  : { ...b, my: { id: running.id, command: running.command } }
+                  : {
+                      my: { id: running.id, command: running.command },
+                      // The daemon's tail is what the command has shown so far,
+                      // whether or not history still holds it; this page's own
+                      // tail for that id, if any, is the same stream.
+                      tail: running.tail ?? (b.tailId === running.id ? b.tail : ""),
+                      tailId: running.id,
+                    }
                 : b.my
                   ? { ...b, my: null }
                   : b,
