@@ -528,7 +528,7 @@ export function createTranscriptProjection(): TranscriptProjection {
   // The `!` command the daemon reported running at attach (session_created
   // .bang): the authoritative command and silent flag for a row whose start
   // the bounded history no longer holds.
-  let attachBang: { id: string; command: string; silent?: true } | null = null;
+  let attachBang: { id: string; command: string; silent?: true; tail?: string } | null = null;
   // Bounded like every other per-session ledger: a hostile stream minting
   // results for unknown ids must not grow memory without limit.
   const MAX_PENDING_ORPHANS = 500;
@@ -1237,9 +1237,11 @@ export function createTranscriptProjection(): TranscriptProjection {
         // to land instead of the command vanishing when its bar closes.
         // It began before everything retained, so it sits at the top with
         // the other orphaned openings, never after newer traffic.
+        // Nothing of its output was retained either, so the snapshot's tail
+        // — the last of what the command showed — is the row's output.
         if (attachBang && !entries.some((entry) => entry.kind === "bang" && entry.bangId === attachBang!.id)) {
           entries = [
-            { kind: "bang", id: nextTranscriptId++, bangId: attachBang.id, command: attachBang.command, output: "", done: false, ...(attachBang.silent ? { silent: true as const } : {}) },
+            { kind: "bang", id: nextTranscriptId++, bangId: attachBang.id, command: attachBang.command, output: attachBang.tail ?? "", done: false, ...(attachBang.silent ? { silent: true as const } : {}) },
             ...entries,
           ];
           touched = true;

@@ -1191,13 +1191,14 @@ test("a running `!` known only from the attach snapshot gets its row at replay_c
   const projection = createTranscriptProjection();
   const quiet = apply(
     projection,
-    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-quiet", command: "sleep 600" } },
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-quiet", command: "sudo make install", tail: "[sudo] password: " } },
     { type: "zone_reset" },
     { type: "text_delta", text: "unrelated history", replay: true },
     { type: "turn_end", replay: true },
     { type: "replay_complete", evicted: true },
   );
-  assert.deepEqual(rowsOf(quiet, "bang").map((r) => [r.bangId, r.command, r.done]), [["b-quiet", "sleep 600", false]]);
+  // The snapshot's tail is the last of what the command showed: the row's output.
+  assert.deepEqual(rowsOf(quiet, "bang").map((r) => [r.bangId, r.command, r.output, r.done]), [["b-quiet", "sudo make install", "[sudo] password: ", false]]);
   // It began before everything retained: top of history, after the notice.
   assert.deepEqual(rowKinds(quiet), ["notice", "bang", "text"]);
   const ended = apply(projection, { type: "bang_end", id: "b-quiet", exitCode: null });
