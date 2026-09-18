@@ -63,9 +63,19 @@ export const SCRUBBED_CREDENTIAL_ENV = {
 /**
  * Start `server/index.ts` with the credential scrub above applied.
  * MIRAFOLD_TOKEN defaults to disabled; auth tests pass their own.
+ * `built: true` starts the packaged daemon (`dist-server/index.js`, which
+ * serves the built web bundle) instead of the TypeScript source — the
+ * artifact npm users run, under the same isolation; Tier 3 only, after
+ * `yarn build`.
  */
-export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
-  const child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
+export function startDaemon(
+  env: Record<string, string> = {},
+  options: { built?: boolean } = {},
+): Promise<Daemon> {
+  const entry = options.built
+    ? [path.join(ROOT, "dist-server", "index.js")]
+    : ["--import", "tsx", "server/index.ts"];
+  const child = spawn(process.execPath, entry, {
     cwd: ROOT,
     env: {
       ...process.env,

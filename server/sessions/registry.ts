@@ -210,6 +210,11 @@ export type SessionEntry = SessionActivityState & {
   // When the session was created — the cockpit's stable sort key.
   createdAt: number;
   checkpointTimer?: NodeJS.Timeout;
+  // The interior-stream save currently preparing for THIS entry (CPERF), and
+  // whether stream state has moved since the last save was captured — the
+  // whole coalescing state: never a queue of snapshots.
+  routineSave?: Promise<void>;
+  checkpointDirty?: boolean;
 };
 
 // Every field the stream-state reducer owns, adopted onto the entry as one
@@ -473,7 +478,9 @@ export class SessionRegistry {
   }
 
   /** Synchronous at user/terminal boundaries; high-volume interior stream
-   * frames share a short debounce and are caught by the terminal boundary. */
+   * frames share a short debounce and are caught by the terminal boundary.
+   * A successful save covers state up to its own snapshot and cancels the
+   * debounce; the store invalidates any routine save still preparing. */
   private checkpoint(entry: SessionEntry): StoredSession | undefined {
     if (!this.store) return undefined;
     clearTimeout(entry.checkpointTimer);
@@ -481,9 +488,14 @@ export class SessionRegistry {
     const stored = this.snapshot(entry);
     try {
       this.store.write(stored);
+      entry.checkpointDirty = false;
       this.restoreErrors.delete(entry.id);
       return stored;
     } catch (err) {
+      // Nothing since the last durable save is on disk, and the write just
+      // superseded any routine save in flight: the state stays eligible for
+      // the next routine attempt.
+      entry.checkpointDirty = true;
       createLogger(`session ${entry.id}`).error(
         `could not checkpoint session: ${errText(err)}`,
       );
@@ -505,12 +517,60 @@ export class SessionRegistry {
       this.checkpoint(entry);
       return;
     }
+    this.armRoutineCheckpoint(entry);
+  }
+
+  private armRoutineCheckpoint(entry: SessionEntry) {
     if (entry.checkpointTimer) return;
     entry.checkpointTimer = setTimeout(() => {
       entry.checkpointTimer = undefined;
-      this.checkpoint(entry);
+      this.routineCheckpoint(entry);
     }, 250);
     entry.checkpointTimer.unref();
+  }
+
+  /**
+   * The debounced interior-stream save (CPERF): serialization stays on the
+   * loop, the disk write and file sync do not. One save per entry at a time;
+   * a request while one is preparing only marks newer state dirty. When a
+   * save settles committed or superseded and state is dirty, one further
+   * attempt is scheduled through the same timer — so a boundary that cancels
+   * old work and is followed by one more message before that work settles
+   * still gets that message saved without waiting for another. A failed
+   * attempt logs once and leaves the state eligible for the next stream
+   * event or boundary; it never retries on its own.
+   */
+  private routineCheckpoint(entry: SessionEntry) {
+    if (!this.store || this.entries.get(entry.id) !== entry) return;
+    if (entry.routineSave) {
+      entry.checkpointDirty = true;
+      return;
+    }
+    entry.checkpointDirty = false;
+    const settle = (reschedule: boolean) => {
+      // Identity-checked: only this attempt's own bookkeeping, and only for
+      // the entry that is still live — an unloaded-and-reopened session is
+      // a new entry this callback must never touch.
+      if (entry.routineSave !== save) return;
+      entry.routineSave = undefined;
+      if (this.entries.get(entry.id) !== entry) return;
+      if (reschedule && entry.checkpointDirty) this.armRoutineCheckpoint(entry);
+    };
+    const save: Promise<void> = this.store.writeRoutine(this.snapshot(entry)).then(
+      (outcome) => {
+        if (outcome === "committed") this.restoreErrors.delete(entry.id);
+        // `busy`: an older attempt for this id (a previous incarnation) has
+        // not settled; nothing was serialized, so the state is still dirty.
+        if (outcome === "busy") entry.checkpointDirty = true;
+        settle(true);
+      },
+      (err: unknown) => {
+        entry.checkpointDirty = true;
+        createLogger(`session ${entry.id}`).error(`could not checkpoint session: ${errText(err)}`);
+        settle(false);
+      },
+    );
+    entry.routineSave = save;
   }
 
   /**
@@ -800,7 +860,14 @@ export class SessionRegistry {
     // Delete the durable copy BEFORE dropping the live engine. If disk
     // refuses the explicit delete, the session remains usable and the caller
     // gets an error instead of being told it ended while it can reappear.
-    this.store?.delete(id);
+    try {
+      this.store?.delete(id);
+    } catch (err) {
+      // The attempt superseded any routine save in flight; the still-live
+      // state must stay eligible for the next one.
+      entry.checkpointDirty = true;
+      throw err;
+    }
     clearTimeout(entry.idleTimer);
     entry.fsWatch?.stop();
     entry.fsWatch = undefined;

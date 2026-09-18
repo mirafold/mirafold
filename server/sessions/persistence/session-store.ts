@@ -12,6 +12,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { chmod, mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -40,6 +41,8 @@ const MAX_PROMPT_OPTIONS = PROMPT_OPTION_CAP;
 // so the longest legitimate stored form is the cap plus one.
 const CAPPED = (cap: number) => cap + 1;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// The store's own temp-file name: `.<id>.<pid>.<uuid>.tmp` (see tempPath).
+const OWN_TEMP = /^\.[A-Za-z0-9_-]{1,64}\.(\d+)\.[0-9a-f-]{36}\.tmp$/;
 
 export type StoredSession = {
   version: typeof SCHEMA_VERSION;
@@ -575,9 +578,37 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
   };
 }
 
+/** How a routine save ended. `superseded` is an expected cancellation — a
+ *  synchronous save or delete for the same session ran while it was being
+ *  prepared — not a success and not a disk error. `busy` means another
+ *  routine save for the id had not settled yet, so nothing was serialized. */
+export type RoutineSaveOutcome = "committed" | "superseded" | "busy";
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: exists, another user's. Only "no such process" means gone.
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
 /** Owner-only, atomic local checkpoints. No dependency is warranted here:
- * this is one bounded JSON record per session, not a database or a protocol. */
+ * this is one bounded JSON record per session, not a database or a protocol.
+ *
+ * Two save paths share the format and the temp-then-rename commit. `write()`
+ * is synchronous and used at every boundary that carries a recovery contract.
+ * `writeRoutine()` prepares the record's temp file with asynchronous I/O and
+ * commits it only if no synchronous `write()`/`delete()` for that session ran
+ * in the meantime — the generation guard that lets the interior-stream
+ * debounce leave the event loop without an older save ever landing over a
+ * newer one. */
 export class SessionCheckpointStore {
+  // The one routine save in flight per session id, present only while it is
+  // preparing (valid or already superseded) — never a record of every session.
+  private pendingRoutine = new Map<string, { valid: boolean }>();
+
   constructor(
     readonly directory = process.env.MIRAFOLD_SESSION_DIR || path.join(stateDir(), "sessions"),
   ) {}
@@ -593,6 +624,7 @@ export class SessionCheckpointStore {
       log.warn(`could not list saved sessions: ${err instanceof Error ? err.message : String(err)}`);
       return { sessions, errors };
     }
+    this.sweepOrphanedTemps(names);
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
       const id = name.slice(0, -5);
@@ -611,27 +643,64 @@ export class SessionCheckpointStore {
     return { sessions, errors };
   }
 
-  write(session: StoredSession) {
+  /** A routine save's temp file lives for the whole asynchronous
+   *  preparation, so a daemon that dies mid-stream leaves it behind, and
+   *  nothing else would ever remove it. Remove the ones our own naming
+   *  scheme attributes to a process that no longer exists — never another
+   *  live daemon's in-flight save, never a file we did not name. */
+  private sweepOrphanedTemps(names: string[]) {
+    for (const name of names) {
+      const pid = Number(OWN_TEMP.exec(name)?.[1]);
+      if (!pid || pid === process.pid || processAlive(pid)) continue;
+      try {
+        unlinkSync(path.join(this.directory, name));
+        log.info(`removed an incomplete checkpoint left by exited process ${pid}`);
+      } catch {
+        // Already gone, or not ours to remove: recovery ignores it either way.
+      }
+    }
+  }
+
+  private serialize(session: StoredSession): string {
     if (!SESSION_ID.test(session.id)) throw new Error("invalid session id");
     const data = JSON.stringify(session);
     if (Buffer.byteLength(data) > MAX_CHECKPOINT_BYTES) {
       throw new Error("session checkpoint exceeds the 40 MB safety limit");
     }
+    return data;
+  }
+
+  private targetPath(id: string) {
+    return path.join(this.directory, `${id}.json`);
+  }
+
+  private tempPath(id: string) {
+    return path.join(this.directory, `.${id}.${process.pid}.${randomUUID()}.tmp`);
+  }
+
+  /** A routine save still preparing for this id can no longer commit. Called
+   *  by every synchronous mutation before its own work — including work that
+   *  then fails — so a stale record can never land over a boundary save, a
+   *  rename's rollback, or a deletion. */
+  private invalidateRoutine(id: string) {
+    const pending = this.pendingRoutine.get(id);
+    if (pending) pending.valid = false;
+  }
+
+  write(session: StoredSession) {
+    if (!SESSION_ID.test(session.id)) throw new Error("invalid session id");
+    this.invalidateRoutine(session.id);
+    const data = this.serialize(session);
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try {
       chmodSync(this.directory, 0o700);
     } catch {
       // Windows and restrictive filesystems may not implement POSIX modes.
     }
-    const target = path.join(this.directory, `${session.id}.json`);
-    const temp = path.join(this.directory, `.${session.id}.${process.pid}.${randomUUID()}.tmp`);
-    let fd: number | undefined;
+    const target = this.targetPath(session.id);
+    const temp = this.tempPath(session.id);
     try {
-      fd = openSync(temp, "wx", 0o600);
-      writeFileSync(fd, data, "utf8");
-      fsyncSync(fd);
-      closeSync(fd);
-      fd = undefined;
+      this.writeRecordSync(temp, data);
       renameSync(temp, target);
       try {
         chmodSync(target, 0o600);
@@ -639,7 +708,6 @@ export class SessionCheckpointStore {
         // See directory chmod note above.
       }
     } catch (err) {
-      if (fd !== undefined) closeSync(fd);
       try {
         unlinkSync(temp);
       } catch {
@@ -649,10 +717,100 @@ export class SessionCheckpointStore {
     }
   }
 
+  /** The synchronous record write: an exclusive owner-only temp file, the
+   *  whole payload, a file sync, close. Overridable so a test can fail the
+   *  disk stage below the routine-save invalidation. */
+  protected writeRecordSync(temp: string, data: string) {
+    const fd = openSync(temp, "wx", 0o600);
+    try {
+      writeFileSync(fd, data, "utf8");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /**
+   * The interior-stream save: serialize NOW (the snapshot shares the live
+   * ring array, so nothing may be captured across a yield), prepare a
+   * sibling temp file with asynchronous I/O, then commit with the same
+   * synchronous rename `write()` uses — but only if no synchronous save or
+   * delete for this session has run since. The validity check and the
+   * rename share one uninterrupted turn: an asynchronous rename after the
+   * check could still finish after a newer boundary save.
+   *
+   * One routine save per id at a time; a second request while one is
+   * preparing (even one already superseded) returns `busy` before doing any
+   * work, so cancellation can never stack concurrent preparations. Every
+   * outcome releases the temp file, the bookkeeping, and the payload; a
+   * failure propagates to the caller's existing error path. */
+  async writeRoutine(session: StoredSession): Promise<RoutineSaveOutcome> {
+    if (!SESSION_ID.test(session.id)) throw new Error("invalid session id");
+    if (this.pendingRoutine.has(session.id)) return "busy";
+    const data = this.serialize(session);
+    const op = { valid: true };
+    this.pendingRoutine.set(session.id, op);
+    const temp = this.tempPath(session.id);
+    try {
+      await this.prepareRoutineFile(temp, data);
+      const hold = this.routineHold(session.id);
+      if (hold) await hold;
+      if (!op.valid) {
+        // Disk already holds the newer synchronous record; a temp that
+        // cannot be removed is housekeeping, not a failed checkpoint.
+        await rm(temp, { force: true }).catch((err: unknown) =>
+          log.warn(`could not remove a superseded checkpoint temp: ${err instanceof Error ? err.message : String(err)}`),
+        );
+        return "superseded";
+      }
+      renameSync(temp, this.targetPath(session.id));
+      try {
+        chmodSync(this.targetPath(session.id), 0o600);
+      } catch {
+        // See the directory chmod note in write().
+      }
+      return "committed";
+    } catch (err) {
+      await rm(temp, { force: true }).catch(() => undefined);
+      throw err;
+    } finally {
+      // Identity-checked: a later routine save for the same id (after an
+      // unload/reopen) must keep its own bookkeeping.
+      if (this.pendingRoutine.get(session.id) === op) this.pendingRoutine.delete(session.id);
+    }
+  }
+
+  /** Everything before the commit, off the event loop: the directory, an
+   *  exclusive owner-only temp file, the whole payload, a file sync, close.
+   *  Overridable so a test can fail one stage deterministically. */
+  protected async prepareRoutineFile(temp: string, data: string): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    try {
+      await chmod(this.directory, 0o700);
+    } catch {
+      // See the directory chmod note in write().
+    }
+    const handle = await open(temp, "wx", 0o600);
+    try {
+      await handle.writeFile(data, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /** Test seam: a promise here holds a prepared routine save just before
+   *  its validity check, so races with synchronous saves are deterministic.
+   *  Production returns nothing and adds no yield. */
+  protected routineHold(_id: string): Promise<void> | undefined {
+    return undefined;
+  }
+
   delete(id: string) {
     if (!SESSION_ID.test(id)) return;
+    this.invalidateRoutine(id);
     try {
-      unlinkSync(path.join(this.directory, `${id}.json`));
+      unlinkSync(this.targetPath(id));
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") throw err;
