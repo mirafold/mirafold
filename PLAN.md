@@ -4303,6 +4303,18 @@ viewports promise is the product; the returning tab should reclaim instead.
   The same local Tier-3 run also hit the documented recurrent CR.2 phone
   file-review timeout once (`diff-panel.e2e.ts:751`, characterized as
   active Changes-suite debt earlier in this plan), unrelated to this fix.
+- [x] **Codex round 3, two P2s, both legitimate and fixed:** (a) a request
+  that left with a dropped socket could be replayed as an already-finished
+  start after the ack had adopted another viewport's live command, and the
+  replayed start — still in `ownBangRequests` — stole the bar, whose end
+  then cleared it, leaving no controls for the running command. A replayed
+  `bang_start` no longer claims (the ack is authoritative), and a start for
+  the id already held keeps its state (no tail reset on a resumed replay).
+  (b) When a running command's start had fallen out of the bounded replay
+  ring, the returning viewport got the bar but no transcript row, and the
+  projection dropped its output. `bang_output` for an unknown id now opens
+  an orphan row ("(earlier command — its start was not retained)"), the
+  same convention as an evicted tool call; unit-tested in the projection.
 
 ## Post-release ideas (parked — organize after R.7)
 
