@@ -4290,6 +4290,19 @@ viewports promise is the product; the returning tab should reclaim instead.
   command id after a reconnect would have inherited the previous bar's
   typed input and mask override; it is now keyed by the command id. Unit
   test updated to the explicit `null`; both browser cases re-run green.
+- [x] **CI flake in the new reload case, diagnosed and fixed in the test:**
+  it failed once in CI and 3 of ~43 local runs, always on the final "a new
+  `!` is accepted" step. Captured on a failing run: the transcript held
+  "! commands are arriving too fast — wait a moment" — the daemon's burst
+  throttle (`BANG_MIN_INTERVAL_MS`, 400 ms since the last accepted start).
+  Measured: the whole sequence from the first `!!` through reload, reclaim,
+  stdin, and kill takes 376–546 ms on this machine, straddling the window,
+  so the second command was refused on the fast tail. Product behavior is
+  correct; the test now waits out the window before the second command
+  (both browser cases). Reload case 10/10 alone after, cockpit case 3/3.
+  The same local Tier-3 run also hit the documented recurrent CR.2 phone
+  file-review timeout once (`diff-panel.e2e.ts:751`, characterized as
+  active Changes-suite debt earlier in this plan), unrelated to this fix.
 
 ## Post-release ideas (parked — organize after R.7)
 
