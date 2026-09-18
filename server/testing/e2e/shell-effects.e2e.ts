@@ -273,6 +273,7 @@ test("a reload mid-command gets the running PTY's controls back and can replace 
 
     await prompt.fill(`!! ${command}`);
     await prompt.press("Enter");
+    const firstStart = Date.now();
     await bar.waitFor();
     await page.locator(".bang-output", { hasText: "reclaim-pty-ready" }).waitFor();
 
@@ -291,7 +292,11 @@ test("a reload mid-command gets the running PTY's controls back and can replace 
     await bar.locator(".bang-bar-kill").click();
     await bar.waitFor({ state: "detached" });
 
-    // And a new command is accepted afterwards.
+    // And a new command is accepted afterwards — once the daemon's burst
+    // throttle (BANG_MIN_INTERVAL_MS, 400 ms since the last accepted start)
+    // has passed: this whole sequence runs in ~400 ms on a fast machine,
+    // and a second `!` inside the window is refused as "arriving too fast".
+    await new Promise((r) => setTimeout(r, Math.max(0, 600 - (Date.now() - firstStart))));
     await prompt.fill("!! echo after-reclaim-ok");
     await prompt.press("Enter");
     await page.locator(".bang-output", { hasText: "after-reclaim-ok" }).waitFor();

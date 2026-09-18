@@ -205,6 +205,7 @@ test("a cockpit switch away and back mid-`!` returns the running terminal's cont
   const command = `node -e "console.log('switch-pty-ready'); setInterval(() => {}, 1000)"`;
   await prompt.fill(`!! ${command}`);
   await prompt.press("Enter");
+  const firstStart = Date.now();
   await bar.waitFor();
   await home.locator(".bang-output", { hasText: "switch-pty-ready" }).waitFor();
 
@@ -225,6 +226,9 @@ test("a cockpit switch away and back mid-`!` returns the running terminal's cont
   assert.equal(await bar.locator(".bang-bar-cmd").getAttribute("title"), command);
   await bar.locator(".bang-bar-kill").click();
   await bar.waitFor({ state: "detached" });
+  // Past the daemon's 400 ms burst throttle since the first accepted start
+  // (see the reload case in shell-effects.e2e.ts).
+  await new Promise((r) => setTimeout(r, Math.max(0, 600 - (Date.now() - firstStart))));
   await prompt.fill("!! echo after-switch-ok");
   await prompt.press("Enter");
   await home.locator(".bang-output", { hasText: "after-switch-ok" }).waitFor();
