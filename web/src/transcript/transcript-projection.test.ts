@@ -1182,3 +1182,28 @@ test("an orphan `!` row takes its command and silent flag from the attach snapsh
   const other = apply(projection, { type: "bang_output", id: "b-old", data: "x\n", replay: true });
   assert.deepEqual(rowsOf(other, "bang").map((r) => [r.bangId, r.command, r.silent]), [["b-run", "tail -f build.log", true], ["b-old", ORPHAN_BANG_COMMAND, undefined]]);
 });
+
+test("a running `!` known only from the attach snapshot gets its row at replay_complete, so its end has a place to land", () => {
+  const projection = createTranscriptProjection();
+  const quiet = apply(
+    projection,
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-quiet", command: "sleep 600" } },
+    { type: "zone_reset" },
+    { type: "text_delta", text: "unrelated history", replay: true },
+    { type: "turn_end", replay: true },
+    { type: "replay_complete", evicted: true },
+  );
+  assert.deepEqual(rowsOf(quiet, "bang").map((r) => [r.bangId, r.command, r.done]), [["b-quiet", "sleep 600", false]]);
+  const ended = apply(projection, { type: "bang_end", id: "b-quiet", exitCode: null });
+  assert.deepEqual(rowsOf(ended, "bang").map((r) => [r.done, r.exitCode]), [[true, null]]);
+  // With the start retained, replay_complete adds nothing.
+  const fresh = createTranscriptProjection();
+  const kept = apply(
+    fresh,
+    { type: "session_created", sessionId: "s1", cwd: "/w", bang: { id: "b-k", command: "ls" } },
+    { type: "zone_reset" },
+    { type: "bang_start", id: "b-k", command: "ls", replay: true },
+    { type: "replay_complete" },
+  );
+  assert.equal(rowsOf(kept, "bang").length, 1);
+});

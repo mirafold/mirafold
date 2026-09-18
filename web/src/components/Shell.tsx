@@ -178,10 +178,13 @@ export function Shell() {
     // arriving mid-command must be able to drive or stop it, or the session
     // is stuck with a terminal nobody can reach and no way to start a new one.
     my: { id: string; command: string } | null;
-    // Tail of the running command's output — drives the password-prompt
-    // detection that masks the stdin field. One bang per session, so untagged.
+    // Tail of the latest command's output, tagged with its id — drives the
+    // password-prompt detection that masks the stdin field. Tracked for
+    // every command seen (a viewport may adopt one it was only watching), but
+    // applied to the bar only when it belongs to the controlled command.
     tail: string;
-  }>({ my: null, tail: "" });
+    tailId: string | null;
+  }>({ my: null, tail: "", tailId: null });
   // A LIVE bang_start is broadcast to every viewport; only ids minted by this
   // viewport claim it (the tab that typed `!sudo …` keeps the password
   // field — another open tab watching does not get one). A viewport that
@@ -370,11 +373,16 @@ export function Shell() {
               running
                 ? b.my?.id === running.id
                   ? b
-                  : { my: { id: running.id, command: running.command }, tail: "" }
+                  : { ...b, my: { id: running.id, command: running.command } }
                 : b.my
-                  ? { my: null, tail: "" }
+                  ? { ...b, my: null }
                   : b,
             );
+          } else if (ledgerSession.current !== m.sessionId) {
+            // An older daemon says nothing about `!`, but a DIFFERENT session
+            // (a fallback after the old one ended elsewhere) cannot be running
+            // the command this page controlled.
+            setBang({ my: null, tail: "", tailId: null });
           }
           // Task and plan ids are session-scoped: a DIFFERENT session starts
           // a fresh ledger (round 2); a resume of the same one keeps it.
@@ -430,14 +438,12 @@ export function Shell() {
           // Against a daemon that gave no snapshot, the replayed start is all
           // there is, so it still claims.
           const mine = ownBangRequests.current.delete(m.id) && (!m.replay || !bangSnapshotKnown.current);
-          setBang((b) =>
-            b.my?.id === m.id ? b : mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
-          );
+          setBang((b) => (b.my?.id === m.id ? b : mine ? { ...b, my: { id: m.id, command: m.command } } : b));
         } else if (m.type === "bang_output") {
-          // Only the controlled command's tail matters (prompt detection) —
-          // an earlier command's replayed "Password:" must not mask the bar
-          // of the one adopted at attach. Keep it tiny.
-          setBang((b) => (b.my?.id === m.id ? { ...b, tail: (b.tail + m.data).slice(-400) } : b));
+          // Only the tail matters (prompt detection) — keep it tiny, and
+          // per command: a new id starts a fresh tail, so an earlier command's
+          // replayed "Password:" can never mask the bar of a later one.
+          setBang((b) => ({ ...b, tailId: m.id, tail: ((b.tailId === m.id ? b.tail : "") + m.data).slice(-400) }));
         } else if (m.type === "bang_end") {
           ownBangRequests.current.delete(m.id);
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
@@ -549,9 +555,7 @@ export function Shell() {
       ownBangRequests.current.add(id);
       // The daemon may reject this request because the previous PTY is still
       // running. Keep that PTY's stdin/kill controls until its own bang_end.
-      setBang((current) =>
-        current.my ? current : { my: { id, command }, tail: "" },
-      );
+      setBang((current) => (current.my ? current : { ...current, my: { id, command } }));
     } else {
       bus.sendPrompt(text);
     }
@@ -682,7 +686,7 @@ export function Shell() {
               <BangBar
                 key={bang.my.id}
                 command={bang.my.command}
-                tail={bang.tail}
+                tail={bang.tailId === bang.my.id ? bang.tail : ""}
                 onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
                 onKill={() => bus.killBang(bang.my!.id)}
               />
