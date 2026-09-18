@@ -357,16 +357,20 @@ export function Shell() {
           // already held (a reset tail would unmask a password field mid-
           // typing); drop a stale bar when the daemon reports nothing running
           // (a restart killed the PTY, or a refusal was lost with the socket).
+          // An older daemon says nothing at all (field absent): leave the bar
+          // as it is — it may well still be running that command.
           const running = m.bang;
-          setBang((b) =>
-            running
-              ? b.my?.id === running.id
-                ? b
-                : { my: { id: running.id, command: running.command }, tail: "" }
-              : b.my
-                ? { my: null, tail: "" }
-                : b,
-          );
+          if (running !== undefined) {
+            setBang((b) =>
+              running
+                ? b.my?.id === running.id
+                  ? b
+                  : { my: { id: running.id, command: running.command }, tail: "" }
+                : b.my
+                  ? { my: null, tail: "" }
+                  : b,
+            );
+          }
           // Task and plan ids are session-scoped: a DIFFERENT session starts
           // a fresh ledger (round 2); a resume of the same one keeps it.
           if (ledgerSession.current !== m.sessionId) {
@@ -658,7 +662,10 @@ export function Shell() {
             <ActivityLine busy={busy} label={activityLabel(activity)} note={taskNote} />
             <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
+              // Keyed by command: adopting a different running command must
+              // not inherit the previous bar's typed input or mask override.
               <BangBar
+                key={bang.my.id}
                 command={bang.my.command}
                 tail={bang.tail}
                 onInput={(data) => bus.sendBangInput(bang.my!.id, data)}

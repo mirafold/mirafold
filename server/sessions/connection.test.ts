@@ -230,7 +230,7 @@ test("attach reports the `!` command still running so a returning viewport can d
   };
 
   conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
-  assert.equal("bang" in created(), false, "nothing running: no field at all");
+  assert.equal(created().bang, null, "nothing running is said explicitly: absence means an older daemon");
 
   // A running PTY, as bang-handlers.ts records it (no real process needed).
   const proc = { write() {}, kill() {} };
@@ -247,5 +247,5 @@ test("attach reports the `!` command still running so a returning viewport can d
   entry.bang = undefined;
   seen.length = 0;
   conn.handleMessage(JSON.stringify({ type: "attach", sessionId: entry.id }));
-  assert.equal("bang" in created(), false, "the field never lingers past the command");
+  assert.equal(created().bang, null, "the command never lingers past its end");
 });

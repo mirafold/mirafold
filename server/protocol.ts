@@ -369,8 +369,11 @@ export type ViewportMsgBody =
       // switch back, a reload, a second tab) gets its stdin/stop controls
       // instead of a terminal it can neither drive nor replace. The replayed
       // bang_start carries the same facts unless history evicted it; this is
-      // the authoritative copy. Absent = nothing running (or an older daemon).
-      bang?: { id: string; command: string; silent?: true };
+      // the authoritative copy. `null` = this daemon reports nothing running;
+      // ABSENT = an older daemon that does not report at all (the hosted app
+      // can be newer than the daemon it reaches over the relay), so a client
+      // must not read absence as "nothing running".
+      bang?: { id: string; command: string; silent?: true } | null;
     }
   // Per-viewport boundary after attach history, including an empty replay.
   // Never sequenced or retained: it describes delivery, not session content.
