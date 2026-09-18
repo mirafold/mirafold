@@ -4358,6 +4358,10 @@ viewports promise is the product; the returning tab should reclaim instead.
   retained output of an evicted start was appended after newer traffic
   while the snapshot-only row was prepended; both now sit at the top with
   the other orphaned openings (ordering asserted in the unit test).
+- [x] **Codex round 9, one P2, legitimate and fixed:** the snapshot-only
+  row started with empty output although the snapshot's tail is exactly
+  the last of what the command showed; the row now starts from that tail
+  (a waiting password prompt is visible, not only masking the bar).
 
 ## Post-release ideas (parked — organize after R.7)
 
