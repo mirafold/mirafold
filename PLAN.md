@@ -4315,6 +4315,18 @@ viewports promise is the product; the returning tab should reclaim instead.
   projection dropped its output. `bang_output` for an unknown id now opens
   an orphan row ("(earlier command — its start was not retained)"), the
   same convention as an evicted tool call; unit-tested in the projection.
+- [x] **Codex round 4, three P2s, all legitimate and fixed:** (a) the
+  orphan row discarded the command and silent flag the attach snapshot had
+  already supplied, so a `!!` could render as `!` (implying a transcript to
+  the agent); the projection now remembers `session_created.bang` and seeds
+  the row from it, placeholder only for a command the snapshot did not
+  name. (b) The bar's prompt-detection tail appended EVERY command's
+  output, so an earlier command's replayed "Password:" could mask and
+  focus the adopted command's bar; the tail now follows only the controlled
+  id. (c) Against an older daemon that gives no snapshot, a replayed start
+  of our own request is the only way back to the bar, so the replay-claim
+  suppression applies only when the attach did report (field present, even
+  as null). Projection suite 48/48 with the seeded case.
 
 ## Post-release ideas (parked — organize after R.7)
 
