@@ -189,6 +189,10 @@ export function Shell() {
   // Keep each id until the daemon either accepts it with bang_start or
   // rejects it with a private bang_end.
   const ownBangRequests = useRef(new Set<string>());
+  // Whether this daemon reports the running `!` at attach (session_created
+  // .bang present, even as null). Against an older daemon that does not, a
+  // replayed start of our own request is the only way to get the bar back.
+  const bangSnapshotKnown = useRef(false);
 
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
@@ -360,6 +364,7 @@ export function Shell() {
           // An older daemon says nothing at all (field absent): leave the bar
           // as it is — it may well still be running that command.
           const running = m.bang;
+          bangSnapshotKnown.current = running !== undefined;
           if (running !== undefined) {
             setBang((b) =>
               running
@@ -422,13 +427,17 @@ export function Shell() {
           // claims: the attach acknowledgement already said what is running,
           // and a request that left with a dropped socket may be replayed
           // finished while another viewport's later command is the live one.
-          const mine = ownBangRequests.current.delete(m.id) && !m.replay;
+          // Against a daemon that gave no snapshot, the replayed start is all
+          // there is, so it still claims.
+          const mine = ownBangRequests.current.delete(m.id) && (!m.replay || !bangSnapshotKnown.current);
           setBang((b) =>
             b.my?.id === m.id ? b : mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
           );
         } else if (m.type === "bang_output") {
-          // Only the tail matters (prompt detection) — keep it tiny.
-          setBang((b) => ({ ...b, tail: (b.tail + m.data).slice(-400) }));
+          // Only the controlled command's tail matters (prompt detection) —
+          // an earlier command's replayed "Password:" must not mask the bar
+          // of the one adopted at attach. Keep it tiny.
+          setBang((b) => (b.my?.id === m.id ? { ...b, tail: (b.tail + m.data).slice(-400) } : b));
         } else if (m.type === "bang_end") {
           ownBangRequests.current.delete(m.id);
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));

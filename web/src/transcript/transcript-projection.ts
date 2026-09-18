@@ -525,6 +525,10 @@ export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
   let tasks = new Map<string, TaskLifecycle>();
   let orphans = new Map<string, PendingOrphan>();
+  // The `!` command the daemon reported running at attach (session_created
+  // .bang): the authoritative command and silent flag for a row whose start
+  // the bounded history no longer holds.
+  let attachBang: { id: string; command: string; silent?: true } | null = null;
   // Bounded like every other per-session ledger: a hostile stream minting
   // results for unknown ids must not grow memory without limit.
   const MAX_PENDING_ORPHANS = 500;
@@ -1178,9 +1182,18 @@ export function createTranscriptProjection(): TranscriptProjection {
         // the controls from session_created.bang) must see what it drives.
         if (!entries.some((entry) => entry.kind === "bang" && entry.bangId === msg.id)) {
           streamingId = null;
+          const known = attachBang?.id === msg.id ? attachBang : undefined;
           entries = [
             ...entries,
-            { kind: "bang", id: nextTranscriptId++, bangId: msg.id, command: ORPHAN_BANG_COMMAND, output: "", done: false },
+            {
+              kind: "bang",
+              id: nextTranscriptId++,
+              bangId: msg.id,
+              command: known?.command ?? ORPHAN_BANG_COMMAND,
+              output: "",
+              done: false,
+              ...(known?.silent ? { silent: true as const } : {}),
+            },
           ];
         }
         entries = entries.map((entry) =>
@@ -1228,11 +1241,13 @@ export function createTranscriptProjection(): TranscriptProjection {
       // not create output-zone rows. Listing every arm keeps additions to the
       // wire union reviewable at compile time; a runtime-unknown arm still
       // reaches the inert default below for version-skew compatibility.
+      case "session_created":
+        attachBang = msg.bang ?? null;
+        return false;
       case "prompt_options":
       case "status":
       case "permission_request":
       case "permission_resolved":
-      case "session_created":
       case "shell_cwd":
       case "agents":
       case "folder_picked":
