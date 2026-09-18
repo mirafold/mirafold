@@ -1150,10 +1150,14 @@ test("a `!` command's output whose start was evicted becomes an orphan row that 
   const replayed = apply(
     projection,
     { type: "zone_reset" },
+    { type: "text_delta", text: "traffic that followed the start", replay: true },
+    { type: "turn_end", replay: true },
     { type: "bang_output", id: "b-gone", data: "line one\n", replay: true },
     { type: "bang_output", id: "b-gone", data: "line two\n", replay: true },
     { type: "replay_complete", evicted: true },
   );
+  // Its start predates everything retained: it sits at the top, after the notice.
+  assert.deepEqual(rowKinds(replayed), ["notice", "bang", "text"]);
   const [row] = rowsOf(replayed, "bang");
   assert.deepEqual([row!.bangId, row!.command, row!.output, row!.done], ["b-gone", ORPHAN_BANG_COMMAND, "line one\nline two\n", false]);
   assert.equal(rowsOf(replayed, "bang").length, 1, "one row, however many frames arrive before its end");
@@ -1180,7 +1184,7 @@ test("an orphan `!` row takes its command and silent flag from the attach snapsh
   assert.deepEqual([row!.bangId, row!.command, row!.silent, row!.output, row!.done], ["b-run", "tail -f build.log", true, "still building\n", false]);
   // Output for a different evicted command still gets the honest placeholder.
   const other = apply(projection, { type: "bang_output", id: "b-old", data: "x\n", replay: true });
-  assert.deepEqual(rowsOf(other, "bang").map((r) => [r.bangId, r.command, r.silent]), [["b-run", "tail -f build.log", true], ["b-old", ORPHAN_BANG_COMMAND, undefined]]);
+  assert.deepEqual(rowsOf(other, "bang").map((r) => [r.bangId, r.command, r.silent]), [["b-old", ORPHAN_BANG_COMMAND, undefined], ["b-run", "tail -f build.log", true]]);
 });
 
 test("a running `!` known only from the attach snapshot gets its row at replay_complete, so its end has a place to land", () => {

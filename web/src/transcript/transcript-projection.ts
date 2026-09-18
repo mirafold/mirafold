@@ -1183,8 +1183,9 @@ export function createTranscriptProjection(): TranscriptProjection {
         if (!entries.some((entry) => entry.kind === "bang" && entry.bangId === msg.id)) {
           streamingId = null;
           const known = attachBang?.id === msg.id ? attachBang : undefined;
+          // Its start is older than everything retained: top, with the
+          // other orphaned openings, never after traffic that followed it.
           entries = [
-            ...entries,
             {
               kind: "bang",
               id: nextTranscriptId++,
@@ -1194,6 +1195,7 @@ export function createTranscriptProjection(): TranscriptProjection {
               done: false,
               ...(known?.silent ? { silent: true as const } : {}),
             },
+            ...entries,
           ];
         }
         entries = entries.map((entry) =>
