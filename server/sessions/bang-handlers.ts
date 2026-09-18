@@ -174,14 +174,15 @@ const startBang = (
           : new TextDecoder().decode(Buffer.from(data, "utf8").subarray(0, room));
       wireSent += Math.min(bytes, room);
       wireElided += Math.max(0, bytes - room);
-      if (e.bang?.id === id) e.bang.tail = (e.bang.tail + head).slice(-PROMPT_TAIL_CHARS);
+      const keepTail = (shown: string) => {
+        if (e.bang?.id === id) e.bang.tail = (e.bang.tail + shown).slice(-PROMPT_TAIL_CHARS);
+      };
+      keepTail(head);
       registry.broadcast(e, { type: "bang_output", data: head, id });
       if (wireSent >= BANG_OUTPUT_CAP_BYTES) {
-        registry.broadcast(e, {
-          type: "bang_output",
-          data: `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`,
-          id,
-        });
+        const marker = `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`;
+        keepTail(marker); // the marker is the last line shown, so it is the tail too
+        registry.broadcast(e, { type: "bang_output", data: marker, id });
       }
     } else {
       wireElided += bytes;

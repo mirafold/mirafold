@@ -372,7 +372,12 @@ export function Shell() {
             setBang((b) =>
               running
                 ? b.my?.id === running.id
-                  ? b
+                  ? // Already controlled: keep it, but a tail the daemon sends
+                    // is newer than ours (output shown while the socket was
+                    // down may be gone from the replayable history).
+                    running.tail !== undefined
+                    ? { ...b, tail: running.tail, tailId: running.id }
+                    : b
                   : {
                       my: { id: running.id, command: running.command },
                       // The daemon's tail is what the command has shown so far,
