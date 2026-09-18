@@ -171,17 +171,23 @@ export function Shell() {
 
   // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
-    // The bang THIS viewport issued, if still running — only the issuer gets
-    // the stdin affordance (a sudo prompt must never fan out to a second tab
-    // or, later, a phone via the relay). Lost on refresh: Tier 1.
+    // The running bang this viewport controls: the one it issued, or the one
+    // the daemon reported at attach (a cockpit switch back, a reload, a
+    // second tab). A live bang_start from ANOTHER viewport is not claimed —
+    // its stdin stays with the tab that typed the command — but a viewport
+    // arriving mid-command must be able to drive or stop it, or the session
+    // is stuck with a terminal nobody can reach and no way to start a new one.
     my: { id: string; command: string } | null;
     // Tail of the running command's output — drives the password-prompt
     // detection that masks the stdin field. One bang per session, so untagged.
     tail: string;
   }>({ my: null, tail: "" });
-  // A bang_start is broadcast to every viewport, so only ids minted by this
-  // viewport may claim its stdin/kill controls. Keep each id until the daemon
-  // either accepts it with bang_start or rejects it with a private bang_end.
+  // A LIVE bang_start is broadcast to every viewport; only ids minted by this
+  // viewport claim it (the tab that typed `!sudo …` keeps the password
+  // field — another open tab watching does not get one). A viewport that
+  // ATTACHES while a command runs claims it from session_created instead.
+  // Keep each id until the daemon either accepts it with bang_start or
+  // rejects it with a private bang_end.
   const ownBangRequests = useRef(new Set<string>());
 
   const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
@@ -344,6 +350,23 @@ export function Shell() {
             capabilities: m.capabilities,
           });
           setDetailsMode(loadDetailsMode(m.sessionId));
+          // The daemon's word on a still-running `!`. Claim its controls when
+          // it is news (a cockpit switch back, a reload, a second tab — the
+          // replayed bang_output frames refill the prompt-detection tail);
+          // keep them untouched when a resumed reconnect names the command
+          // already held (a reset tail would unmask a password field mid-
+          // typing); drop a stale bar when the daemon reports nothing running
+          // (a restart killed the PTY, or a refusal was lost with the socket).
+          const running = m.bang;
+          setBang((b) =>
+            running
+              ? b.my?.id === running.id
+                ? b
+                : { my: { id: running.id, command: running.command }, tail: "" }
+              : b.my
+                ? { my: null, tail: "" }
+                : b,
+          );
           // Task and plan ids are session-scoped: a DIFFERENT session starts
           // a fresh ledger (round 2); a resume of the same one keeps it.
           if (ledgerSession.current !== m.sessionId) {

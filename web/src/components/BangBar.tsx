@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Stdin for the running `!` command — SHELL-OWNED UI on the ephemeral
  * input path: what's typed here goes to the PTY and nowhere else (never the
- * replay ring, never other viewports), and only the issuing viewport mounts
- * it. Masks itself when the command's output ends in a password prompt
+ * replay ring, never other viewports). Mounted by the viewport that issued
+ * the command, or one that attached while it was still running — never by a
+ * tab merely watching a live bang_start. Masks itself when the command's
+ * output ends in a password prompt
  * (echo-off input never comes back as output, so masking here is the only
  * echo there is); a toggle overrides the guess either way.
  */

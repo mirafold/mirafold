@@ -243,6 +243,7 @@ const startBang = (
     );
     e.bang = {
       id,
+      command,
       proc,
       silent,
       cancel: () => {

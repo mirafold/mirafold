@@ -364,6 +364,13 @@ export type ViewportMsgBody =
       // implying silence means nothing happened. Absent = unknown (older
       // daemon): the shell makes no capability claim either way.
       capabilities?: AgentCapabilities;
+      // Optional/additive: the `!` command still running in this session at
+      // attach time, so a viewport that arrives mid-command (a cockpit
+      // switch back, a reload, a second tab) gets its stdin/stop controls
+      // instead of a terminal it can neither drive nor replace. The replayed
+      // bang_start carries the same facts unless history evicted it; this is
+      // the authoritative copy. Absent = nothing running (or an older daemon).
+      bang?: { id: string; command: string; silent?: true };
     }
   // Per-viewport boundary after attach history, including an empty replay.
   // Never sequenced or retained: it describes delivery, not session content.
