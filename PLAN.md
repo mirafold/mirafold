@@ -4338,6 +4338,15 @@ viewports promise is the product; the returning tab should reclaim instead.
   none exists. (c) Against an older daemon that reports nothing, a reconnect
   that fell back to a DIFFERENT session left the old bar mounted; a session
   change now clears it. Projection suite 49/49.
+- [x] **Codex round 6, two P2s, both legitimate and fixed:** (a) a bar
+  adopted after the command's own output had left the bounded history had
+  no tail to mask a waiting password prompt; the daemon now keeps the last
+  400 characters it actually broadcast for the running command and sends
+  them in the attach snapshot (`bang.tail`, additive; the same head-capped
+  stream every viewport already receives — no new exposure), and the shell
+  seeds the bar's tail from it. (b) The snapshot-only row was appended after
+  newer retained history although the command began before all of it; it
+  now sits at the top with the other orphaned openings.
 
 ## Post-release ideas (parked — organize after R.7)
 
