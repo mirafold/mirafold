@@ -4347,6 +4347,13 @@ viewports promise is the product; the returning tab should reclaim instead.
   seeds the bar's tail from it. (b) The snapshot-only row was appended after
   newer retained history although the command began before all of it; it
   now sits at the top with the other orphaned openings.
+- [x] **Codex round 7, two P2s, both legitimate and fixed:** (a) for a
+  command already controlled, the shell kept its own tail even when the
+  snapshot carried a newer one (output shown while the socket was down can
+  be gone from replayable history); a supplied tail now replaces it. (b)
+  The output-cap marker was broadcast but not appended to the saved tail,
+  so a snapshot could report a truncated "Password:" as the last line when
+  the marker was; every broadcast frame now feeds the tail.
 
 ## Post-release ideas (parked — organize after R.7)
 
