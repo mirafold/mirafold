@@ -4327,6 +4327,17 @@ viewports promise is the product; the returning tab should reclaim instead.
   of our own request is the only way back to the bar, so the replay-claim
   suppression applies only when the attach did report (field present, even
   as null). Projection suite 48/48 with the seeded case.
+- [x] **Codex round 5, three P2s, all legitimate and fixed:** (a) a viewport
+  that had only WATCHED another tab's interactive command kept no tail for
+  it, so adopting it after a resumed reconnect showed an unmasked, unfocused
+  password field; the tail is now tracked per command id for every command
+  seen and applied to the bar only when it belongs to the controlled one
+  (which also subsumes round 4b). (b) A running command whose start and
+  output were both evicted had no row for its end to land on; the
+  projection now materializes the snapshot's row at `replay_complete` when
+  none exists. (c) Against an older daemon that reports nothing, a reconnect
+  that fell back to a DIFFERENT session left the old bar mounted; a session
+  change now clears it. Projection suite 49/49.
 
 ## Post-release ideas (parked — organize after R.7)
 
