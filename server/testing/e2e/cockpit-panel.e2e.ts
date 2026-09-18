@@ -189,6 +189,50 @@ test("CP.2/3 cockpit panel previews, acts, follows a session switch, and closes 
   await second.waitForURL(`${base}/`);
 });
 
+test("a cockpit switch away and back mid-`!` returns the running terminal's controls", async () => {
+  // Self-contained: two fresh sessions, since the first test ends its second one.
+  const away = await context.newPage();
+  await away.goto(`${base}/?new=1`);
+  await enterMockSession(away);
+  const awayId = sessionId(away);
+  const home = await context.newPage();
+  await home.goto(`${base}/?new=1`);
+  await enterMockSession(home);
+  const homeId = sessionId(home);
+
+  const prompt = home.locator(".prompt-box textarea");
+  const bar = home.locator(".bang-bar");
+  const command = `node -e "console.log('switch-pty-ready'); setInterval(() => {}, 1000)"`;
+  await prompt.fill(`!! ${command}`);
+  await prompt.press("Enter");
+  await bar.waitFor();
+  await home.locator(".bang-output", { hasText: "switch-pty-ready" }).waitFor();
+
+  // Away via the cockpit row, then back the same way: each is a full page
+  // load, and the daemon keeps the PTY running throughout.
+  if ((await home.locator(".cockpit-panel").count()) === 0) await home.locator(".ab-cockpit").click();
+  await row(home, awayId).waitFor();
+  await row(home, awayId).locator(".cockpit-session-name").click();
+  await home.waitForURL(`${base}/s/${awayId}`);
+  await home.locator(".prompt-box textarea").waitFor();
+  await home.locator(".status-bar .sb-dot-on").waitFor(); // attached: the ack carried no bang for THIS session
+  assert.equal(await home.locator(".bang-bar").count(), 0, "the other session shows no terminal bar");
+  await row(home, homeId).locator(".cockpit-session-name").click();
+  await home.waitForURL(`${base}/s/${homeId}`);
+  await home.locator(".prompt-box textarea").waitFor();
+
+  await bar.waitFor({ timeout: 10_000 });
+  assert.equal(await bar.locator(".bang-bar-cmd").getAttribute("title"), command);
+  await bar.locator(".bang-bar-kill").click();
+  await bar.waitFor({ state: "detached" });
+  await prompt.fill("!! echo after-switch-ok");
+  await prompt.press("Enter");
+  await home.locator(".bang-output", { hasText: "after-switch-ok" }).waitFor();
+  await bar.waitFor({ state: "detached" });
+  await away.close();
+  await home.close();
+});
+
 test("BUGHUNT: an independently refused cockpit socket explains why it cannot connect", async () => {
   const refused = await context.newPage();
   await refused.addInitScript(() => {

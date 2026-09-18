@@ -265,6 +265,40 @@ test("a rejected second bang leaves the first PTY's controls usable", async () =
   });
 });
 
+test("a reload mid-command gets the running PTY's controls back and can replace it", async () => {
+  await withFreshMockSession(browser, "e2e-bang-reclaim-9c2f", async (page) => {
+    const prompt = page.locator(".prompt-box textarea");
+    const bar = page.locator(".bang-bar");
+    const command = `node -e "console.log('reclaim-pty-ready'); process.stdin.on('data', d => console.log('typed:' + String(d).trim())); setInterval(() => {}, 1000)"`;
+
+    await prompt.fill(`!! ${command}`);
+    await prompt.press("Enter");
+    await bar.waitFor();
+    await page.locator(".bang-output", { hasText: "reclaim-pty-ready" }).waitFor();
+
+    // The page's own memory of "this is my command" is gone; the daemon's
+    // attach acknowledgement restores the controls for the still-running PTY.
+    await page.reload();
+    await prompt.waitFor();
+    await bar.waitFor({ timeout: 10_000 });
+    assert.equal(await bar.locator(".bang-bar-cmd").getAttribute("title"), command);
+    await page.locator(".bang-output", { hasText: "reclaim-pty-ready" }).waitFor();
+
+    // Stdin still reaches it, and the stop control still ends it.
+    await bar.locator("input").fill("hello-after-reload");
+    await bar.locator("input").press("Enter");
+    await page.locator(".bang-output", { hasText: "typed:hello-after-reload" }).waitFor();
+    await bar.locator(".bang-bar-kill").click();
+    await bar.waitFor({ state: "detached" });
+
+    // And a new command is accepted afterwards.
+    await prompt.fill("!! echo after-reclaim-ok");
+    await prompt.press("Enter");
+    await page.locator(".bang-output", { hasText: "after-reclaim-ok" }).waitFor();
+    await bar.waitFor({ state: "detached" });
+  });
+});
+
 test("an accepted second bang replaces controls after the first PTY exits", async () => {
   await withFreshMockSession(browser, "e2e-bang-replace-9c2f", async (page) => {
     const prompt = page.locator(".prompt-box textarea");
