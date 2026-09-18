@@ -4362,6 +4362,11 @@ viewports promise is the product; the returning tab should reclaim instead.
   row started with empty output although the snapshot's tail is exactly
   the last of what the command showed; the row now starts from that tail
   (a waiting password prompt is visible, not only masking the bar).
+- [x] **Final state (2026-09-18, head 1d37ce7 + this note):** Codex round
+  10 completed with no findings. Gates on that head: `yarn typecheck`
+  clean; `yarn test` 1445/1445; `yarn test:server` 198/198; `yarn test:e2e`
+  164/164 (the two earlier intermittent cases passed this run); CI green
+  on all four checks. PR #129 open into `next`, merge is Kyle's call.
 
 ## Post-release ideas (parked — organize after R.7)
 
