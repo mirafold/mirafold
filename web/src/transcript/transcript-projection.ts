@@ -517,6 +517,9 @@ export const EVICTED_HISTORY_NOTICE =
   "Earlier history is no longer retained — the daemon keeps a bounded replay, and this session's oldest messages have fallen off it.";
 export const ORPHAN_CALL_NAME = "(earlier call)";
 export const ORPHAN_CALL_DETAIL = "its start was not retained";
+/** A `!` command whose start fell out of the bounded history while it was
+ *  still running: its output must still land somewhere a reader can see. */
+export const ORPHAN_BANG_COMMAND = "(earlier command — its start was not retained)";
 
 export function createTranscriptProjection(): TranscriptProjection {
   let entries: TranscriptEntry[] = [];
@@ -1170,6 +1173,16 @@ export function createTranscriptProjection(): TranscriptProjection {
         return true;
       }
       case "bang_output": {
+        // Output for a command whose start was evicted gets an orphan row,
+        // like a tool call's — a viewport attaching mid-command (it holds
+        // the controls from session_created.bang) must see what it drives.
+        if (!entries.some((entry) => entry.kind === "bang" && entry.bangId === msg.id)) {
+          streamingId = null;
+          entries = [
+            ...entries,
+            { kind: "bang", id: nextTranscriptId++, bangId: msg.id, command: ORPHAN_BANG_COMMAND, output: "", done: false },
+          ];
+        }
         entries = entries.map((entry) =>
           entry.kind === "bang" && entry.bangId === msg.id
             ? { ...entry, output: entry.output + msg.data }

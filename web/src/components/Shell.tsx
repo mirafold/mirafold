@@ -416,9 +416,15 @@ export function Shell() {
           // render in the output zone (the turn reducer brought busy down).
           setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
-          const mine = ownBangRequests.current.delete(m.id);
+          // A start already held (claimed from session_created, or armed on
+          // send) keeps its state — a resumed reconnect replays it, and a
+          // reset tail would unmask a password field. A REPLAYED start never
+          // claims: the attach acknowledgement already said what is running,
+          // and a request that left with a dropped socket may be replayed
+          // finished while another viewport's later command is the live one.
+          const mine = ownBangRequests.current.delete(m.id) && !m.replay;
           setBang((b) =>
-            mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
+            b.my?.id === m.id ? b : mine ? { my: { id: m.id, command: m.command }, tail: "" } : { ...b, tail: "" },
           );
         } else if (m.type === "bang_output") {
           // Only the tail matters (prompt detection) — keep it tiny.
