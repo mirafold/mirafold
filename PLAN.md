@@ -4280,6 +4280,16 @@ viewports promise is the product; the returning tab should reclaim instead.
   Tier-3 run and in CI earlier the same day. Unrelated to this fix (it
   exercises tool-output snapshots, not `!`); left untouched and noted here
   as owed: characterize the 70 ms snapshot cadence vs the 10 s wait.
+- [x] **PR #129 Codex review, two findings, both legitimate and fixed:**
+  (P1) the hosted app can be newer than the daemon it reaches over the
+  relay, and such a daemon never sends the field — reading absence as
+  "nothing running" would have stripped a phone's controls for its own
+  command after a reconnect. The field is now tri-state: an object (running),
+  `null` (this daemon reports nothing running), absent (older daemon: leave
+  the bar alone). (P2) `BangBar` is unkeyed, so adopting a different
+  command id after a reconnect would have inherited the previous bar's
+  typed input and mask override; it is now keyed by the command id. Unit
+  test updated to the explicit `null`; both browser cases re-run green.
 
 ## Post-release ideas (parked — organize after R.7)
 
