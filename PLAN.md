@@ -4354,6 +4354,10 @@ viewports promise is the product; the returning tab should reclaim instead.
   The output-cap marker was broadcast but not appended to the saved tail,
   so a snapshot could report a truncated "Password:" as the last line when
   the marker was; every broadcast frame now feeds the tail.
+- [x] **Codex round 8, one P2, legitimate and fixed:** the row created from
+  retained output of an evicted start was appended after newer traffic
+  while the snapshot-only row was prepended; both now sit at the top with
+  the other orphaned openings (ordering asserted in the unit test).
 
 ## Post-release ideas (parked — organize after R.7)
 
