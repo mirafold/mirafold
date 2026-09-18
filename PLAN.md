@@ -4221,6 +4221,66 @@ stays unproven; the fix removes a measured bottleneck.
   PR into `next` is Kyle's to merge. No version bump, tag, publish, or
   daemon restart was part of this work.
 
+## Returning to a session mid-`!` (2026-09-18; Kyle-reported, diagnosed by reading the code; branch `fix/bang-reclaim` → `next`)
+
+Kyle: with an interactive `!` terminal open, switching to another session
+from the cockpit panel and coming back shows no terminal, and a new `!` is
+refused "because behind the scenes it's still open". Cause, from the code:
+the daemon keeps the PTY on the session entry (a session outlives its
+viewports, by design), but the browser showed the stdin/stop bar only for
+a command id it minted itself in this page lifetime, and a cockpit switch
+is a plain link — a full page load. The returning tab could neither drive
+nor stop the running command, and the one-PTY guard (correctly) refused a
+second. Reload and a second tab hit the same wall (the code's own comment
+said "Lost on refresh"). The Esc/Stop keys key off the model turn, which a
+bare `!` is not, so only the cockpit's Stop could end it.
+
+Kyle's first idea was to kill the PTY whenever the user leaves the session.
+Declined on the merits: detach also fires on a socket blip, a phone
+disconnect, or a second tab closing, so a Wi-Fi hiccup would abort a
+running build, and a killed non-silent `!` hands its partial transcript
+to the agent as a fresh turn the user never asked for. The session-outlives-
+viewports promise is the product; the returning tab should reclaim instead.
+
+- [x] **Fix:** `session_created` gains an additive `bang` field (id,
+  command, silent) filled from the still-running PTY at attach; `entry.bang`
+  now records the command; the shell claims the bar from that field. The
+  issuer-only rule was a browser convention, never enforced server-side (any
+  attached viewport with the id could already drive or kill it), and the
+  relay gate on `bang_input` for non-silent commands is untouched, so a
+  remote viewport gains nothing it could not do before. The "already
+  running" refusal already renders in the transcript, so no message change
+  was needed (the diagnosis had guessed otherwise). Tests: connection unit
+  (field present/absent/silent), browser reload mid-command (bar returns,
+  stdin reaches the process, stop ends it, a new `!` runs), browser cockpit
+  switch away and back mid-command (same). Both browser cases fail without
+  the shell change (verified by stashing it: 0/2), pass with it.
+- [x] **Cold review (fresh agent, read-only):** no race between the ack
+  and the replay (both are built in one synchronous attach; the PTY exit
+  clears the entry before its bang_end is broadcast), no new capability for
+  a remote viewport, no new exposure of the command string (bang_start
+  already carried it), the field is additive. Two real gaps in the shell's
+  claim, both fixed: a resumed reconnect that names the command already
+  held now leaves the bar untouched (resetting its tail would have flipped
+  a masked password field to clear text mid-typing); an ack that reports no
+  running command now clears a stale bar (a daemon restart that killed the
+  PTY, or a refusal lost with the socket, used to leave dead controls with
+  no way to start a new `!`). Stale "issuer-only" comments in Shell and
+  BangBar rewritten to the actual rule: a live bang_start from another tab
+  is not claimed; a viewport that attaches mid-command is. Kept: that rule
+  means a second tab gets the field only if it (re)attaches after the
+  start — a deliberate product reading, not a bug. The cockpit test's "no
+  bar on the other session" check now waits for the attach first.
+- [x] **Gates on the final tree:** `yarn typecheck` clean; `yarn test`
+  1442/1442; `yarn test:server` 198/198; `yarn test:e2e` 163/164 — the one
+  failure is `transcript-fidelity.e2e.ts` "TF5.1 noisy process", a
+  PRE-EXISTING intermittent case: run alone three times it passed 1/3 on
+  this branch and 1/3 on the unmodified `next` @ fbf0e61 (same build
+  procedure, no code changed between runs), while it passed in the full
+  Tier-3 run and in CI earlier the same day. Unrelated to this fix (it
+  exercises tool-output snapshots, not `!`); left untouched and noted here
+  as owed: characterize the 70 ms snapshot cadence vs the 10 s wait.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of
