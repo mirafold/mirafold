@@ -14164,3 +14164,48 @@ head is the spec's contract; the misleading comment was corrected). Every
 push was gated locally first (typecheck, dotenv-safe unit, Tier-2, the
 affected browser suites on the built bundle). The PR stays open for Kyle's
 merge decision.
+
+
+## Phase CU — completed steps (2026-09-19)
+
+Full completed-step bodies moved from PLAN.md; the phase remains incomplete. Active plan holds candidate identity, evidence and blockers.
+
+- [x] **CU.1 — Establish source and tool readiness.**
+  Work: Record current `next`, work branch, local changes, relevant open PRs, Node/yarn versions, installed Codex/model/effort, and browser availability. Read existing harnesses before use. Add the CU plan without replacing unrelated plan entries. Confirm the native edit and four defect reproductions still apply; omit already-fixed behavior with evidence.
+  Check: Run the focused baseline command below and `yarn typecheck`. Record failures separately from environment limitations. Verify system Chrome or supported `CHROME_BIN` and the managed browsers needed by `yarn test:ui` early.
+  Status 2026-09-19: Baseline, versions, source reproductions and browser launch readiness recorded; localhost browser restriction is separate.
+
+- [x] **CU.2 — Determine the effective Codex instruction lifecycle.**
+  Work: Inspect the supported installed protocol and capture fresh/warm/cold-resume behavior using a synthetic thread. Reuse fake app-server tests for request assertions; use the real engine boundary with a controlled local response endpoint when feasible to inspect effective instructions without a model. Otherwise use the authorized live trace, explicitly separating what it proves from inference.
+  Check: Produce a definite retained/lost/stale/unknown result for the tested version. Distinguish a browser reconnect from app-server restart, and persisted historical instructions from freshly supplied instructions. Record the minimal repair, or no-change decision.
+  Status 2026-09-19: Current policy retained fresh/warm/cold; changed resume overrides do not replace historical instructions. CU.9 remains open.
+
+- [x] **CU.3 — Prepare selection fixtures and diagnostic evidence.**
+  Work: Prepare the small fixture tasks, reproducible setup histories, and outcome records. Use authorized existing evidence or a few bounded diagnostic observations to locate obvious discovery/display problems. Reserve the full matched matrix for CU.10 after deterministic repairs; keep raw personal data out of source control.
+  Check: Fixture facts are equivalent across contexts, check results come from actual fixture commands, and observations distinguish calls from displayed outcomes. No tool-forcing prompt is scored as spontaneous selection. If live execution is unavailable, record the exact blocker and proceed with independent deterministic steps.
+  Status 2026-09-19: Equivalent natural fixtures and actual check outcomes prepared; hosted diagnostics unavailable, explicitly recorded.
+
+- [x] **CU.5 — Normalize confirmed Gemini edit events.**
+  Work: Capture or verify the exact supported `replace`/`write_file` headless shapes; implement the small adapter-local mapping. Preserve errors and IDs and reuse CU.4 where applicable.
+  Check: Adapter fixtures prove replace → existing diff rendering and write → written content; unrelated tool names/inputs and failed results retain their behavior. Browser fixture verifies the resulting native row. If the supported binary cannot be inspected, mark the live provider confirmation outstanding rather than pretending the synthetic fixture establishes version compatibility.
+  Status 2026-09-19: Installed Gemini 0.60.0 source confirms exact native fields; adapter and mounted browser fixtures pass. No live-model claim.
+
+- [x] **CU.6 — Recover failed same-ID components.**
+  Work: Introduce the smallest content-sensitive retry mechanism at the relevant error boundaries. Preserve healthy instances and stable transcript identity.
+  Check: A deliberately throwing fixture then valid same-ID content recovers in a mounted browser; corrected invalid-schema props also recover. Unchanged failing content does not retry repeatedly. Healthy siblings, pins, focus, and disclosure survive. Keep a test-only throwing fixture so stricter chart validation in CU.7 cannot accidentally remove coverage of the thrown-error path.
+  Status 2026-09-19: Mounted thrown-inner/outer, invalid-schema, unchanged-failure, healthy focus/state and pin recovery checks pass.
+
+- [x] **CU.7 — Validate supported chart semantics at every boundary.**
+  Work: Apply the shared semantic check consistently to both tool handlers and the normalized/browser paths. Keep unsupported historical payloads legible and preserve an existing valid component when a subsequent tool call is rejected.
+  Check: Real stdio MCP and in-process handler tests reject two-series pies, negative stacks, and length mismatches before success acknowledgment. Test valid line/bar/pie and zero values, signed supported charts, unknown additive props, direct malformed events, and legacy replay. Browser verification confirms that rejected negatives cannot appear as a misleading positive-only chart. Correctly update obsolete assertions with contract evidence.
+  Status 2026-09-19: Both MCP transports, normalized events, browser schemas and mounted historical fallback pass. Integrated checkpoint C remains blocked.
+
+- [x] **CU.8 — Preserve mixed XY-chart source.**
+  Work: Decline unsupported mixed-kind conversion before deduplication; retain text and series distinctions faithfully.
+  Check: Distinct and identical-valued mixed bar/line fixtures remain unchanged source. Supported single-kind examples still convert. Streaming, finalization, and replay show one correct result with surrounding prose in order.
+  Status 2026-09-19: Mixed equal/distinct kinds retain exact source; same-kind series remain distinct; streamed/finalized/replayed source test passes.
+
+- [x] **CU.13 — Conduct a cold correctness and simplification review.**
+  Work: Review the final diff against the behavior contract and acceptance map. Seek counterexamples around status attribution, display truncation, repeated updates, replay, tool acknowledgment, and instruction override semantics. Remove abandoned experiment code and duplication. An independent reviewer is useful if available; one is not a substitute for evidence.
+  Check: Reproduce and address material findings, then rerun affected checks and invalidate stale broader results when inputs changed. “No finding” is acceptable. Do not manufacture refactors to demonstrate review effort.
+  Status 2026-09-19: Independent review findings fixed and retested; follow-up has no additional material finding.
