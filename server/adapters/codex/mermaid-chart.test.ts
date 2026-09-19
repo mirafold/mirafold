@@ -23,14 +23,18 @@ test("live bar fence parses: title, x labels, yLabel-named single series", () =>
   assert.deepEqual(c.series, [{ name: "Revenue", values: [10, 15, 12, 20, 18, 25] }]);
 });
 
-test("duplicate line+bar of the same values collapses to one series (observed live)", () => {
-  const c = xychartToChart(`xychart-beta
-    x-axis [a, b, c]
-    line [1, 2, 3]
-    bar [1, 2, 3]`);
-  assert.ok(c);
-  assert.equal(c.kind, "line"); // first directive wins
-  assert.equal(c.series.length, 1);
+test("mixed kinds retain exact source, including identical-valued series", () => {
+  for (const values of ["1, 2, 3", "3, 2, 1"]) {
+    const body = `xychart-beta\nx-axis [a, b, c]\nline [1, 2, 3]\nbar [${values}]`;
+    assert.equal(xychartToChart(body), undefined);
+    const source = `Before\n\`\`\`mermaid\n${body}\n\`\`\`\nAfter`;
+    assert.deepEqual(convertMermaidCharts(source), [{ text: source }]);
+  }
+});
+
+test("equal-valued same-kind series retain their distinct identities", () => {
+  const c = xychartToChart("xychart-beta\nx-axis [a]\nbar [1]\nbar [1]");
+  assert.deepEqual(c?.series, [{ name: "Series 1", values: [1] }, { name: "Series 2", values: [1] }]);
 });
 
 test("two distinct series keep both, named Series N", () => {

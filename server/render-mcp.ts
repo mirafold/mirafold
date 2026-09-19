@@ -23,7 +23,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { RENDER_ID_GRAMMAR, acceptableRenderId, renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
-import { registryShapes } from "./registry-spec";
+import { registryShapes, clientSchemas } from "./registry-spec";
 
 const idParam = {
   id: z
@@ -109,9 +109,14 @@ for (const [name, component] of renderToolEntries) {
   server.registerTool(
     name,
     { description: TOOL_DESCRIPTIONS[name], inputSchema: { ...registryShapes[component], ...idParam } },
-    // arg types collapse to a union across components; the id is all we read
-    // here, and the engine already validated props against the schema.
-    (async (args: { id?: string }) => ack(component, args.id)) as never,
+    (async ({ id, ...props }: { id?: string }) => {
+      const checked = clientSchemas[component].safeParse(props);
+      if (!checked.success) return {
+        isError: true,
+        content: [{ type: "text" as const, text: checked.error.issues.map((i) => i.message).join(" ") }],
+      };
+      return ack(component, id);
+    }) as never,
   );
 }
 

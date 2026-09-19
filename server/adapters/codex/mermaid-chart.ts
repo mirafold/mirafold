@@ -106,15 +106,10 @@ export function xychartToChart(body: string): ChartProps | undefined {
   if (!x || parsedSeries.length === 0) return undefined;
   if (parsedSeries.some((s) => s.values.length !== x.length)) return undefined;
 
-  // The model sometimes emits the same values as both `line` and `bar`
-  // (observed live) — mermaid overlays them; our chart has one kind, so
-  // duplicates collapse to the first.
-  const series: { kind: "line" | "bar"; values: number[] }[] = [];
-  for (const s of parsedSeries) {
-    if (!series.some((t) => t.values.length === s.values.length && t.values.every((v, i) => v === s.values[i]))) {
-      series.push(s);
-    }
-  }
+  // Our chart has one kind. Equal values do not make different series
+  // interchangeable: retain same-kind series and leave mixed kinds as source.
+  if (parsedSeries.some((s) => s.kind !== parsedSeries[0].kind)) return undefined;
+  const series = parsedSeries;
   if (series.length > 6) return undefined; // registry cap; a 7-series chart is not ours to guess at
 
   return {

@@ -122,14 +122,14 @@ export const registryShapes = {
           name: z.string().describe("Series name, shown in the legend."),
           values: z
             .array(z.number())
-            .describe("One numeric value per x label, aligned by index."),
+            .describe("One finite numeric value per x label, aligned by index. Pie and stacked-bar values must be nonnegative; a pie needs a positive value."),
         }),
       )
       .min(1)
       .max(6)
       .describe(
         "1–6 data series sharing the same x axis. pie takes exactly ONE " +
-          "series (its values are the slice sizes) — more than one fails to render.",
+          "series (its values are the slice sizes); unsupported values or mismatched lengths are rejected.",
       ),
     yLabel: z.string().optional().describe("Optional y-axis unit/label, e.g. 'ms' or '$k'."),
     stacked: z
@@ -137,7 +137,7 @@ export const registryShapes = {
       .optional()
       .describe(
         "Bar charts only: stack the series into one part-to-whole column per " +
-          "x label instead of grouping side by side. Ignored for line and pie.",
+        "x label instead of grouping side by side. Requires nonnegative values. Ignored for line and pie.",
       ),
     horizontal: z
       .boolean()
@@ -462,6 +462,27 @@ export const registryShapes = {
 
 export type ComponentName = keyof typeof registryShapes;
 
+/** Shape schemas also advertise tool arguments; cross-field chart semantics
+ *  must run explicitly in both tool handlers as well as on received events. */
+function withSemantics<N extends ComponentName>(name: N, schema: z.ZodObject<(typeof registryShapes)[N]>) {
+  if (name !== "chart") return schema;
+  return schema.superRefine((value, ctx) => {
+    const chart = value as z.infer<z.ZodObject<typeof registryShapes.chart>>;
+    const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (chart.series.some((s) => s.values.length !== chart.x.length || s.values.some((v) => !Number.isFinite(v)))) {
+      issue("Each chart series must have one finite value per x label.");
+    }
+    if (chart.kind === "pie") {
+      if (chart.series.length !== 1) issue("A pie chart requires exactly one series.");
+      if (chart.series.some((s) => s.values.some((v) => v < 0))) issue("Pie values must be nonnegative.");
+      if (!chart.series.some((s) => s.values.some((v) => v > 0))) issue("A pie chart needs at least one positive value.");
+    }
+    if (chart.kind === "bar" && chart.stacked && chart.series.some((s) => s.values.some((v) => v < 0))) {
+      issue("Stacked bars require nonnegative values; use grouped bars or a line for signed data.");
+    }
+  });
+}
+
 /**
  * Derived object schemas, for validating a full `render` props payload at the
  * SOURCE — agent output entering the system (render-mcp / render-tools, and
@@ -469,7 +490,7 @@ export type ComponentName = keyof typeof registryShapes;
  * malformed agent instruction and must be rejected where it's authored.
  */
 export const registrySchemas = Object.fromEntries(
-  Object.entries(registryShapes).map(([name, shape]) => [name, z.object(shape).strict()]),
+  Object.entries(registryShapes).map(([name, shape]) => [name, withSemantics(name as ComponentName, z.object(shape).strict())]),
 ) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
 
 /**
@@ -482,7 +503,7 @@ export const registrySchemas = Object.fromEntries(
  * clients. RenderBlock validates with THESE; never tighten them to strict.
  */
 export const clientSchemas = Object.fromEntries(
-  Object.entries(registryShapes).map(([name, shape]) => [name, z.object(shape)]),
+  Object.entries(registryShapes).map(([name, shape]) => [name, withSemantics(name as ComponentName, z.object(shape))]),
 ) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
 
 export type ComponentProps<N extends ComponentName> = z.infer<(typeof registrySchemas)[N]>;

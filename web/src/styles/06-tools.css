@@ -133,6 +133,12 @@
   margin-top: 6px;
 }
 
+.tool-edit-preview { padding: 4px 12px 8px 24px; min-width: 0; }
+.tool-edit-preview .tool-patch-path { overflow-wrap: anywhere; }
+.tool-edit-more { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--fg-dim); font-size: 11px; }
+.tool-edit-more button { color: inherit; font: inherit; border: 0; background: none; padding: 4px; text-decoration: underline; cursor: pointer; }
+.tool-parameters { margin-top: 8px; }
+
 .tool-patch-path {
   unicode-bidi: isolate;
   margin: 0 0 3px 2px;
@@ -158,12 +164,12 @@
 }
 
 .diff-eof {
-  color: var(--fg-faint);
+  color: var(--code-fg);
   font-style: italic;
 }
 
 .diff-ctx {
-  color: var(--fg-dimmer);
+  color: var(--code-fg);
 }
 
 /* Truncation marker: explicit, dim, never mistaken for real output. */
@@ -451,12 +457,12 @@
 }
 
 .tool-change-add {
-  color: var(--diff-add-fg);
+  color: var(--accent);
 }
 
 .tool-change-del {
   margin-left: 4px;
-  color: var(--diff-del-fg);
+  color: var(--error);
 }
 
 .tool-preview {

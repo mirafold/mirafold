@@ -468,6 +468,26 @@ caps its LCS matrix at one million changed-middle cells; over that threshold
 it shows every old middle line removed and every new middle line added. The
 fallback is intentionally less minimal, but linear and lossless.
 
+Gemini CLI 0.60.0's installed headless implementation forwards `replace`
+arguments (`file_path`, `old_string`, `new_string`) and `write_file` arguments
+(`file_path`, `content`) through `tool_use.parameters`. Confirmed shapes now
+normalize to `Edit` and `Write`; IDs, complete parameters and result/error
+status remain intact, and the detail names the native tool. Other names and
+malformed shapes remain native. This is installed-source compatibility
+evidence; a live Gemini model run was not part of this verification.
+
+The compact view previews successful edit inputs only, bounded to 12 rows
+and 3 files until a reader explicitly expands or collapses the call. A
+corrected same-ID painting can recover from a thrown renderer or invalid
+schema; healthy instances retain their state. Both render-tool transports,
+normalized render-event synthesis and browser schemas share chart semantics:
+series lengths match labels, values are finite, pies have one nonnegative
+series with at least one positive value, and stacked bars require nonnegative
+values. Unsupported calls return an error without replacing a valid painting;
+unsupported historical events remain legible as raw content. Mixed Mermaid
+line/bar sources remain verbatim, and equal-valued same-kind series keep their
+separate identities.
+
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { RENDER_ID_GRAMMAR, acceptableRenderId, renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
 import type { SessionMsg } from "./protocol";
 import { resolveImageProps } from "./render-image";
-import { registryShapes, type ComponentName } from "./registry-spec";
+import { registryShapes, clientSchemas, type ComponentName } from "./registry-spec";
 import { actionToolNames } from "./sessions/actions";
 
 const idParam = {
@@ -68,6 +68,12 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
 // skipping containment and the byte cap. Required, that's a compile error.
 export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
+    const checked = clientSchemas[component].safeParse(props);
+    if (!checked.success) return {
+      isError: true,
+      content: [{ type: "text" as const, text: checked.error.issues.map((i) => i.message).join(" ") }],
+    };
+    props = checked.data;
     const renderId = acceptableRenderId(id) ?? randomUUID();
     // image authors a PATH; the daemon inlines the bytes at the synthesis
     // point (same contract as generativeUIMsg on the stdio adapters).

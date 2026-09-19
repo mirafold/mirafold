@@ -55,3 +55,11 @@ test("RenderBoundary: an error state renders the fallback; a clean state renders
   boundary.state = { failed: false };
   assert.equal(boundary.render(), child);
 });
+
+test("healthy boundaries never serialize large unchanged painting content", () => {
+  const content = { toJSON() { throw new Error("healthy content was serialized"); } };
+  const boundary = new RenderBoundary({ fallback: null, children: null, resetKey: content });
+  boundary.componentDidUpdate({ resetKey: {} });
+  boundary.componentDidUpdate({ resetKey: content });
+  assert.equal(boundary.state.failed, false);
+});

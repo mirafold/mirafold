@@ -1,0 +1,185 @@
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { build } from "esbuild";
+import { type Browser } from "playwright-core";
+import { startDaemon } from "../itest-harness";
+import { SessionCheckpointStore } from "../../sessions/persistence/session-store";
+import { componentUsageMessages } from "../fixtures/component-usage";
+import { invalidCharts } from "../fixtures/chart-cases";
+import { launchChrome, noSideScroll, assertAxeClean, PHONE_CONTEXT } from "./e2e-harness";
+
+let browser: Browser;
+before(async () => { browser = await launchChrome(); });
+after(async () => { await browser?.close(); });
+
+for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone light" : "desktop dark"}, normalized edits and disclosure survive replay`, async () => {
+  const dir = mkdtempSync("/tmp/cu-browser-");
+  const store = new SessionCheckpointStore(dir);
+  const buffer = componentUsageMessages();
+  for (const id of ["cu-one", "cu-two"]) store.write({ version: 1, id, cwd: dir, bangCwd: dir, backend: { agent: "codex", kind: "none", live: false }, promptOptions: [], buffer, nextSeq: buffer.length + 1, name: id, status: "idle", lastActivity: 1, createdAt: 1 });
+  const daemon = await startDaemon({ MIRAFOLD_TOKEN: "cu-browser", MIRAFOLD_SESSION_DIR: dir }, { built: true });
+  const context = await browser.newContext(phone ? { ...PHONE_CONTEXT, colorScheme: "light" } : { viewport: { width: 1280, height: 850 }, colorScheme: "dark" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-one?token=cu-browser`);
+    const patch = page.locator(".tool-block", { has: page.locator(".tool-name", { hasText: "apply_patch" }) });
+    await patch.locator(".tool-edit-preview").waitFor();
+    assert.match(await patch.locator(".tool-edit-preview").innerText(), /- const retries = 2;[\s\S]*\+ const retries = 4;/);
+    assert.ok(await patch.locator(".tool-edit-preview .tool-patch").count() <= 3);
+    assert.ok(await patch.locator(".tool-edit-preview .tool-diff > div").count() <= 12);
+    assert.match(await patch.innerText(), /Preview shortened/);
+    const gemini = page.locator(".tool-block", { hasText: "gemini.ts" });
+    assert.match(await gemini.locator(".tool-edit-preview").innerText(), /- before[\s\S]*\+ after/);
+    assert.match(await page.locator(".tool-block", { hasText: "written.ts" }).innerText(), /Written content/);
+    const failed = page.locator(".tool-block", { hasText: "failed.ts" });
+    assert.equal(await failed.locator(".tool-edit-preview").count(), 0);
+    assert.match(await failed.innerText(), /replacement not found/);
+    assert.equal(await page.locator(".tool-block", { hasText: "pending.ts" }).locator(".tool-edit-preview").count(), 0);
+    assert.equal(await page.locator(".subagent-deck .tool-edit-preview").count(), 0);
+    await page.locator(".subagent-deck-head").click();
+    assert.match(await page.locator(".subagent-deck .tool-edit-preview").innerText(), /child old[\s\S]*child new/);
+    await noSideScroll(page);
+    await assertAxeClean(page, "CU preview");
+    mkdirSync("/tmp/cu-evidence", { recursive: true });
+    await patch.screenshot({ path: `/tmp/cu-evidence/native-${phone ? "phone" : "desktop"}.png` });
+    await patch.getByRole("button", { name: "Show full details" }).focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await patch.locator(".tool-input .tool-patch").count(), 4);
+    assert.match(await patch.innerText(), /Moved old.txt → moved.txt/);
+    await page.reload();
+    await patch.locator(".tool-input").waitFor();
+    await patch.locator(".tool-head").click();
+    assert.equal(await patch.locator(".tool-edit-preview").count(), 0);
+    await page.reload();
+    await patch.waitFor();
+    assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
+    await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-two`);
+    await patch.locator(".tool-edit-preview").waitFor();
+    await page.locator(".sb-details").click();
+    await patch.locator(".tool-input").waitFor();
+    await page.locator(".sb-details").click();
+    await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-one`);
+    await patch.waitFor();
+    assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
+    await noSideScroll(page);
+  } finally { await context.close(); await daemon.stop(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CU recovery: thrown inner/outer boundaries and invalid historical charts recover under the same ID", async () => {
+  const bundle = await build({ entryPoints: ["server/testing/fixtures/component-recovery.tsx"], bundle: true, write: false, format: "iife", platform: "browser", define: { "process.env.NODE_ENV": '"production"' } });
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.route("http://cu.test/**", (route) => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+    await page.goto("http://cu.test");
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.waitForFunction("window.cu?.ready()");
+    const emit = async (message: unknown) => { await page.evaluate((m) => (window as any).cu.emit(m), message); await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))); };
+    const paint = (id: string, label: string, percent: number) => emit({ type: "render", id, component: "progress", props: { label, percent } });
+    await paint("healthy", "healthy", 5);
+    const healthy = page.getByRole("textbox", { name: "healthy" });
+    await healthy.fill("reader state");
+    await healthy.focus();
+    await paint("broken", "throw", 1);
+    assert.match(await page.locator(".rc-fallback").innerText(), /component crashed/);
+    const attempts = await page.evaluate(() => (window as any).cu.attempts.inner);
+    await paint("broken", "throw", 1);
+    assert.equal(await page.evaluate(() => (window as any).cu.attempts.inner), attempts, "unchanged failing content does not retry");
+    await paint("broken", "corrected", 2);
+    await page.getByRole("textbox", { name: "corrected" }).waitFor();
+    assert.equal(await healthy.inputValue(), "reader state");
+    assert.equal(await healthy.evaluate((e) => e === document.activeElement), true);
+    await paint("schema", "schema", 200);
+    assert.match(await page.locator(".rc-fallback").innerText(), /invalid props/);
+    await paint("schema", "schema", 30);
+    await page.getByRole("textbox", { name: "schema" }).waitFor();
+    await page.evaluate(() => (window as any).cu.setOuter(true));
+    await paint("outer", "outer", 1);
+    await page.locator(".rc-fallback", { hasText: "couldn't draw" }).waitFor();
+    await page.evaluate(() => (window as any).cu.setOuter(false));
+    await paint("outer", "outer recovered", 2);
+    await page.getByRole("textbox", { name: "outer recovered" }).waitFor();
+    await page.locator(".turn-render", { has: healthy }).locator(".pin-btn").click();
+    const pinned = page.locator(".pin-dock").getByRole("textbox", { name: "healthy" });
+    await pinned.fill("pinned state");
+    await pinned.focus();
+    await paint("healthy", "healthy", 6);
+    assert.equal(await pinned.inputValue(), "pinned state");
+    assert.equal(await pinned.evaluate((e) => e === document.activeElement), true);
+    await paint("healthy", "throw", 7);
+    await page.locator(".pin-dock .rc-fallback").waitFor();
+    await paint("healthy", "healthy", 8);
+    await pinned.waitFor();
+    assert.equal(await page.locator(".pin-stub").count(), 1, "the painting stayed pinned through correction");
+    for (const props of invalidCharts) {
+      await emit({ type: "render", id: "legacy", component: "chart", props });
+      assert.match(await page.locator(".rc-fallback").innerText(), /invalid props/);
+      assert.equal(await page.locator(".rc-chart").count(), 0);
+    }
+    await emit({ type: "render", id: "legacy", component: "chart", props: { kind: "pie", x: ["A"], series: [{ name: "s", values: [1] }] } });
+    await page.locator(".rc-chart").waitFor();
+    assert.equal(await page.locator(".rc-fallback").count(), 0);
+  } finally { await context.close(); }
+});
+
+// A mounted-source proof can still exercise presentation without a localhost
+// daemon. The built-daemon replay tests above remain separate acceptance gates.
+for (const phone of [false, true]) test(`CU mounted native preview: ${phone ? "phone light" : "desktop dark"}`, async () => {
+  const bundle = await build({ entryPoints: ["server/testing/fixtures/component-recovery.tsx"], bundle: true, write: false, format: "iife", platform: "browser", define: { "process.env.NODE_ENV": '"production"' } });
+  const context = await browser.newContext(phone ? { ...PHONE_CONTEXT, colorScheme: "light" } : { viewport: { width: 1280, height: 850 }, colorScheme: "dark" });
+  try {
+    const page = await context.newPage();
+    await page.route("http://cu.test/**", (route) => route.fulfill({ contentType: "text/html", body: '<!doctype html><html lang="en"><head><title>Component usage fixture</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main id="root"></main></body></html>' }));
+    await page.goto("http://cu.test");
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, phone ? "light" : "dark");
+    assert.equal(await page.evaluate(() => innerWidth), phone ? 390 : 1280);
+    const index = await readFile("dist/index.html", "utf8");
+    const css = index.match(/href="(\/assets\/[^" ]+\.css)"/)![1];
+    await page.addStyleTag({ content: await readFile(`dist${css}`, "utf8") });
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.waitForFunction("window.cu?.ready()");
+    const messages = componentUsageMessages();
+    const replay = async () => {
+      await page.evaluate((records) => { (window as any).cu.emit({ type: "zone_reset" }); for (const message of records) (window as any).cu.emit({ ...message, replay: true }); (window as any).cu.emit({ type: "replay_complete" }); }, messages);
+    };
+    await replay();
+    const patch = page.locator(".tool-block", { has: page.locator(".tool-name", { hasText: "apply_patch" }) });
+    await patch.locator(".tool-edit-preview").waitFor();
+    assert.match(await patch.locator(".tool-edit-preview").innerText(), /- const retries = 2;[\s\S]*\+ const retries = 4;/);
+    assert.ok(await patch.locator(".tool-edit-preview .tool-diff > div").count() <= 12);
+    assert.equal(await patch.locator(".tool-edit-preview .tool-patch").count(), 3, "trailing context does not consume the entire preview");
+    assert.match(await page.locator(".tool-block", { hasText: "gemini.ts" }).locator(".tool-edit-preview").innerText(), /- before[\s\S]*\+ after/);
+    assert.equal(await page.locator(".tool-block", { hasText: "written.ts" }).locator(".diff-add").count(), 0);
+    assert.equal(await page.locator(".tool-block", { hasText: "written.ts" }).locator(".tool-change").count(), 0);
+    assert.equal(await page.locator(".tool-block", { hasText: "pending.ts" }).locator(".tool-edit-preview").count(), 0);
+    assert.equal(await page.locator(".tool-block", { hasText: "failed.ts" }).locator(".tool-edit-preview").count(), 0);
+    await page.locator(".subagent-deck-head").click();
+    await page.locator(".subagent-deck .tool-edit-preview").waitFor();
+    await noSideScroll(page);
+    await assertAxeClean(page, "CU mounted preview");
+    mkdirSync("/tmp/cu-evidence", { recursive: true });
+    await patch.screenshot({ path: `/tmp/cu-evidence/mounted-native-${phone ? "phone" : "desktop"}.png` });
+    await patch.getByRole("button", { name: "Show full details" }).focus();
+    await page.keyboard.press("Enter");
+    await patch.locator(".tool-body").waitFor();
+    assert.equal(await patch.locator(".tool-input .tool-patch").count(), 4);
+    assert.match(await patch.innerText(), /Moved old.txt → moved.txt/);
+    await replay();
+    await patch.locator(".tool-body").waitFor();
+    await patch.locator(".tool-head").click();
+    await replay();
+    await patch.waitFor();
+    assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
+    await page.evaluate(() => (window as any).cu.show("another-session", true));
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    await replay();
+    await patch.locator(".tool-body").waitFor();
+    await page.evaluate(() => (window as any).cu.show("recovery-fixture", false));
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    await replay();
+    await patch.waitFor();
+    assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
+  } finally { await context.close(); }
+});

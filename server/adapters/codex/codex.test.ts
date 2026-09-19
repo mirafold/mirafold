@@ -15,6 +15,7 @@ import { MIRAFOLD_CONTEXT } from "../../render-guidance";
 import { OUTPUT_CAP_BYTES } from "../types";
 import { CodexEventMapper, STREAM_CAP_MARKER, streamCapMarker } from "./codex-events";
 import { CODEX_CHILD_THREAD_SEQUENCE } from "../../testing/fixtures/codex-child-thread-fixture";
+import { createTranscriptProjection } from "../../../web/src/transcript/transcript-projection";
 
 // The Codex app-server notification→WireMsg mapping and the turn grammar, on
 // a scripted in-memory app-server — no engine, no network. The session is
@@ -475,6 +476,30 @@ test("streamed prose flows live until a fence opens; the held remainder is conve
   assert.ok(texts.some((t) => t.includes("Outro.")));
   assert.equal(msgs.filter((m) => m.type === "render" && m.component === "chart").length, 1);
   s.close();
+});
+
+test("mixed XY chart text survives streaming, finalization and replay verbatim", async () => {
+  for (const line of ["1, 2", "3, 4"]) {
+    const full = `Before\n\`\`\`mermaid\nxychart-beta\nx-axis [A,B]\nbar [1, 2]\nline [${line}]\n\`\`\`\nAfter`;
+    const { s, msgs, awaitTurnEnd } = makeSession([
+      ["item/agentMessage/delta", { itemId: "mixed", delta: full.slice(0, 30) }],
+      ["item/agentMessage/delta", { itemId: "mixed", delta: full.slice(30) }],
+      ["item/completed", { item: { type: "agentMessage", id: "mixed", text: full } }],
+      DONE,
+    ]);
+    try {
+      s.pushPrompt("explain");
+      await awaitTurnEnd();
+      assert.equal(msgs.filter((m) => m.type === "render").length, 0);
+      assert.equal(msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join(""), full);
+      const projection = createTranscriptProjection();
+      const { snapshot } = projection.apply([
+        ...msgs.map((message, i) => ({ ...message, seq: i + 1, replay: true as const })),
+        { type: "replay_complete" },
+      ], () => 0);
+      assert.equal(snapshot.rows.filter((r) => r.kind === "text").map((r) => r.kind === "text" ? r.text : "").join(""), full);
+    } finally { s.close(); }
+  }
 });
 
 test("a Mermaid opener split across prose deltas is held and converted", async () => {

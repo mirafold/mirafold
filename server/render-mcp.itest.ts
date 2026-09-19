@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { RENDER_TOOL_COMPONENT, acceptableRenderId } from "./adapters/render-mcp-cmd";
 import { parseRenderId } from "./adapters/gemini-cli/gemini-cli";
+import { invalidCharts, validCharts } from "./testing/fixtures/chart-cases";
 
 // The compiled stdio render-MCP server over a real Electron-as-Node handshake —
 // the process Codex/Gemini engines actually spawn. The adapters never see this
@@ -98,4 +99,19 @@ test("emit_artifact acks like the render tools", async () => {
   assert.ok(!r.isError);
   assert.match(ackText(r), /Rendered artifact \(id: /);
   assert.equal(parseRenderId(ackText(r)), r.structuredContent?.renderId);
+});
+
+test("compiled stdio chart tool rejects unsupported semantics before acknowledging an update", async () => {
+  for (const props of validCharts) {
+    const result = await client.callTool({ name: "render_chart", arguments: { ...props, futureOption: true, id: "kept-chart" } }) as ToolResult;
+    assert.ok(!result.isError);
+    assert.equal(result.structuredContent?.renderId, "kept-chart");
+  }
+  for (const props of invalidCharts) {
+    const result = await client.callTool({ name: "render_chart", arguments: { ...props, id: "kept-chart" } }) as ToolResult;
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent, undefined);
+    assert.doesNotMatch(ackText(result), /Rendered/);
+    assert.ok(ackText(result).length > 10, "actionable validation error");
+  }
 });

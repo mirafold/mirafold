@@ -225,6 +225,14 @@ deliberately narrow:
 - **Command rows carry outcomes.** `tool_result.exitCode` and `durationMs`
   are independent of `isError` (a nonzero exit that ran is not an error); a
   collapsed row previews the last non-empty lines.
+- **Successful edits are inspectable by default.** An untouched compact edit
+  shows at most 12 diff rows across 3 files, starting at changed text and
+  limiting trailing context. Preparation shares the existing aggregate
+  200,000-character/200-item guard with the change counts. Full input remains
+  available in details; an explicit collapse also hides the preview and
+  survives replay through the existing disclosure store. Writes show content
+  without inventing old contents or added-line counts. Pending and failed calls label their
+  expanded input without claiming completion.
 - **Evidence is bounded and says so.** A large result keeps a UTF-8-safe head
   and tail within one 64,000-byte budget (`OUTPUT_CAP_BYTES` in
   [`server/adapters/types.ts`](../server/adapters/types.ts)); `omittedBytes`
