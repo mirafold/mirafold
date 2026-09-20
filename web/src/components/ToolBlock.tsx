@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { ToolAction } from "@protocol";
-import { diffLines, unifiedDiffLines, wholeFileLines, type DiffLine } from "../workspace/diff";
+import { prepareEditInput, editPreview, type EditInput, type EditFile } from "./edit-input";
 import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 import type { LiveOutputView } from "../transcript/transcript-projection";
@@ -38,6 +38,7 @@ export const ToolBlock = memo(function ToolBlock({
   live,
   orphaned,
   expanded,
+  previewDefault = false,
   onToggle,
   liveOutputAvailable,
 }: {
@@ -61,6 +62,8 @@ export const ToolBlock = memo(function ToolBlock({
   /** A result whose announcing call was never retained. */
   orphaned?: boolean;
   expanded: boolean;
+  /** Untouched compact disclosure; an explicit collapse hides the preview. */
+  previewDefault?: boolean;
   onToggle: (key: string, expanded: boolean) => void;
   /** Whether this session's agent ever streams a running call's output —
    *  undefined when the daemon did not say. Decides what silence means. */
@@ -72,7 +75,12 @@ export const ToolBlock = memo(function ToolBlock({
   // A command shows its last lines so the outcome is on the row (R3).
   const previewSource = running ? liveText : tail ?? output;
   const preview = !actions?.length && previewSource ? lastLines(previewSource, PREVIEW_LINES) : "";
-  const change = changeCounts(name, input);
+  const prepared = useMemo(() => prepareEditInput(name, input), [name, input]);
+  const edit = useMemo(() => prepared ? editPreview(prepared) : undefined, [prepared]);
+  const succeeded = !running && !isError && (exitCode === undefined || exitCode === 0);
+  const change = succeeded ? prepared?.counts : undefined;
+  const showEdit = !expanded && previewDefault && succeeded && prepared && edit;
+
   const state = running
     ? elapsedMs !== undefined
       ? `running · ${formatDuration(elapsedMs)}`
@@ -106,14 +114,24 @@ export const ToolBlock = memo(function ToolBlock({
           <span className="tool-duration" title="duration reported by the engine">{formatDuration(durationMs)}</span>
         )}
       </button>
-      {!expanded && preview && (
+      {showEdit && (
+        <div className="tool-edit-preview">
+          {edit.files.map((file, i) => <EditFileView key={i} file={file} applied />)}
+          <div className="tool-edit-more">
+            {prepared.unavailable ?? (edit.omitted ? "Preview shortened" : edit.files.length ? "" : "No textual change")}
+            <button onClick={() => onToggle(toggleKey, true)}>Show full details</button>
+            <button onClick={() => onToggle(toggleKey, false)}>Hide preview</button>
+          </div>
+        </div>
+      )}
+      {!expanded && !showEdit && preview && (
         <pre className={`tool-preview${running ? " tool-preview-live" : ""}`} aria-hidden="true">
           {visibleControls(preview)}
         </pre>
       )}
       {expanded && (
         <div className="tool-body">
-          {input && <ToolInput name={name} input={input} />}
+          {input && <ToolInput input={input} prepared={prepared} applied={succeeded} />}
           {running && (
             <RunningOutput live={live} streamed={streamed} liveOutputAvailable={liveOutputAvailable} />
           )}
@@ -208,151 +226,40 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
-/** Logical lines of a text: a trailing newline terminates the last line
- *  rather than opening an empty one (round 3). */
-function lineCount(text: string): number {
-  if (!text) return 0;
-  const lines = text.split("\n");
-  return text.endsWith("\n") ? lines.length - 1 : lines.length;
-}
-
-// Inputs above this many characters IN TOTAL — or with more edits than this
-// — are not counted: the badge is a glance, and diffing runs on every
-// collapsed-row render (PR #120 review: a per-string guard let many large
-// edits run the LCS each time).
-const CHANGE_COUNT_MAX_CHARS = 200_000;
-const CHANGE_COUNT_MAX_ITEMS = 200;
-
-/** Lines added and removed by an edit-shaped call, from its own input —
- *  Edit/MultiEdit old/new strings, a Write's content, an apply_patch's
- *  diffs. Undefined for anything else, or an input too large to count. */
+/** Counts and preview share one preparation in the mounted row. */
 export function changeCounts(name: string, input?: Record<string, unknown>): { added: number; removed: number } | undefined {
-  if (!input) return undefined;
-  const count = (lines: DiffLine[]) => ({
-    added: lines.filter((l) => l.sign === "+").length,
-    removed: lines.filter((l) => l.sign === "-").length,
-  });
-  const within = (...texts: unknown[]) =>
-    texts.reduce<number>((n, t) => n + (typeof t === "string" ? t.length : 0), 0) <= CHANGE_COUNT_MAX_CHARS;
-  if ((name === "Edit" || name === "MultiEdit") && Array.isArray(input["edits"])) {
-    const edits = (input["edits"] as unknown[]).map((raw) =>
-      typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {},
-    );
-    if (edits.length > CHANGE_COUNT_MAX_ITEMS || !within(...edits.flatMap((e) => [e["old_string"], e["new_string"]]))) return undefined;
-    let added = 0;
-    let removed = 0;
-    for (const e of edits) {
-      const c = count(diffLines(String(e["old_string"] ?? ""), String(e["new_string"] ?? "")));
-      added += c.added;
-      removed += c.removed;
-    }
-    return { added, removed };
-  }
-  if (name === "Edit" && typeof input["old_string"] === "string") {
-    if (!within(input["old_string"], input["new_string"])) return undefined;
-    return count(diffLines(input["old_string"], String(input["new_string"] ?? "")));
-  }
-  if (name === "Write" && typeof input["content"] === "string") {
-    if (!within(input["content"])) return undefined;
-    return { added: lineCount(input["content"]), removed: 0 };
-  }
-  if (name === "apply_patch" && Array.isArray(input["changes"])) {
-    const changes = (input["changes"] as unknown[]).map((raw) =>
-      typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {},
-    );
-    if (changes.length > CHANGE_COUNT_MAX_ITEMS || !within(...changes.map((c) => c["diff"]))) return undefined;
-    let added = 0;
-    let removed = 0;
-    for (const c of changes) {
-      const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
-      const diff = typeof c["diff"] === "string" ? c["diff"] : "";
-      const counted = count(kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-"));
-      added += counted.added;
-      removed += counted.removed;
-    }
-    return { added, removed };
-  }
-  return undefined;
+  return prepareEditInput(name, input)?.counts;
 }
 
-/** Render a tool's input the way the terminal would: diffs for edits,
- *  code for writes, JSON for the rest. */
-function ToolInput({ name, input }: { name: string; input: Record<string, unknown> }) {
-  if ((name === "Edit" || name === "MultiEdit") && Array.isArray(input["edits"])) {
-    // MultiEdit: a sequence of {old_string, new_string} edits.
-    return (
-      <div className="tool-input">
-        {(input["edits"] as unknown[]).map((raw, i) => {
-          // Engine-authored input: each element is checked, not assumed.
-          const e = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-          return (
-            <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
-          );
-        })}
-      </div>
-    );
-  }
-  if (name === "Edit" && typeof input["old_string"] === "string") {
-    return (
-      <div className="tool-input">
-        <EditDiff oldText={String(input["old_string"])} newText={String(input["new_string"] ?? "")} />
-      </div>
-    );
-  }
-  if (name === "apply_patch" && Array.isArray(input["changes"])) {
-    // Codex edits: one block per changed file, the patch drawn as diff rows
-    // (hunks for updates, the whole file for adds/deletes) — what the
-    // terminal prints for apply_patch.
-    return (
-      <div className="tool-input">
-        {(input["changes"] as unknown[]).map((raw, i) => {
-          const c = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-          const kind = c["kind"] === "add" || c["kind"] === "delete" ? (c["kind"] as "add" | "delete") : "update";
-          const diff = typeof c["diff"] === "string" ? c["diff"] : "";
-          const shownPath = String(c["path"] ?? "");
-          const movePath = typeof c["movePath"] === "string" ? c["movePath"] : undefined;
-          const label = movePath
-            ? `Moved ${shownPath} → ${movePath}`
-            : `${kind === "add" ? "Added" : kind === "delete" ? "Deleted" : "Updated"} ${shownPath}`;
-          const lines: DiffLine[] = kind === "update" ? unifiedDiffLines(diff) : wholeFileLines(diff, kind === "add" ? "+" : "-");
-          return (
-            <div className="tool-patch" key={i}>
-              {/* Marked but deliberately not length-clamped: truncating the
-                  path would hide exactly what this row exists to audit, and
-                  the diff body below it is already unbounded model content. */}
-              <div className="tool-patch-path">{visibleControls(label)}</div>
-              {lines.length > 0 ? (
-                <pre className="tool-diff">
-                  <DiffLines lines={lines} />
-                </pre>
-              ) : (
-                <pre className="tool-code">(no diff)</pre>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-  if (name === "Write" && typeof input["content"] === "string") {
-    return (
-      <div className="tool-input">
-        <pre className="tool-code tool-added">{String(input["content"])}</pre>
-      </div>
-    );
-  }
+function EditFileView({ file, applied }: { file: EditFile; applied: boolean }) {
+  const label = applied ? file.label : file.label
+    .replace(/^Written content · /, "Write input · ")
+    .replace(/^Updated /, "Update input · ")
+    .replace(/^Added /, "Add input · ")
+    .replace(/^Deleted /, "Delete input · ")
+    .replace(/^Moved /, "Move input · ");
   return (
-    <div className="tool-input">
-      <pre className="tool-code">{JSON.stringify(input, null, 2)}</pre>
+    <div className="tool-patch">
+      <div className="tool-patch-path">{visibleControls(label)}</div>
+      {file.lines.length ? (
+        <pre className={file.written ? "tool-code" : "tool-diff"} tabIndex={0} aria-label={visibleControls(label)}>
+          {file.written
+            ? file.lines.map((line, i) => <div key={i}>{line.text}{line.noNewline && <span className="diff-eof"> (no final newline)</span>}</div>)
+            : <DiffLines lines={file.lines} />}
+        </pre>
+      ) : <pre className="tool-code">(no diff)</pre>}
     </div>
   );
 }
 
-function EditDiff({ oldText, newText }: { oldText: string; newText: string }) {
+function ToolInput({ input, prepared, applied }: { input: Record<string, unknown>; prepared?: EditInput; applied: boolean }) {
   return (
-    <pre className="tool-diff">
-      <DiffLines lines={diffLines(oldText, newText)} />
-    </pre>
+    <div className="tool-input">
+      {prepared && !prepared.unavailable ? <>
+        {prepared.files.map((file, i) => <EditFileView key={i} file={file} applied={applied} />)}
+        <details className="tool-parameters"><summary>Original input</summary><pre className="tool-code">{visibleControls(JSON.stringify(input, null, 2))}</pre></details>
+      </> : <pre className="tool-code">{visibleControls(JSON.stringify(input, null, 2))}</pre>}
+    </div>
   );
 }
 

@@ -78,7 +78,10 @@ test("CP.2/3 cockpit panel previews, acts, follows a session switch, and closes 
     }
     const text = document.createRange();
     text.selectNodeContents(name);
-    return edit.getBoundingClientRect().left - text.getBoundingClientRect().right;
+    // Range includes text clipped by the name's ellipsis in long-named
+    // checkouts. The pencil belongs beside the visible label boundary.
+    const visibleRight = Math.min(text.getBoundingClientRect().right, name.getBoundingClientRect().right);
+    return edit.getBoundingClientRect().left - visibleRight;
   });
   assert.ok(editGap >= 0 && editGap <= 10, `rename pencil sits ${editGap}px after the session name`);
   await target.locator(".cockpit-edit").click();

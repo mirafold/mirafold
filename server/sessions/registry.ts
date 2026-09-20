@@ -373,7 +373,7 @@ export class SessionRegistry {
     const cwd = resolveCwd(stored.cwd);
     const model = stored.model ?? backend.model;
     const restoredBackend = { ...backend, ...(model ? { model } : {}) };
-    const session = this.makeSession(restoredBackend, { cwd, resumeId: stored.resumeId });
+    const session = this.makeSession(restoredBackend, { cwd, resumeId: stored.resumeId, instructionsVersion: stored.instructionsVersion });
     const { buffer, nextSeq } = recoverStoredTranscript(stored);
     const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
     const entry: SessionEntry = {
@@ -407,6 +407,9 @@ export class SessionRegistry {
     this.entries.set(entry.id, entry);
     this.dormant.delete(entry.id);
     entry.session.onResumeId?.(() => {
+      if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
+    });
+    entry.session.onInstructionsVersion?.(() => {
       if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
     });
     // An adapter with an optimistic hello-time kind publishes the
@@ -465,6 +468,7 @@ export class SessionRegistry {
       bangCwd: entry.bangCwd,
       backend: { ...entry.backend },
       ...(entry.session.resumeId ? { resumeId: entry.session.resumeId } : {}),
+      ...(entry.session.instructionsVersion ? { instructionsVersion: entry.session.instructionsVersion } : {}),
       promptOptions: entry.promptOptions,
       buffer: entry.ring.buffer,
       nextSeq: entry.ring.nextSeq,

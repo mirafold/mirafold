@@ -46,6 +46,7 @@ async function normalizeSessionFacts(page: Page): Promise<void> {
     const replacements = [
       [".sb-session", "visual-session"],
       [".sb-version", "v0.0.0"],
+      [".sb-cwd", "mirafold/"],
       [".prompt-cwd", "\u200E~/workspace/mirafold\u200E"],
     ] as const;
     for (const [selector, text] of replacements) {

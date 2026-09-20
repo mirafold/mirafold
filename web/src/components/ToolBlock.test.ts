@@ -260,7 +260,7 @@ test("R3/R8: a running row says what silence means — no output yet, or live ou
 
 test("edit rows show change counts computed from their own input", () => {
   assert.deepEqual(changeCounts("Edit", { old_string: "a\nb", new_string: "a\nB\nc" }), { added: 2, removed: 1 });
-  assert.deepEqual(changeCounts("Write", { content: "x\ny\nz" }), { added: 3, removed: 0 });
+  assert.equal(changeCounts("Write", { content: "x\ny\nz" }), undefined, "without old contents, written lines are not known additions");
   assert.deepEqual(changeCounts("apply_patch", { changes: [{ kind: "update", diff: "@@ -1 +1 @@\n-alpha\n+beta\n+gamma\n" }] }), { added: 2, removed: 1 });
   assert.equal(changeCounts("Bash", { command: "ls" }), undefined);
   assert.equal(changeCounts("Edit", { old_string: "x".repeat(300_000), new_string: "" }), undefined, "an oversized input is not counted");
@@ -285,6 +285,4 @@ test("lastLines keeps the newest non-empty lines, each capped", () => {
   assert.equal(formatDuration(999), "999 ms");
   assert.equal(formatDuration(65_500), "1m 6s");
   assert.equal(formatDuration(119_600), "2m 0s", "a remainder that rounds to 60 carries (round 3)");
-  assert.deepEqual(changeCounts("Write", { content: "x\ny\n" }), { added: 2, removed: 0 }, "a trailing newline is not an extra line");
-  assert.deepEqual(changeCounts("Write", { content: "" }), { added: 0, removed: 0 });
 });

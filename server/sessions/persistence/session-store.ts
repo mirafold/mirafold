@@ -51,6 +51,7 @@ export type StoredSession = {
   bangCwd: string;
   backend: Backend;
   resumeId?: string;
+  instructionsVersion?: string;
   promptOptions: PromptOption[];
   buffer: SessionMsg[];
   nextSeq: number;
@@ -473,6 +474,7 @@ const storedMetadataSchema = z.object({
   status: z.enum(["idle", "working", "permission"]),
   backend: storedBackendSchema,
   resumeId: z.string().min(1).max(512).optional(),
+  instructionsVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   model: z.string().optional(),
   usage: storedUsageSchema.optional(),
   buffer: z.array(z.unknown()).max(MAX_BUFFER_MESSAGES),
@@ -566,6 +568,7 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
     bangCwd: m.bangCwd,
     backend: m.backend,
     ...(m.resumeId !== undefined ? { resumeId: m.resumeId } : {}),
+    ...(m.instructionsVersion !== undefined ? { instructionsVersion: m.instructionsVersion } : {}),
     promptOptions,
     buffer,
     nextSeq: m.nextSeq,

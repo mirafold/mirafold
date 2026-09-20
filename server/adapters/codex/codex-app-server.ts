@@ -21,6 +21,10 @@ export type AppServerSpawn = {
 
 export type AppServerExit = { code: number | null; signal: NodeJS.Signals | null };
 
+export class AppServerRpcError extends Error {
+  constructor(message: string, readonly code?: number) { super(message); }
+}
+
 export interface AppServerClient {
   request<T = unknown>(method: string, params?: unknown): Promise<T>;
   notify(method: string, params?: unknown): void;
@@ -102,7 +106,7 @@ export function spawnAppServer(spec: AppServerSpawn): AppServerClient {
     const p = pending.get(m.id);
     if (!p) return;
     pending.delete(m.id);
-    if (m.error) p.reject(new Error(m.error.message ?? `${p.method} failed`));
+    if (m.error) p.reject(new AppServerRpcError(m.error.message ?? `${p.method} failed`, m.error.code));
     else p.resolve(m.result);
   };
 

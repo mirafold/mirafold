@@ -35,13 +35,22 @@ function Fallback({
  *  wraps every transcript row in it so a malformed engine record can never
  *  unmount the shell (socket, prompt box, permission bar included). */
 export class RenderBoundary extends ReactComponent<
-  { fallback: ReactNode; children: ReactNode },
+  { fallback: ReactNode; children: ReactNode; resetKey?: unknown },
   { failed: boolean }
 > {
   state = { failed: false };
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidUpdate(previous: Readonly<{ resetKey?: unknown }>) {
+    // Compare content only after failure. Healthy image paints can retain
+    // megabytes of inlined bytes while unrelated transcript text streams.
+    if (this.state.failed && previous.resetKey !== this.props.resetKey &&
+        JSON.stringify(previous.resetKey) !== JSON.stringify(this.props.resetKey)) {
+      this.setState({ failed: false });
+    }
   }
 
   render() {
@@ -76,6 +85,7 @@ export const RenderBlock = memo(function RenderBlock({
   // Re-parsed only when the props object changes — an update-in-place render
   // arrives as a new props object, everything else re-renders with the same one.
   const parsed = useMemo(() => schema?.safeParse(props), [schema, props]);
+  const resetKey = useMemo(() => parsed?.success ? [component, parsed.data] : undefined, [component, parsed]);
   if (!Impl || !schema || !parsed) {
     return <Fallback component={component} props={props} reason="unknown component" />;
   }
@@ -84,6 +94,7 @@ export const RenderBlock = memo(function RenderBlock({
   }
   return (
     <RenderBoundary
+      resetKey={resetKey}
       fallback={<Fallback component={component} props={props} reason="component crashed" />}
     >
       <ActionContext.Provider value={(action) => onAction(action, renderId)}>

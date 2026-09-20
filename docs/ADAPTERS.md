@@ -94,6 +94,8 @@ interface AgentSession {
   readonly modelName: string | undefined;
   readonly resumeId?: string;
   onResumeId?(cb: (id: string) => void): void;
+  readonly instructionsVersion?: string;
+  onInstructionsVersion?(cb: (version: string) => void): void;
   onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
   verifyBackendKind?(): Promise<void>;
   refreshPromptOptions?(): void;
@@ -320,6 +322,23 @@ actionable error before the required single `turn_end`; configured providers
 and first-party sessions receive neither override nor deadline. The deadline
 is `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (`0` disables it).
 
+**Codex presentation instructions on resume (CU, 0.154.0 verified):** the
+engine retains its recorded developer message across warm and cold turns;
+changing `thread/resume.developerInstructions` alone does not replace that
+message. Mirafold checkpoints the SHA-256 version of its acknowledged
+presentation instructions beside the provider thread ID. New threads receive
+the current instructions at start. An unknown or older saved version receives
+one native `thread/inject_items` developer update before the resumed prompt;
+its acknowledgment immediately updates the checkpoint. Warm turns and cold
+resumes with that version do not append it again. Resume also supplies the
+current developer configuration for subsequent context reconstruction.
+The original provider thread, user/repository instructions and permission
+settings remain in place. Older engines returning method-not-found continue
+with their saved guidance and an explicit notice; other refresh failures stop
+that prompt without recording success. A crash between the native
+acknowledgment and the local checkpoint can cause the update to be retried.
+This is instruction delivery, not evidence of better component selection.
+
 ## 5. Generative UI: the MCP contract
 
 The render tools (`render_card/list/table/chart/links/keyvalue/progress/timeline/filetree/question/diff/stat/code/statuslist/console/image/diagram`, `emit_artifact`) are
@@ -467,6 +486,26 @@ and a move heading names both paths. The shared differ trims equal edges and
 caps its LCS matrix at one million changed-middle cells; over that threshold
 it shows every old middle line removed and every new middle line added. The
 fallback is intentionally less minimal, but linear and lossless.
+
+Gemini CLI 0.60.0's installed headless implementation forwards `replace`
+arguments (`file_path`, `old_string`, `new_string`) and `write_file` arguments
+(`file_path`, `content`) through `tool_use.parameters`. Confirmed shapes now
+normalize to `Edit` and `Write`; IDs, complete parameters and result/error
+status remain intact, and the detail names the native tool. Other names and
+malformed shapes remain native. This is installed-source compatibility
+evidence; a live Gemini model run was not part of this verification.
+
+The compact view previews successful edit inputs only, bounded to 12 rows
+and 3 files until a reader explicitly expands or collapses the call. A
+corrected same-ID painting can recover from a thrown renderer or invalid
+schema; healthy instances retain their state. Both render-tool transports,
+normalized render-event synthesis and browser schemas share chart semantics:
+series lengths match labels, values are finite, pies have one nonnegative
+series with at least one positive value, and stacked bars require nonnegative
+values. Unsupported calls return an error without replacing a valid painting;
+unsupported historical events remain legible as raw content. Mixed Mermaid
+line/bar sources remain verbatim, and equal-valued same-kind series keep their
+separate identities.
 
 Adapter obligations for either path:
 

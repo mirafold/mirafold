@@ -1,5 +1,6 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import type { SessionMsg } from "../../protocol";
 import { RENDER_GUIDANCE } from "../../render-guidance";
 import type { AgentSession } from "../types";
@@ -32,6 +33,7 @@ import {
 } from "./codex-diagnostics";
 import {
   spawnAppServer,
+  AppServerRpcError,
   type AppServerClient,
   type AppServerSpawn,
   type JsonRpcId,
@@ -61,6 +63,7 @@ const DEFAULT_INTERRUPT_GRACE_MS = envInt("MIRAFOLD_CODEX_INTERRUPT_GRACE_MS", 5
  *  then the render guidance — through app-server's `developerInstructions`,
  *  a real instructions hook (the exec path had none and rode the first turn). */
 export const CODEX_DEVELOPER_INSTRUCTIONS = `${CODEX_DEFERRED_TOOLS_ADDENDUM}\n${RENDER_GUIDANCE}`;
+export const CODEX_INSTRUCTIONS_VERSION = createHash("sha256").update(CODEX_DEVELOPER_INSTRUCTIONS).digest("hex");
 
 // The folder-trust ask waits this long before denying — the same window
 // Gemini's folder gate uses. A person reads the ask, not a machine.
@@ -167,6 +170,8 @@ export class CodexSession implements AgentSession {
   private threadReady?: Promise<ThreadInfo>;
   private threadId?: string;
   private resumeIdState: ResumeIdState;
+  private instructionsVersionValue?: string;
+  private instructionsVersionListeners = new Set<(version: string) => void>();
   private listModels: () => Promise<CodexModel[]>;
   private closed = false;
   private activeTurn?: ActiveTurn;
@@ -216,6 +221,19 @@ export class CodexSession implements AgentSession {
     this.resumeIdState.onChange(cb, this.threadId);
   }
 
+  get instructionsVersion(): string | undefined { return this.instructionsVersionValue; }
+
+  onInstructionsVersion(cb: (version: string) => void) {
+    this.instructionsVersionListeners.add(cb);
+    if (this.instructionsVersionValue) cb(this.instructionsVersionValue);
+  }
+
+  private recordInstructionsVersion() {
+    if (this.instructionsVersionValue === CODEX_INSTRUCTIONS_VERSION) return;
+    this.instructionsVersionValue = CODEX_INSTRUCTIONS_VERSION;
+    for (const cb of this.instructionsVersionListeners) cb(CODEX_INSTRUCTIONS_VERSION);
+  }
+
   // `makeAppServer` and the catalog functions are constructor-level test seams.
   constructor(opts: {
     workspaceDir: string;
@@ -224,6 +242,7 @@ export class CodexSession implements AgentSession {
     endpoint?: string;
     provider?: string;
     resumeId?: string;
+    instructionsVersion?: string;
     makeAppServer?: (spec: AppServerSpawn) => AppServerClient;
     /** Unit-test seam; production uses PERMISSION_TIMEOUT_MS. */
     permissionTimeoutMs?: number;
@@ -264,6 +283,7 @@ export class CodexSession implements AgentSession {
     this.firstPartyOpenAI = runtime.firstPartyOpenAI;
     this.endpointForRedaction = runtime.endpointForRedaction;
     this.threadId = opts.resumeId;
+    this.instructionsVersionValue = opts.resumeId ? opts.instructionsVersion : undefined;
     this.resumeIdState = new ResumeIdState(opts.resumeId);
     this.eventMapper = new CodexEventMapper({
       emit: (message) => this.emit(message),
@@ -462,7 +482,7 @@ export class CodexSession implements AgentSession {
   /** The live app-server and its thread — spawned on first use, and again
    *  after the process dies (the thread resumes by id, so a crash costs the
    *  in-flight turn, never the conversation). */
-  private ensureThread(): Promise<ThreadInfo> {
+  private ensureThread(turn: ActiveTurn): Promise<ThreadInfo> {
     if (this.threadReady && this.client && !this.client.exited) return this.threadReady;
     const client = this.makeAppServer(this.spawnSpec);
     this.client = client;
@@ -481,28 +501,52 @@ export class CodexSession implements AgentSession {
       await client.request("initialize", {
         clientInfo: { name: "mirafold", title: "Mirafold", version: "0.0.1" },
       });
-      if (this.client !== client || client.exited) {
+      if (this.closed || turn.interrupted || this.client !== client || client.exited) {
         throw new Error("codex app-server startup was abandoned");
       }
       client.notify("initialized");
       const common = {
         cwd: this.workspaceDir,
+        developerInstructions: CODEX_DEVELOPER_INSTRUCTIONS,
         ...(this.model ? { model: this.model } : {}),
         // sandbox / approvalPolicy intentionally UNSET — inherited from the
         // user's own Codex config (faithful skin; see the class doc).
       };
+      const resuming = this.threadId !== undefined;
       const response = (await (this.threadId
         ? client.request("thread/resume", { threadId: this.threadId, ...common })
-        : client.request("thread/start", {
-            ...common,
-            developerInstructions: CODEX_DEVELOPER_INSTRUCTIONS,
-          }))) as { thread?: { id?: unknown }; model?: unknown };
-      if (this.client !== client || client.exited) {
+        : client.request("thread/start", common))) as { thread?: { id?: unknown }; model?: unknown };
+      if (this.closed || turn.interrupted || this.client !== client || client.exited) {
         throw new Error("codex app-server startup was abandoned");
       }
       const id = typeof response.thread?.id === "string" ? response.thread.id : this.threadId;
       if (!id) throw new Error("codex app-server answered thread/start without a thread id");
       this.adoptThread(id);
+      if (!resuming) this.recordInstructionsVersion();
+      else if (this.instructionsVersionValue !== CODEX_INSTRUCTIONS_VERSION) {
+        // 0.154 retains the recorded developer message even when resume's
+        // config changes. Append its replacement through the native API;
+        // also set the config above so later compaction uses this version.
+        try {
+          await client.request("thread/inject_items", {
+            threadId: id,
+            items: [{ type: "message", role: "developer", content: [{
+              type: "input_text",
+              text: `Use this version of Mirafold's presentation guidance in place of earlier Mirafold presentation guidance.\n\n${CODEX_DEVELOPER_INSTRUCTIONS}`,
+            }] }],
+          });
+          if (this.closed || turn.interrupted || this.client !== client || client.exited) throw new Error("codex app-server startup was abandoned");
+          this.recordInstructionsVersion();
+        } catch (error) {
+          if (this.closed || turn.interrupted || this.client !== client || client.exited) throw new Error("codex app-server startup was abandoned");
+          const unsupported = error instanceof AppServerRpcError && (error.code === -32601 ||
+            (error.code === -32600 && error.message.startsWith("Invalid request: unknown variant `thread/inject_items`,")));
+          if (!unsupported) throw error;
+          // Older supported engines may lack this RPC. Keep their conversation
+          // usable without falsely recording that its guidance was refreshed.
+          this.emit({ type: "notice", text: "This Codex version cannot refresh the saved presentation guidance. The conversation will continue with its existing guidance." });
+        }
+      }
       const model = typeof response.model === "string" && response.model ? response.model : undefined;
       // The engine says which model it resolved; a configured label stays.
       if (model && this.modelLabel === MODEL_STAND_IN) this.modelLabel = model;
@@ -730,7 +774,7 @@ export class CodexSession implements AgentSession {
         if (modelReady === STARTUP_INTERRUPTED || !modelReady) return;
       }
       if (this.closed || turn.interrupted) return;
-      const threadPending = this.ensureThread();
+      const threadPending = this.ensureThread(turn);
       const startupClient = this.client;
       const thread = await this.awaitStartup(turn, threadPending);
       if (thread === STARTUP_INTERRUPTED) {

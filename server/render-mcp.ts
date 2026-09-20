@@ -23,7 +23,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { RENDER_ID_GRAMMAR, acceptableRenderId, renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
-import { registryShapes } from "./registry-spec";
+import { registryShapes, clientSchemas } from "./registry-spec";
 
 const idParam = {
   id: z
@@ -77,15 +77,12 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
   render_question:
     "Ask a structured question with 2–6 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
   render_diff:
-    "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
+    "Show a red/green diff for a proposed or explanatory change, or an actual edit whose diff is not already presented by its native row. Do not call render_diff solely to repeat changes already shown in native edit rows. Per file, pass relevant before and after lines verbatim, without +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
   render_stat:
     "Show a single-number KPI tile (coverage %, p95, cost, a count) with an optional " +
     "up/down change. Re-call with the same id to update the number in place.",
   render_code:
-    "Show a block of code with a filename/language header and copy button. For a change " +
-    "to an existing file prefer render_diff (before/after); use this for code that is " +
-    "not a before/after — a new file's contents, a snippet you're explaining, an " +
-    "example, a config block.",
+    "Show a block of code with a filename/language header and a copy button: a file's contents, a snippet you're explaining, an example, or a config block. For a before/after change, use render_diff when it adds an explanation or shows a diff not already presented by the native edit row. Do not call render_diff solely to repeat changes already shown in native edit rows.",
   render_statuslist:
     "Show labeled rows each with a pass/fail/warn/pending/skip status pill — test " +
     "suites, CI checks, lint rules, health probes.",
@@ -109,9 +106,14 @@ for (const [name, component] of renderToolEntries) {
   server.registerTool(
     name,
     { description: TOOL_DESCRIPTIONS[name], inputSchema: { ...registryShapes[component], ...idParam } },
-    // arg types collapse to a union across components; the id is all we read
-    // here, and the engine already validated props against the schema.
-    (async (args: { id?: string }) => ack(component, args.id)) as never,
+    (async ({ id, ...props }: { id?: string }) => {
+      const checked = clientSchemas[component].safeParse(props);
+      if (!checked.success) return {
+        isError: true,
+        content: [{ type: "text" as const, text: checked.error.issues.map((i) => i.message).join(" ") }],
+      };
+      return ack(component, id);
+    }) as never,
   );
 }
 

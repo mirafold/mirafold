@@ -848,7 +848,7 @@ export function restoreBackend(stored: { id: string; backend: Backend; model?: s
  */
 export function createSession(
   backend: Backend,
-  opts: { cwd: string; resumeId?: string },
+  opts: { cwd: string; resumeId?: string; instructionsVersion?: string },
 ): AgentSession {
   if (!backend.live) return new MockSession(backend.agent);
   // "gateway" is OpenCode-only (Zen) and the OpenCode adapter classifies its
@@ -874,6 +874,7 @@ export function createSession(
         endpoint: backend.endpoint,
         provider: backend.provider,
         resumeId: opts.resumeId,
+        instructionsVersion: opts.instructionsVersion,
       });
     case "gemini-cli":
       return new GeminiCliSession({

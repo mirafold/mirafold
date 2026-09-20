@@ -113,6 +113,7 @@ function DisclosedTool({ row, d }: { row: ToolRow; d: Disclosure }) {
     <ToolBlock
       toggleKey={key}
       expanded={isOpen(d, key, row.output !== undefined && row.isError === true)}
+      previewDefault={!d.details && !d.choices.has(key)}
       onToggle={d.toggle}
       liveOutputAvailable={d.capabilities?.liveOutput}
       {...toolBlockProps(row)}
@@ -585,7 +586,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   };
 
   const outputZoneEntry = (entry: OutputZoneRow) => (
-    <RenderBoundary key={entry.id} fallback={<ZoneRowFallback entry={entry} />}>
+    <RenderBoundary key={entry.id} resetKey={entry.kind === "render" ? entry : undefined} fallback={<ZoneRowFallback entry={entry} />}>
       <ZoneEntry
         entry={entry}
         disclosure={disclosure}

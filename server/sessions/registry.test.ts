@@ -6,6 +6,7 @@ import path from "node:path";
 import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./registry";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
+import type { AgentSession } from "../adapters/types";
 import type { SessionMsg, WireMsg } from "../protocol";
 import { SessionCheckpointStore } from "./persistence/session-store";
 
@@ -70,6 +71,37 @@ function freshSession() {
   assert.equal(entry.ring.nextSeq, 1);
   return { reg, entry };
 }
+
+test("acknowledged instruction versions are checkpointed immediately and restored without entering the transcript", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-instructions-store-"));
+  const store = new SessionCheckpointStore(dir);
+  const restored: { resumeId?: string; instructionsVersion?: string }[] = [];
+  let acknowledge!: (version: string) => void;
+  const makeSession = (_backend: Backend, opts: { resumeId?: string; instructionsVersion?: string }): AgentSession => {
+    restored.push(opts);
+    let version = opts.instructionsVersion;
+    let listener: ((value: string) => void) | undefined;
+    acknowledge = (value) => { version = value; listener?.(value); };
+    return {
+      resumeId: opts.resumeId ?? "saved-provider-thread", modelName: undefined,
+      get instructionsVersion() { return version; },
+      onInstructionsVersion(cb) { listener = cb; },
+      pushPrompt() {}, onMessage() {}, interrupt() {}, resolvePermission() {}, close() {},
+    };
+  };
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, store, makeSession });
+  const entry = reg.create({ cwd: dir });
+  openSessions.push({ reg, id: entry.id });
+  assert.equal(store.loadAll().sessions.get(entry.id)?.instructionsVersion, undefined);
+  acknowledge("a".repeat(64));
+  assert.equal(store.loadAll().sessions.get(entry.id)?.instructionsVersion, "a".repeat(64));
+  assert.equal(entry.ring.buffer.length, 0);
+  const restarted = new SessionRegistry({ backend: MOCK_BACKEND, store, makeSession });
+  assert.ok(restarted.open(entry.id));
+  openSessions.push({ reg: restarted, id: entry.id });
+  assert.equal(restored.at(-1)?.resumeId, "saved-provider-thread");
+  assert.equal(restored.at(-1)?.instructionsVersion, "a".repeat(64));
+});
 
 test("an active rename rolls back when its checkpoint cannot be written", () => {
   const store = new SessionCheckpointStore(mkdtempSync(path.join(os.tmpdir(), "genui-rename-store-")));

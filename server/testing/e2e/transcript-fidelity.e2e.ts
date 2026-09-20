@@ -138,7 +138,14 @@ test("TF5.1 noisy process: the tail advances past the cap, silence stays 'runnin
     await typePrompt(page, MOCK_PROMPTS["noisy-process"]);
     const row = page.locator(".tool-block", { hasText: "./build.sh" });
     await row.waitFor({ timeout: 10_000 });
-    await row.locator(".tool-preview", { hasText: "módulo 30" }).waitFor({ timeout: 10_000 });
+    // Three preview lines at 70 ms each leave this value visible for 210 ms;
+    // locator retry backoff can miss it entirely. Observe each browser frame.
+    await page.waitForFunction(
+      (el) => el?.querySelector(".tool-preview")?.textContent?.includes("módulo 30"),
+      await row.elementHandle(),
+      { polling: "raf", timeout: 10_000 },
+    );
+    assert.equal(await row.locator(".tool-preview").isVisible(), true);
     // Expand the running row: head, omission, tail — and the tail keeps
     // advancing while the head stays put.
     await row.locator(".tool-head").click();
