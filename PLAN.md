@@ -4425,7 +4425,7 @@ now uses the pinned code foreground and header counts use theme accents.
 Documentation changes explain these behaviors and source-confirmed provider
 compatibility; tests/fixtures are separate from production code.
 
-Final `yarn build`, `yarn typecheck`, `yarn test` (1,456/1,456), and
+The initial `yarn build`, `yarn typecheck`, `yarn test` (1,456/1,456), and
 `yarn test:server` (199/199) passed. Logs: `/tmp/cu-final-build.log`,
 `/tmp/cu-final-typecheck.log`, `/tmp/cu-final-unit.log`,
 `/tmp/cu-final-server.log`. The server tier exercises the rebuilt stdio MCP
@@ -4434,6 +4434,45 @@ failure from `fs_changed` while the working repository was being edited;
 the test watches that repository, and the registry sends this notification
 independently of turns. Three unchanged isolated runs passed, then the full
 rerun passed with workspace edits paused. No interruption code/test changed.
+
+**2026-09-19 resumed validation correction.** Kyle explicitly approved
+continuing. Two built-daemon native-preview browser cases then passed
+(`/tmp/cu-approved-native.log`), including keyboard expansion, reload,
+explicit collapse, session switching, child attribution and axe checks.
+Screenshot inspection established that BOTH used the dark application theme:
+the phone case's Playwright `colorScheme: "light"` does not select Mirafold's
+stored theme. The test now selects Standard under Light themes through the
+visible phone Settings controls, asserts `data-theme` before checking the
+preview and after reload, and awaits execution. The desktop screenshot is
+`/tmp/cu-evidence/native-desktop.png`; `native-phone.png` is phone DARK
+evidence, not light evidence. The earlier mounted-source light check below
+remains valid. Production code has not changed since `89e5fa0`.
+
+The original-repository daemon harness invokes the project dotenv loader,
+and a repository `.env` exists (existence only was checked). The original
+browser suite was stopped after this was discovered, with 57 passing cases
+but no completed-suite result (`/tmp/cu-approved-e2e.log`, exit 130). Those
+earlier daemon runs did invoke the forbidden file-loading path; contents
+were not displayed. Subsequent daemon checks use
+`/tmp/cu-safe-checkout-xzz9dua9`, copied from tracked `763a214` files with all
+four dotenv filename patterns excluded; dependencies and sibling relay
+source are linked, and its frontend/server were rebuilt. This is a disposable
+validation copy, not another project work branch.
+
+The copy's build and typecheck pass (`/tmp/cu-safe-build.log`,
+`/tmp/cu-safe-typecheck.log`). Its permitted unit subset passes 1,450/1,450
+(`/tmp/cu-safe-final-unit.log`): exclude `server/project-env.test.ts` and skip
+the PTY dotenv-loading and Git secret-staging cases. These six existing tests
+read or stage dotenv contents, including synthetic fixtures; they are not
+rerun under the current rule. An earlier isolated full-unit attempt had
+1,452 passes and an import failure because `.env.example` was deliberately
+absent; it is superseded by this bounded result, not claimed as a full pass.
+An initial isolated server run began before its relay link and frontend build
+were ready; all four affected files passed after setup was complete (50/50,
+`/tmp/cu-safe-setup-recheck.log`). The subsequent complete isolated
+`yarn test:server` passed 199/199 (`/tmp/cu-safe-final-server.log`), exercising
+the rebuilt stdio MCP bundle. Final original-source typecheck with the phone
+fixture correction also passed (`/tmp/cu-resumed-typecheck.log`).
 
 Mounted Chrome checks passed 3/3 (`/tmp/cu-mounted-verified.log`): real Codex
 normalization and confirmed Gemini inputs through projection into the source
@@ -4465,14 +4504,29 @@ instructions remains unresolved. Compaction was not exercised. Evidence:
 `/tmp/cu-lifecycle-GuRH2B/`; installed schema `/tmp/cu-codex-schema/`.
 All probe threads/workspaces and captured requests were synthetic.
 
-**Blocked acceptance gates.** The built-daemon native-preview browser tests
-failed on navigation with `net::ERR_ACCESS_DENIED` for localhost; the request
-to run that browser command outside the sandbox was rejected and was not
-retried. Built-daemon reload/reattachment, integrated paint/reject/correct
-socket-to-browser checks, full `yarn test:e2e`, full `yarn test:ui` and visual
-baseline review therefore remain outstanding. Mounted source checks do not
-replace them. The hosted 16-target unchanged-guidance matrix was not started:
-its required actual-adapter/browser observation is unavailable. There are
+A further installed-engine probe established that `thread/inject_items` can
+append a developer message without a user turn and retains that message on
+warm turns and after cold resume. The full current policy and repository
+sentinel, thread identity, model and effort remained present; both the old
+and new developer sentinels remained in the request. Evidence:
+`/tmp/cu-lifecycle-inject.mts`, `/tmp/cu-lifecycle-inject.log`, request bodies
+under `/tmp/cu-lifecycle-dx4hYU/`. This proves a native mechanism, not a
+finished Mirafold repair: version tracking, avoiding repeated insertion on
+resume and integration with saved sessions have not been implemented or
+verified. No unmeasured reminder or instruction replacement was retained.
+
+**Blocked acceptance gates.** The initial sandboxed browser navigation failed
+with `net::ERR_ACCESS_DENIED`. Kyle's subsequent approval allowed the two
+built native-preview cases above and the interrupted full run. After moving
+validation away from dotenv files, the execution layer rejected the elevated
+`yarn test:e2e` command in the isolated copy with only “rejected by user”; no
+further reason was supplied, and that rejected action was not retried or
+bypassed. The corrected built phone-light case, integrated
+paint/reject/correct socket-to-browser checks, complete `yarn test:e2e`,
+`yarn test:ui` and visual baseline review remain outstanding. Mounted source
+checks do not replace them. The hosted 16-target unchanged-guidance matrix
+was not started: its required actual-adapter/browser observation remains
+unavailable. There are
 zero scored hosted observations, no candidate arm, no confirmations and no
 evidence of improved discretionary selection. Gemini compatibility is from
 the installed source plus adapter/browser fixtures, not a live Gemini turn.
@@ -4492,8 +4546,12 @@ contract check also removed the inherited added-line badge for
 whole-file writes whose old contents are unknown. The follow-up
 reported no additional material finding; its 12 focused regressions passed.
 The new mixed-XY streamed/finalized/replayed source equality test passed too.
-Owned daemons/browsers/probes were stopped; retained temporary evidence is
-listed above. Existing untracked `decks/` remains untouched.
+The resumed read-only review caught that the phone hides the status-bar theme
+switch; the corrected fixture uses the existing phone Settings path instead.
+Its final read-only pass accepted that correction and the evidence
+distinctions. All owned validation/probe processes have exited; retained
+temporary evidence is listed above. Existing untracked `decks/` remains
+untouched.
 
 **Next unfinished work:** finish CU.4/CU.7 checkpoint integration and CU.12
 against the real built daemon in a browser environment that permits localhost;
@@ -4519,7 +4577,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.4 — Implement bounded native edit previews.**
   Work: Add the preview and reuse existing diff preparation/rendering. Preserve the original event, full retained input, status, and aggregate computation bounds. Integrate untouched-default versus explicit disclosure choices without a new persisted state model.
   Check: Unit fixtures cover small edits, additions/deletions, multiple files, moves, equal inputs, missing newline, malformed input, and inputs over the existing processing limits. Browser tests cover initial preview, full expansion, explicit collapse, details mode, same-tab reload/session switching, replay, child attribution, and pending/error behavior. At least one fixture sends a real normalized Codex patch through projection into the browser.
-  Status 2026-09-19: Implemented with unit and mounted-browser evidence. Real-daemon reload/reattachment gate remains blocked by browser localhost access; do not check off yet.
+  Status 2026-09-19: Implemented with unit/mounted-browser evidence; two built-daemon dark-theme cases now prove reload, explicit collapse and session switching. The phone fixture's false light-theme assumption was corrected after screenshot review; that corrected case awaits execution. Do not check off yet.
 
 - [x] **CU.5 — Normalize confirmed Gemini edit events.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 
@@ -4540,7 +4598,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.9 — Repair a proven lifecycle gap, if present.**
   Work: Apply the minimal supported change selected by CU.2, or record an evidenced no-change result. Retest the repaired boundary before establishing the common implementation for CU.10.
   Check: Fresh and cold-resumed effective instructions contain the intended Mirafold policy without clobbering user instructions, provider settings, or thread identity. Request-only mocks are insufficient to establish retention semantics.
-  Status 2026-09-19: Current-policy retention proven. Top-level and config resume overrides both failed to refresh saved developer instructions in Codex 0.154.0; no speculative patch retained. A supported refresh mechanism remains unestablished.
+  Status 2026-09-19: Current-policy retention proven. Top-level and config resume overrides both failed to refresh saved developer instructions in Codex 0.154.0. A native `thread/inject_items` developer update survives warm/cold turns, but retaining both old and new messages requires a version-aware integration before this is a finished lifecycle repair. No production patch retained.
 
 - [ ] **CU.10 — Evaluate one task-focused guidance revision.**
   Work: Run the 16-observation unchanged-guidance baseline on the common post-fix implementation. If it demonstrates an available-tool choice gap, implement the concise candidate in the existing guidance and reconcile contradictory descriptions. Run the matching candidate matrix and targeted confirmations with identical implementation and settings apart from guidance. Keep or discard it according to the repeated-usefulness gate above.
@@ -4559,7 +4617,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.12 — Verify integrated behavior and compatibility.**
   Work: Run the complete required checks on final source, inspect changed visual baselines, and correct observed regressions. Update documentation and active plan only where behavior changed. Preserve all four provider paths and existing event shapes.
   Check: Commands below pass on the identified revision. Built frontend and `dist-server/render-mcp.js` are exercised, not just source imports. Inspect desktop/phone, dark/light, keyboard, reattachment, same-ID updates, and long input behavior in relevant browser tests. Keep provider-live limitations separate from deterministic browser results.
-  Status 2026-09-19: Build/typecheck/unit/server and focused mounted browser/axe checks pass. Full built-daemon end-to-end/UI suites and visual baselines remain blocked; see exact failure above.
+  Status 2026-09-19: Build/typecheck, 1,450 permitted unit cases, all 199 isolated server cases, focused mounted browser/axe checks and two built dark-theme cases pass. Six dotenv-consuming unit cases, corrected built phone-light coverage, complete end-to-end/UI suites and visual baselines remain unverified; see the resumed-validation record above.
 
 - [x] **CU.13 — Conduct a cold correctness and simplification review.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 

@@ -24,6 +24,13 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-one?token=cu-browser`);
+    if (phone) {
+      await page.locator(".sb-settings").tap();
+      await page.locator('.theme-group[aria-label="Light themes"]').locator(".theme-row", { hasText: "Standard" }).tap();
+      await page.locator(".settings-close").tap();
+    }
+    await page.locator(`html[data-theme="${phone ? "light" : "dark"}"]`).waitFor();
+    assert.equal(await page.locator("html").getAttribute("data-theme"), phone ? "light" : "dark");
     const patch = page.locator(".tool-block", { has: page.locator(".tool-name", { hasText: "apply_patch" }) });
     await patch.locator(".tool-edit-preview").waitFor();
     assert.match(await patch.locator(".tool-edit-preview").innerText(), /- const retries = 2;[\s\S]*\+ const retries = 4;/);
@@ -50,6 +57,7 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
     assert.match(await patch.innerText(), /Moved old.txt → moved.txt/);
     await page.reload();
     await patch.locator(".tool-input").waitFor();
+    assert.equal(await page.locator("html").getAttribute("data-theme"), phone ? "light" : "dark");
     await patch.locator(".tool-head").click();
     assert.equal(await patch.locator(".tool-edit-preview").count(), 0);
     await page.reload();
