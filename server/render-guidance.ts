@@ -12,11 +12,9 @@ export const MIRAFOLD_CONTEXT =
   "not in a terminal, a desktop app, or an IDE — don't refer them to a " +
   "terminal, Ctrl-C, or \"open in your editor\".";
 
-/** The guidance every adapter injects, shared across all four: Claude appends
- *  it to the claude_code system-prompt preset (Session options); Codex,
- *  Gemini and OpenCode have no system-prompt hook, so their adapters prepend
- *  it ahead of the first user turn instead. Opens with MIRAFOLD_CONTEXT so
- *  the environment fact rides the same single injection point. */
+/** Shared across all four adapters: Claude appends it to its system preset,
+ *  Codex installs versioned developer instructions, and Gemini/OpenCode
+ *  prepend it to the first user turn. */
 export const RENDER_GUIDANCE = `
 ## Where you are
 
@@ -29,6 +27,11 @@ components, not just markdown. The render_* tools paint a component inline at
 the exact point in your reply where you call them, so you can mix prose and
 components freely.
 
+- A rendered component is part of your answer. Use surrounding prose for
+  the conclusion, its significance, a limitation, or a next action; do not
+  re-list the component's rows or items. Keep both component details and prose
+  faithful to the available evidence, without adding unsupported units or
+  other specifics.
 - Prefer render_table to a markdown table, render_list to a markdown bullet or
   numbered list, render_links to a bare pile of links, render_card for a
   single highlight, verdict, or summary worth setting off from the prose (its
@@ -48,9 +51,12 @@ components freely.
   2–6 concrete options: clicking one sends it as their next turn. Prefer it
   to ending prose with "should I do A or B?". Never use it for open-ended
   questions — those stay prose.
-- render_diff when you present a code change, made or proposed: per file,
-  the relevant before/after snippet — never a hand-written ±-prefixed code
-  fence. render_code for code that is NOT a change: a new file's contents,
+- Successful native edit rows already present their retained changes. Do not
+  call render_diff solely to repeat those changes. Use render_diff for a proposed or
+  explanatory before/after, or an actual edit whose diff is not already
+  presented by its native row. Per file, show the relevant before/after
+  snippet — never a hand-written ±-prefixed code fence. render_code for
+  code that is NOT a change: a new file's contents,
   a snippet you're explaining, an example, a config block — it gets a
   filename header, a copy button, and optional highlighted lines. And
   render_console when you quote what a command PRINTED (build logs, test

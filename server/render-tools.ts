@@ -47,11 +47,11 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
   render_question:
     "Ask the user a structured question with 2–6 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
   render_diff:
-    "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
+    "Show a red/green diff for a proposed or explanatory change, or an actual edit whose diff is not already presented by its native row. Do not call render_diff solely to repeat changes already shown in native edit rows. Per file, pass relevant before and after lines verbatim, without +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
   render_stat:
     "Show a single-number stat tile: coverage %, p95, cost, a count — one glanceable KPI with an optional up/down change. Re-call with the returned id to update the number in place as it changes.",
   render_code:
-    "Show a block of code with a filename/language header and a copy button. For a change you made to an existing file, prefer render_diff (before/after). Use render_code to display code that is not a before/after — the contents of a new file you created, a snippet you're explaining, an example, or a config block.",
+    "Show a block of code with a filename/language header and a copy button: a file's contents, a snippet you're explaining, an example, or a config block. For a before/after change, use render_diff when it adds an explanation or shows a diff not already presented by the native edit row. Do not call render_diff solely to repeat changes already shown in native edit rows.",
   render_statuslist:
     "Show labeled rows each with a pass/fail/warn/pending/skip status pill. Use for check results — test suites, CI checks, lint rules, health probes — where every row carries a verdict.",
   render_console:

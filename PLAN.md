@@ -4399,7 +4399,17 @@ separately. Repair resume only with effective-instruction evidence. Add a
 complete-Mermaid-fence fallback only after an observed need and parser proof.
 Unavailable live work is blocked, never a passed/no-change selection result.
 
-**Current disposition, 2026-09-19 — Phase CU implemented; PR #130 open.**
+**Current disposition, 2026-09-20 — narrower guidance retained; PR #130 open.**
+CU.16 below records the separately authorized, frozen three-file rewrite and
+its 16-target comparison. It repeatedly reduces full result-row recaps after
+coding, preserves accurate reports and appropriate controls, and removes
+duplicate native-edit diffs in these observations. Independent review agrees
+with retention. This is a targeted improvement, not a general accuracy or
+component-selection guarantee. Local build, typecheck and 1,464 permitted
+unit cases pass on the exact measured source. Full CI and automated review
+must run on the new published head; PR #130 stays open and unmerged.
+
+**Historical disposition, 2026-09-19 — original candidate discarded.**
 The retained production source is `ca71a44bc75f6cb5bc797b34b58b269b739974dd`;
 this final record also contains the test-only streaming-wait correction below.
 Before that test correction, all 457 source files and 12 rebuilt artifacts
@@ -4859,7 +4869,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [x] **CU.10 — Evaluate one task-focused guidance revision.**
   Work: Run the 16-observation unchanged-guidance baseline on the common post-fix implementation. If it demonstrates an available-tool choice gap, implement the concise candidate in the existing guidance and reconcile contradictory descriptions. Run the matching candidate matrix and targeted confirmations with identical implementation and settings apart from guidance. Keep or discard it according to the repeated-usefulness gate above.
   Check: Evidence distinguishes post-work improvements from initial advisory use, and voluntary calls from native/Markdown rendering. No improvement is credited to guidance when the two arms differ in visibility, recovery, validation, or lifecycle code. The prose control remains prose, content is correct, and tool activity does not become repeated discovery. When the candidate fails, remove it and report the remaining limitation; do not substitute a second unmeasured reminder.
-  Status 2026-09-19: Both 16-target matrices complete. The single candidate reduced repetition but introduced two unsupported unit claims; independent review agreed it fails the correctness gate. All guidance/description edits restored exactly. Zero confirmation observations and no second candidate. Discretionary redundancy remains unresolved; no selection-improvement claim.
+  Status 2026-09-19: Both 16-target matrices complete. The single candidate reduced repetition but produced two unsupported unit claims; independent review agreed it fails the first-pass correctness gate. All guidance/description edits restored exactly. Zero confirmation observations and no second candidate in that pass. CU.15 below qualifies the accuracy interpretation using a separately authorized repeat study; no causal regression claim is established.
 
 - [x] **CU.11 — Close an observed Mermaid-fence miss, if present.**
   Work: If authorized evidence establishes this miss, prove the complete-fence/intent boundary and reuse the existing sandboxed renderer. Otherwise record why this optional fallback was not needed.
@@ -4883,6 +4893,175 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
   Status 2026-09-19: Complete in the signed local commit containing this record. All retained implementation gates pass; 32 live targets support rejecting the one guidance candidate and omitting the unnecessary Mermaid fallback. Evidence and limits are recorded, independent review is closed, owned processes exited, and user decks are untouched. No push/PR/release.
 
 **Checkpoint E — Ready for review.** All unconditional steps have passing evidence or an explicitly identified blocker; conditional steps have a passed or evidenced no-change disposition. Delivery must not conceal a missing browser or live-selection gate behind a green unit count.
+
+### Stage F — Recheck the guidance evidence (2026-09-20)
+
+- [x] **CU.15 — Repeat the disputed accuracy cases and useful-selection controls.**
+  Kyle requested more checking after the distinction between an observed
+  unsupported unit claim and a demonstrated causal effect was clarified.
+  This authorizes a separate bounded follow-up beyond CU.10's completed
+  first-pass budget: 16 new targets, two repetitions per guidance arm of
+  fresh verification, advisory-history verification, coding-history
+  comparison, and coding-history/cold-resume prose control. Preserve the
+  original fixture bytes and task/setup prompts, Codex 0.154.0, ChatGPT
+  subscription, gpt-6-astra/xhigh, and common production implementation.
+  Use independent sessions and alternate arm order within matched pairs;
+  both arms run from isolated disposable checkouts without dotenv files.
+  Only the original four candidate guidance/description files may differ.
+  Record the exact schedule and hashes before hosted calls. No API-key
+  billing, additional prompt candidate, or runtime reminder is part of this
+  follow-up. Score fixture correctness, unsupported detail, core result
+  correctness, repeated prose, native-edit duplication, visible component
+  usefulness, and discovery separately. Inspect all outputs, including
+  failures; seek independent review of the classification. Do not infer a
+  causal or population-wide regression rate from these small samples, erase
+  the first-pass errors, or accept a guidance change just because a repeat
+  happens to pass. Finish with a recorded retain/revise/defer recommendation;
+  production guidance remains unchanged during the experiment.
+
+  **Completed 2026-09-20.** All 16 scheduled targets and 24 fixed setup
+  turns completed through the actual adapter and browser; four cold resumes
+  preserved the thread on a new process. Exact schedule, source/artifact
+  manifests, classified answers, discovery traces and screenshots are in
+  `/tmp/cu-recheck-8hf8_x1l/`. Both builds passed. The baseline's 457 source
+  file hashes and 12 artifacts match the retained PR implementation exactly;
+  only the four original guidance/description files differ in the candidate.
+  Fixture hashes match throughout. No production, test or dependency change.
+
+  All eight verification replies reported the correct core outcomes and exit
+  status. Unsupported milliseconds appeared in **2/4 replies in each arm**:
+  baseline advisory verification in both repetitions; candidate fresh
+  verification in repetition 1 and advisory verification in repetition 2.
+  These are unsupported units, not wrong pass/fail results or evidence of
+  elapsed waiting. Policy comparisons legitimately use milliseconds because
+  `policies.json` defines `delayMs`. The new observations do not establish
+  equal underlying error rates, erase the first-pass errors, or support the
+  earlier implication that the candidate caused an accuracy regression.
+
+  Full verification-row recaps occurred in 4/4 baseline replies versus 0/4
+  candidate replies. Duplicate voluntary diffs after the native setup edit
+  occurred in 4/4 baseline coding setups versus 0/4 candidate setups. All
+  four post-resume prose controls stayed concise prose. All four comparison
+  tables were correct; the first candidate comparison was leaner, but the
+  second pair showed no clear target improvement. Partial repetition of a
+  recommended policy is scored consistently in both arms, not inflated into
+  a full-table recap. Setup gains do not substitute for the required repeated
+  improvement on a target after coding work.
+
+  Each arm emitted six distinct target components with no failed calls,
+  browser errors or fallback; no repeated target discovery was observed in
+  the owned synthetic engine traces. Median target times were 36.7 seconds
+  baseline and 37.4 seconds candidate, descriptive only. Target shell/web
+  calls were 24/1 and 26/2 respectively. One sandboxed browser navigation
+  failed before any model prompt; its evidence was archived, and the same
+  schedule entry completed using an approved single-trial command. The
+  rejected batch command was not run. All owned processes have exited.
+
+  **Disposition: revise, with promotion deferred.** Independent review
+  agrees that the repeated verification and native-edit duplication benefits
+  are supported, while the full candidate still lacks repeated clear target
+  superiority after coding under the existing acceptance gate. Keep the PR's
+  production guidance unchanged. The recommended next experiment isolates
+  the anti-duplication instructions and tests verification after coding with
+  both explicitly defined units and deliberately unitless facts. That new
+  candidate was not implemented or run during this fixed follow-up.
+
+- [x] **CU.16 — Implement and evaluate the authorized narrower rewrite.**
+  Kyle explicitly authorized this next candidate on 2026-09-20. Change only
+  the shared instructions about repetition/source fidelity and the matching
+  render_diff/render_code descriptions in both transports. Preserve Codex's
+  discovery addendum, the catalog's existing selection rules, provider
+  injection mechanisms, schemas, and runtime rendering. The source-fidelity
+  sentence responds to unsupported specifics observed in both prior arms;
+  no claim that the first candidate caused them is implied.
+
+  Evaluate one frozen candidate against unchanged guidance in 16 matched,
+  counterbalanced observations through the real adapter and browser, using
+  Codex 0.154.0, ChatGPT subscription, gpt-6-astra/xhigh. Repeat twice per arm:
+  verification after coding with explicitly defined millisecond arguments;
+  verification after coding/cold resume with deliberately unitless arguments;
+  and a cold-resume prose control. Add one fresh comparison and one fresh
+  architecture target per arm. Source facts and natural prompts are identical
+  between arms. These fixture contracts are new and explicit; do not pool
+  their accuracy counts with the earlier ambiguous fixture. Retain only if
+  correct target reports avoid repeated rows across both post-coding contexts
+  on repeats, controls remain appropriate, and independent review confirms
+  the visible gain. Separate native setup edits from target selection and
+  summarize discovery/latency overhead. Complete existing deterministic
+  checks on the retained source, record the disposition, and update PR #130
+  without merging or releasing.
+
+  **Completed 2026-09-20; disposition: retain.** All 16 scheduled targets
+  and 24 fixed setup turns completed through the actual adapter and browser.
+  Eight cold resumes preserved the same thread on a new native process.
+  The schedule, natural prompts, exact fixture contracts, source/artifact
+  manifests, transcripts, discovery proof and screenshots are retained in
+  `/tmp/cu-narrow-53qlhyak/`. The frozen candidate was not revised between
+  observations. All 457 candidate source hashes match the retained working
+  tree; the only production differences from baseline are the three named
+  guidance/description files. Both builds passed; frontend artifacts match.
+
+  Baseline source SHA-256:
+  `59fe8da5b207aa37828fac7c7eac5b81ad8c9599d9c4de9b305d5e789bed72fa`.
+  Candidate source SHA-256:
+  `5e2c112b813be0451d6682e885bdf66cf8df28c92c8690636ae24ccb54d360a8`.
+  Candidate artifact SHA-256:
+  `e804673a26c919793fe3c29bfbef83bf164ebd660029320e7f2e118c6652107c`.
+  These identities use the manifest format in this experiment, rather than
+  the earlier aggregate format. The base revision is `6206ce3`; the manifests
+  identify the exact modified candidate tree and all fixture bytes.
+
+  All eight verification targets accurately reported one passing case, one
+  intentional failure (expected 5, actual 4), one skipped case, and exit 1.
+  Full result-row recaps occurred in **4/4 baseline versus 0/4 candidate**
+  reports, recurring in both post-coding contexts over both repetitions.
+  Candidate prose gave aggregate outcomes and occasionally the failure's
+  meaning. Both arms made zero unsupported target unit/detail claims.
+  Cards mostly omitted timing details, so this supports accurate reporting
+  with less repetition, not a demonstrated accuracy improvement or a general
+  unit-grounding guarantee. Do not pool these explicit fixture contracts with
+  CU.10/CU.15's ambiguous fixture.
+
+  Duplicate voluntary diffs after native setup edits occurred in **6/6
+  baseline versus 0/6 candidate** coding setups, scored separately from
+  target selection. All four cold prose controls stayed concise prose.
+  Both comparison tables and both architecture diagrams were correct; each
+  diagram produced an SVG without fallback. The baseline comparison fully
+  recapped its table; candidate prose focused on the recommendation. Diagram
+  prose remained substantial in both arms, so no universal elimination of
+  repetition is claimed. A saved candidate diagram screenshot is cropped;
+  correctness is supported by the complete recorded source and rendered SVG
+  text, not a claim that this capture shows the entire diagram.
+
+  Each arm emitted six distinct target components. Every native MCP call
+  completed without error; there were no recorded browser errors or final
+  fallbacks. Owned native transcripts show six setup discovery calls per
+  arm and four baseline/five candidate target discovery calls; no target
+  repeated discovery and no resource-list discovery occurred. Target shell
+  calls were 12 baseline/11 candidate; neither arm used a web call. Median
+  target times were 22.474 seconds baseline and 18.8815 seconds candidate,
+  descriptive only: runtime load was not controlled. All 40 owned native
+  wrapper processes exited, including the 24 thread-start/resume processes.
+
+  One baseline result omitted stdout from the adapter event while retaining
+  exit 1. Its exact owned synthetic rollout independently corroborates all
+  three test results and counts. The evidence extractor initially missed
+  exit codes embedded in JSON-encoded tool-output blocks; decoding those
+  blocks confirms exit 1 for all eight verification executions. This was a
+  bookkeeping correction, not a production change or a rerun.
+
+  Candidate typecheck and all **1,464 locally permitted unit cases** passed.
+  Six dotenv-consuming cases remain excluded locally; the owner's existing
+  fixture-only CI authorization permits the full remote suite. Independent
+  review inspected all 16 targets and the frozen source and recommends
+  retention. Model-visible changes are limited to repetition/source fidelity
+  and the matching render_diff/render_code descriptions. A source comment
+  now accurately describes the existing adapter injection paths. No test,
+  dependency, schema, wire, provider-injection or frontend source changed.
+  Codex's discovery addendum remains byte-identical. The new published head
+  must complete full CI and automated review before delivery is closed;
+  final remote results belong in PR #130 to avoid a validation-only commit
+  retriggering the same workflow. Untracked user decks remain untouched.
 
 ## Known commands and acceptance coverage
 
@@ -4916,7 +5095,7 @@ yarn test:ui
 | Charts cannot silently omit unsupported data or falsely acknowledge it | CU.7 | Both tool transports, event/browser checks, legacy fallback |
 | XY conversion preserves unsupported semantics | CU.8 | Mixed-kind source equality plus streaming/replay checks |
 | Resume changes are grounded in actual engine behavior | CU.2, CU.9 | Effective instruction evidence and identity/settings preservation |
-| Selection changes improve useful outcomes after work | CU.3, CU.10 | Matched contexts, repeated improvements, prose control and overhead assessment |
+| Selection changes improve useful outcomes after work | CU.3, CU.10, CU.15–CU.16 | Matched contexts, repeated improvements, prose control and overhead assessment |
 | Optional structured-text fallback is safe and lossless | CU.11 | Observed need, complete-fence proof, real sandboxed browser tests |
 | Candidate is reviewable and release boundaries preserved | CU.12–CU.14 | Final source identity, required gates, review disposition, explicit limits |
 
