@@ -4612,12 +4612,39 @@ distinctions. All owned validation/probe processes have exited; retained
 temporary evidence is listed above. Existing untracked `decks/` remains
 untouched.
 
-**Next unfinished work:** finish CU.4/CU.7 checkpoint integration and CU.12
-against the real built daemon in a browser environment that permits localhost;
-then run CU.10's authorized matched matrix on the common lifecycle
-implementation and make CU.11's conditional
-decision. Do not mark selection or the overall phase complete from these
-deterministic results.
+**Renewed validation, 2026-09-19:** Kyle explicitly renewed authorization;
+the elevated browser command started successfully. The first complete
+`yarn test:e2e` run finished with 168/169 passing, including all five CU
+browser cases and the corrected built phone-light case. Its sole failure
+was the existing cockpit assertion measuring the unclipped text range of
+the long isolated checkout name. A browser probe recorded text right
+224.671875, clipped label right 167.21875, and pencil left 171.21875:
+the visible gap is 4 pixels. The test now measures the visible boundary;
+the focused cockpit rerun passes. Product cockpit behavior is unchanged.
+Evidence: `/tmp/cu-e2e-initial-tail.log`,
+`/tmp/cu-cockpit-measurements.json`, `/tmp/cu-evidence/cockpit-probe.png`,
+and `/tmp/cu-evidence/native-phone.png` (built light theme, inspected).
+The added compiled-MCP → Codex adapter → socket/browser chart case passes:
+valid chart, rejected negative-stack update preserving the previous chart,
+same-ID correction, singular replay. Evidence: `/tmp/cu-chart-focused.log`.
+The independent reviewer accepted both that test and the cockpit correction.
+The UI gate's three managed browsers pass; five visual cases initially
+differed only in the unnormalized temporary checkout name in `.sb-cwd`.
+The existing fact-normalization helper now pins that label to the baseline's
+`mirafold/`; the focused comparison passes without changing a baseline PNG.
+Full `yarn test:ui` rerun passes 11/11, including all three browser engines
+and every unchanged visual baseline; `/tmp/cu-ui-final.log`.
+Latest permitted units: 1,464/1,464,
+`/tmp/cu-browser-final-unit.log`; six dotenv-consuming cases remain excluded.
+
+**Next unfinished work:** rerun the complete end-to-end suite with the
+corrected cockpit assertion and added chart case, run CU.10's authorized
+matched matrix on the common lifecycle implementation, and make CU.11's
+conditional decision. The live runner in `/tmp/cu-selection-run.mts` uses
+independent disposable workspaces, the actual adapter and browser, fixed
+model/effort, native-call tracing, and actual source/artifact identity.
+No scored hosted observations have run yet. Do not mark selection or the
+overall phase complete from deterministic results.
 
 ### Stage A — Establish the current behavior
 
@@ -4633,10 +4660,10 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 
 ### Stage B — Make native work inspectable
 
-- [ ] **CU.4 — Implement bounded native edit previews.**
+- [x] **CU.4 — Implement bounded native edit previews.**
   Work: Add the preview and reuse existing diff preparation/rendering. Preserve the original event, full retained input, status, and aggregate computation bounds. Integrate untouched-default versus explicit disclosure choices without a new persisted state model.
   Check: Unit fixtures cover small edits, additions/deletions, multiple files, moves, equal inputs, missing newline, malformed input, and inputs over the existing processing limits. Browser tests cover initial preview, full expansion, explicit collapse, details mode, same-tab reload/session switching, replay, child attribution, and pending/error behavior. At least one fixture sends a real normalized Codex patch through projection into the browser.
-  Status 2026-09-19: Implemented with unit/mounted-browser evidence; two built-daemon dark-theme cases now prove reload, explicit collapse and session switching. The phone fixture's false light-theme assumption was corrected after screenshot review; that corrected case awaits execution. Do not check off yet.
+  Status 2026-09-19: Implemented with unit/mounted-browser evidence; built desktop-dark and phone-light cases pass, proving normalized edits, accessible expansion, explicit collapse, reload and session switching. Light-theme phone screenshot inspected; long paths wrap and preview bounds remain visible.
 
 - [x] **CU.5 — Normalize confirmed Gemini edit events.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 
@@ -4659,7 +4686,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.10 — Evaluate one task-focused guidance revision.**
   Work: Run the 16-observation unchanged-guidance baseline on the common post-fix implementation. If it demonstrates an available-tool choice gap, implement the concise candidate in the existing guidance and reconcile contradictory descriptions. Run the matching candidate matrix and targeted confirmations with identical implementation and settings apart from guidance. Keep or discard it according to the repeated-usefulness gate above.
   Check: Evidence distinguishes post-work improvements from initial advisory use, and voluntary calls from native/Markdown rendering. No improvement is credited to guidance when the two arms differ in visibility, recovery, validation, or lifecycle code. The prose control remains prose, content is correct, and tool activity does not become repeated discovery. When the candidate fails, remove it and report the remaining limitation; do not substitute a second unmeasured reminder.
-  Status 2026-09-19: Blocked before the baseline: required actual-adapter/browser path unavailable. No guidance candidate or scored hosted observations; selection remains unresolved.
+  Status 2026-09-19: Browser execution is now available under renewed authorization. The reviewed manual recorder is prepared; baseline follows the remaining deterministic gates. No guidance candidate or scored hosted observations yet; selection remains unresolved.
 
 - [ ] **CU.11 — Close an observed Mermaid-fence miss, if present.**
   Work: If authorized evidence establishes this miss, prove the complete-fence/intent boundary and reuse the existing sandboxed renderer. Otherwise record why this optional fallback was not needed.
@@ -4673,7 +4700,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.12 — Verify integrated behavior and compatibility.**
   Work: Run the complete required checks on final source, inspect changed visual baselines, and correct observed regressions. Update documentation and active plan only where behavior changed. Preserve all four provider paths and existing event shapes.
   Check: Commands below pass on the identified revision. Built frontend and `dist-server/render-mcp.js` are exercised, not just source imports. Inspect desktop/phone, dark/light, keyboard, reattachment, same-ID updates, and long input behavior in relevant browser tests. Keep provider-live limitations separate from deterministic browser results.
-  Status 2026-09-19: Final build/typecheck, 1,464 permitted unit cases and all 199 isolated server cases pass, with native engine proof for the lifecycle repair. Prior focused mounted browser/axe checks and two built dark-theme cases pass. Six dotenv-consuming unit cases, corrected built phone-light coverage, complete end-to-end/UI suites and visual baselines remain unverified; see the resumed-validation record above.
+  Status 2026-09-19: Final build/typecheck, 1,464 permitted unit cases, all 199 isolated server cases, and all 11 UI cases pass, with native engine proof for the lifecycle repair. Built phone-light/desktop-dark previews, same-ID recovery, and the compiled chart update path pass. Initial full end-to-end run passed 168/169; the isolated-checkout-sensitive cockpit assertion is corrected and its focused rerun passes. Complete end-to-end rerun pending. Six dotenv-consuming unit cases remain deliberately excluded; see renewed-validation evidence above.
 
 - [x] **CU.13 — Conduct a cold correctness and simplification review.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 

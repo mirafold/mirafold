@@ -1,10 +1,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { type Browser } from "playwright-core";
-import { startDaemon } from "../itest-harness";
+import { startDaemon, createSession } from "../itest-harness";
 import { SessionCheckpointStore } from "../../sessions/persistence/session-store";
 import { componentUsageMessages } from "../fixtures/component-usage";
 import { invalidCharts } from "../fixtures/chart-cases";
@@ -13,6 +14,47 @@ import { launchChrome, noSideScroll, assertAxeClean, PHONE_CONTEXT } from "./e2e
 let browser: Browser;
 before(async () => { browser = await launchChrome(); });
 after(async () => { await browser?.close(); });
+
+test("CU compiled MCP through Codex and browser: rejected update preserves a chart, correction replaces it, replay stays singular", async () => {
+  const dir = mkdtempSync("/tmp/cu-chart-browser-");
+  const executable = path.join(dir, "codex-fixture");
+  const fixture = path.resolve("server/testing/fixtures/component-chart-engine.mjs");
+  // Node and the fixture are trusted test-owned paths, shell-quoted literally.
+  const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+  writeFileSync(executable, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 });
+  writeFileSync(path.join(dir, "trust.json"), JSON.stringify({ scopes: { codex: [dir] } }));
+  const daemon = await startDaemon({ MIRAFOLD_CODEX_BIN: executable, OPENAI_API_KEY: "model-free-fixture", MIRAFOLD_WORKSPACE_TRUST_FILE: path.join(dir, "trust.json"), CU_CHART_RESULTS: path.join(dir, "results.jsonl") }, { built: true });
+  const context = await browser.newContext();
+  let client: Awaited<ReturnType<typeof createSession>>["client"] | undefined;
+  try {
+    const session = await createSession(daemon.port, "codex", { cwd: dir });
+    client = session.client;
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${daemon.port}/s/${session.sessionId}`);
+    await page.locator(".prompt-box textarea").waitFor();
+    for (const stage of ["valid", "invalid", "corrected"]) {
+      const mark = client.mark();
+      client.send({ type: "prompt", text: stage });
+      await client.type("turn_end");
+      const events = client.received.slice(mark);
+      assert.equal(events.filter((message) => message.type === "render").length, stage === "invalid" ? 0 : 1);
+      await page.locator(".turn-user-text", { hasText: new RegExp(`^${stage}$`) }).waitFor();
+      await page.locator(".activity-line").waitFor({ state: "detached" });
+      await page.locator(".rc-chart .rc-title", { hasText: stage === "corrected" ? "Corrected totals" : "Original totals" }).waitFor();
+      assert.equal(await page.locator(".rc-chart").count(), 1);
+      assert.equal(await page.locator(".rc-fallback").count(), 0);
+    }
+    const results = (await readFile(path.join(dir, "results.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(results[1].result.isError, true);
+    assert.equal(results[1].result.structuredContent, undefined);
+    assert.doesNotMatch(JSON.stringify(results[1].result), /Rendered chart/);
+    assert.equal(results[2].result.structuredContent.renderId, "retained-chart");
+    await page.reload();
+    await page.locator(".rc-chart .rc-title", { hasText: "Corrected totals" }).waitFor();
+    assert.equal(await page.locator(".rc-chart").count(), 1);
+    assert.equal(await page.locator(".rc-fallback").count(), 0);
+  } finally { client?.close(); await context.close(); await daemon.stop(); rmSync(dir, { recursive: true, force: true }); }
+});
 
 for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone light" : "desktop dark"}, normalized edits and disclosure survive replay`, async () => {
   const dir = mkdtempSync("/tmp/cu-browser-");
