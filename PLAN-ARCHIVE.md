@@ -14178,7 +14178,7 @@ Full completed-step bodies moved from PLAN.md; the phase remains incomplete. Act
 - [x] **CU.2 — Determine the effective Codex instruction lifecycle.**
   Work: Inspect the supported installed protocol and capture fresh/warm/cold-resume behavior using a synthetic thread. Reuse fake app-server tests for request assertions; use the real engine boundary with a controlled local response endpoint when feasible to inspect effective instructions without a model. Otherwise use the authorized live trace, explicitly separating what it proves from inference.
   Check: Produce a definite retained/lost/stale/unknown result for the tested version. Distinguish a browser reconnect from app-server restart, and persisted historical instructions from freshly supplied instructions. Record the minimal repair, or no-change decision.
-  Status 2026-09-19: Current policy retained fresh/warm/cold; changed resume overrides do not replace historical instructions. CU.9 remains open.
+  Status 2026-09-19: Current policy retained fresh/warm/cold; changed resume overrides do not replace historical instructions. The subsequent CU.9 repair is recorded below.
 
 - [x] **CU.3 — Prepare selection fixtures and diagnostic evidence.**
   Work: Prepare the small fixture tasks, reproducible setup histories, and outcome records. Use authorized existing evidence or a few bounded diagnostic observations to locate obvious discovery/display problems. Reserve the full matched matrix for CU.10 after deterministic repairs; keep raw personal data out of source control.
@@ -14209,3 +14209,8 @@ Full completed-step bodies moved from PLAN.md; the phase remains incomplete. Act
   Work: Review the final diff against the behavior contract and acceptance map. Seek counterexamples around status attribution, display truncation, repeated updates, replay, tool acknowledgment, and instruction override semantics. Remove abandoned experiment code and duplication. An independent reviewer is useful if available; one is not a substitute for evidence.
   Check: Reproduce and address material findings, then rerun affected checks and invalidate stale broader results when inputs changed. “No finding” is acceptable. Do not manufacture refactors to demonstrate review effort.
   Status 2026-09-19: Independent review findings fixed and retested; follow-up has no additional material finding.
+
+- [x] **CU.9 — Repair a proven lifecycle gap, if present.**
+  Work: Apply the minimal supported change selected by CU.2, or record an evidenced no-change result. Retest the repaired boundary before establishing the common implementation for CU.10.
+  Check: Fresh and cold-resumed effective instructions contain the intended Mirafold policy without clobbering user instructions, provider settings, or thread identity. Request-only mocks are insufficient to establish retention semantics.
+  Status 2026-09-19: The installed 0.154.0 native engine and actual modified adapter verify versioned developer updates on historical resume, current-policy retention on warm/cold turns and fresh startup, preserved thread/repository/model/effort, and one policy copy per request. Checkpoint persistence and immediate acknowledgment are covered; older-method fallback and buffered close/interrupt races were reviewed, reproduced and fixed. Compaction was not observed. Exact evidence and final gates remain in active PLAN.md.

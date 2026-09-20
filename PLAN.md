@@ -4397,7 +4397,7 @@ separately. Repair resume only with effective-instruction evidence. Add a
 complete-Mermaid-fence fallback only after an observed need and parser proof.
 Unavailable live work is blocked, never a passed/no-change selection result.
 
-**2026-09-19 candidate disposition — implementation committed, phase incomplete.**
+**2026-09-19 candidate disposition at `64e5da1` — phase incomplete.**
 Executable/test source and behavior documentation:
 `89e5fa0240a99c959673753593f63fc4fa90f0fd` on the branch above. The following
 planning-only commit records this evidence. No remote
@@ -4446,7 +4446,7 @@ visible phone Settings controls, asserts `data-theme` before checking the
 preview and after reload, and awaits execution. The desktop screenshot is
 `/tmp/cu-evidence/native-desktop.png`; `native-phone.png` is phone DARK
 evidence, not light evidence. The earlier mounted-source light check below
-remains valid. Production code has not changed since `89e5fa0`.
+remains valid. At `64e5da1`, production code had not changed since `89e5fa0`.
 
 The original-repository daemon harness invokes the project dotenv loader,
 and a repository `.env` exists (existence only was checked). The original
@@ -4495,9 +4495,9 @@ model/effort. The probe deliberately used no credentials, local provider,
 `gpt-5.6-terra`/medium and synthetic replies, not the installed hosted model.
 Supplying changed `developerInstructions` on cold resume kept the original
 developer instructions; the supported `config.developer_instructions`
-override did too. No production lifecycle change was made: omitted resume
-instructions do not cause loss in this version, but refreshing older saved
-instructions remains unresolved. Compaction was not exercised. Evidence:
+override did too. At that checkpoint no production lifecycle change was made:
+omitted resume instructions did not cause loss, while refreshing older saved
+instructions remained unresolved. Compaction was not exercised. Evidence:
 `/tmp/cu-lifecycle-policy.mts`, `/tmp/cu-lifecycle-policy.log`,
 `/tmp/cu-lifecycle-eqd5gm/`; alternate override probe
 `/tmp/cu-lifecycle-config.mts`, `/tmp/cu-lifecycle-config.log`,
@@ -4510,10 +4510,57 @@ warm turns and after cold resume. The full current policy and repository
 sentinel, thread identity, model and effort remained present; both the old
 and new developer sentinels remained in the request. Evidence:
 `/tmp/cu-lifecycle-inject.mts`, `/tmp/cu-lifecycle-inject.log`, request bodies
-under `/tmp/cu-lifecycle-dx4hYU/`. This proves a native mechanism, not a
-finished Mirafold repair: version tracking, avoiding repeated insertion on
-resume and integration with saved sessions have not been implemented or
-verified. No unmeasured reminder or instruction replacement was retained.
+under `/tmp/cu-lifecycle-dx4hYU/`. That probe established the native mechanism;
+the subsequent implementation and verification are recorded below.
+
+**2026-09-19 autonomous continuation — historical instruction refresh implemented.**
+Kyle renewed authorization to complete CU autonomously. Codex now records
+the SHA-256 version of acknowledged Mirafold instructions in the existing
+owner-only session checkpoint. A fresh thread receives the current policy
+at start. An unknown or older saved version receives one native developer
+update before its resumed user prompt; acknowledgment immediately checkpoints
+the version. Warm turns and same-version cold resumes do not append it again.
+Resume also supplies the current developer configuration for future context
+reconstruction. User prompts, provider thread identity and permission settings
+are preserved. The shared render guidance itself has not changed.
+
+Older engines without `thread/inject_items` remain usable with an honest
+notice. The native protocol's exact unknown-method `-32600` response and
+standard `-32601` are recognized; malformed-argument and other errors stop
+the prompt without recording success. Closed/interrupted startup turns cannot
+acknowledge or announce buffered replies. A process crash or failed checkpoint
+after native acknowledgment can cause a repeated update on the next resume;
+there is no cross-process atomic transaction between the native history and
+Mirafold's local checkpoint.
+
+The actual modified `CodexSession`, installed Codex 0.154.0 and synthetic
+Responses endpoint reproduced an older thread, refreshed it, then exercised a
+warm turn, a new adapter/process resuming the same thread/version and a fresh
+thread. Each outgoing request held exactly one copy of the current policy;
+the old thread received one injection total across all three adapter turns,
+and the fresh thread needed none. Repository sentinel, model/effort and
+thread identity checks passed. This used no credentials or hosted model:
+`/tmp/cu-lifecycle-adapter.mts`, `/tmp/cu-lifecycle-adapter.log`, captured
+requests and metadata in `/tmp/cu-lifecycle-tzPNWW/`. Compaction remains
+unobserved; native source/config supports the future-context setting, but
+this is not a claim of an observed compaction run.
+
+The independent review found the native unknown-method error-code difference
+and a buffered-response race around close/interrupt. Both were reproduced
+and fixed. Four faithful buffered success/rejection cases failed before the
+guard fix (`/tmp/cu-instructions-close-before.log`) and passed afterward;
+the final guidance-focused check is 12/12
+(`/tmp/cu-instructions-final-races.log`). The reviewer closed the lifecycle
+review with no additional material finding. Final permitted unit verification
+passes 1,464/1,464 (`/tmp/cu-instructions-verified-unit.log`); the same six
+dotenv-consuming cases remain excluded. Final typecheck passes
+(`/tmp/cu-instructions-final-typecheck.log`). The built frontend and server
+pass (`/tmp/cu-instructions-build.log`); the final server run also rebuilds
+the server after the race corrections.
+Final isolated `yarn test:server` passes 199/199
+(`/tmp/cu-instructions-verified-server.log`). The retained code has passed
+all permitted deterministic checks; the browser/live limits below remain
+separate. Owned validation and probe processes have exited.
 
 **Blocked acceptance gates.** The initial sandboxed browser navigation failed
 with `net::ERR_ACCESS_DENIED`. Kyle's subsequent approval allowed the two
@@ -4530,6 +4577,13 @@ unavailable. There are
 zero scored hosted observations, no candidate arm, no confirmations and no
 evidence of improved discretionary selection. Gemini compatibility is from
 the installed source plus adapter/browser fixtures, not a live Gemini turn.
+
+The latest renewed approval produced another execution-layer rejection of
+the elevated isolated `yarn test:e2e` command with the same “rejected by user”
+message. A safer focused attempt within the existing sandbox required no
+elevation but both native-preview cases failed at navigation with
+`net::ERR_ACCESS_DENIED` (`/tmp/cu-sandbox-native.log`). Neither result is
+a feature assertion failure or permission to bypass the browser restriction.
 
 Selection fixture facts and natural task/setup prompts are prepared in
 `/tmp/cu-selection-fixtures/` (`tasks.json`, retry policies, worker flow,
@@ -4555,8 +4609,8 @@ untouched.
 
 **Next unfinished work:** finish CU.4/CU.7 checkpoint integration and CU.12
 against the real built daemon in a browser environment that permits localhost;
-establish a supported stale-instruction refresh before any guidance comparison;
-then run CU.10's authorized matched matrix and make CU.11's conditional
+then run CU.10's authorized matched matrix on the common lifecycle
+implementation and make CU.11's conditional
 decision. Do not mark selection or the overall phase complete from these
 deterministic results.
 
@@ -4595,10 +4649,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 
 ### Stage D — Apply only supported selection improvements
 
-- [ ] **CU.9 — Repair a proven lifecycle gap, if present.**
-  Work: Apply the minimal supported change selected by CU.2, or record an evidenced no-change result. Retest the repaired boundary before establishing the common implementation for CU.10.
-  Check: Fresh and cold-resumed effective instructions contain the intended Mirafold policy without clobbering user instructions, provider settings, or thread identity. Request-only mocks are insufficient to establish retention semantics.
-  Status 2026-09-19: Current-policy retention proven. Top-level and config resume overrides both failed to refresh saved developer instructions in Codex 0.154.0. A native `thread/inject_items` developer update survives warm/cold turns, but retaining both old and new messages requires a version-aware integration before this is a finished lifecycle repair. No production patch retained.
+- [x] **CU.9 — Repair a proven lifecycle gap, if present.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 
 - [ ] **CU.10 — Evaluate one task-focused guidance revision.**
   Work: Run the 16-observation unchanged-guidance baseline on the common post-fix implementation. If it demonstrates an available-tool choice gap, implement the concise candidate in the existing guidance and reconcile contradictory descriptions. Run the matching candidate matrix and targeted confirmations with identical implementation and settings apart from guidance. Keep or discard it according to the repeated-usefulness gate above.
@@ -4617,7 +4668,7 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 - [ ] **CU.12 — Verify integrated behavior and compatibility.**
   Work: Run the complete required checks on final source, inspect changed visual baselines, and correct observed regressions. Update documentation and active plan only where behavior changed. Preserve all four provider paths and existing event shapes.
   Check: Commands below pass on the identified revision. Built frontend and `dist-server/render-mcp.js` are exercised, not just source imports. Inspect desktop/phone, dark/light, keyboard, reattachment, same-ID updates, and long input behavior in relevant browser tests. Keep provider-live limitations separate from deterministic browser results.
-  Status 2026-09-19: Build/typecheck, 1,450 permitted unit cases, all 199 isolated server cases, focused mounted browser/axe checks and two built dark-theme cases pass. Six dotenv-consuming unit cases, corrected built phone-light coverage, complete end-to-end/UI suites and visual baselines remain unverified; see the resumed-validation record above.
+  Status 2026-09-19: Final build/typecheck, 1,464 permitted unit cases and all 199 isolated server cases pass, with native engine proof for the lifecycle repair. Prior focused mounted browser/axe checks and two built dark-theme cases pass. Six dotenv-consuming unit cases, corrected built phone-light coverage, complete end-to-end/UI suites and visual baselines remain unverified; see the resumed-validation record above.
 
 - [x] **CU.13 — Conduct a cold correctness and simplification review.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 

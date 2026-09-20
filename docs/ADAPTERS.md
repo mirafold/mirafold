@@ -94,6 +94,8 @@ interface AgentSession {
   readonly modelName: string | undefined;
   readonly resumeId?: string;
   onResumeId?(cb: (id: string) => void): void;
+  readonly instructionsVersion?: string;
+  onInstructionsVersion?(cb: (version: string) => void): void;
   onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
   verifyBackendKind?(): Promise<void>;
   refreshPromptOptions?(): void;
@@ -319,6 +321,23 @@ bound goes through the same `interrupt()` path as a user stop and emits one
 actionable error before the required single `turn_end`; configured providers
 and first-party sessions receive neither override nor deadline. The deadline
 is `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (`0` disables it).
+
+**Codex presentation instructions on resume (CU, 0.154.0 verified):** the
+engine retains its recorded developer message across warm and cold turns;
+changing `thread/resume.developerInstructions` alone does not replace that
+message. Mirafold checkpoints the SHA-256 version of its acknowledged
+presentation instructions beside the provider thread ID. New threads receive
+the current instructions at start. An unknown or older saved version receives
+one native `thread/inject_items` developer update before the resumed prompt;
+its acknowledgment immediately updates the checkpoint. Warm turns and cold
+resumes with that version do not append it again. Resume also supplies the
+current developer configuration for subsequent context reconstruction.
+The original provider thread, user/repository instructions and permission
+settings remain in place. Older engines returning method-not-found continue
+with their saved guidance and an explicit notice; other refresh failures stop
+that prompt without recording success. A crash between the native
+acknowledgment and the local checkpoint can cause the update to be retried.
+This is instruction delivery, not evidence of better component selection.
 
 ## 5. Generative UI: the MCP contract
 

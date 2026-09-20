@@ -177,6 +177,10 @@ that provider policy forbids over the paid relay.
 owner-only checkpoints and strictly validates them before recovery. A closed
 tab detaches its viewport; it does not end the session. An idle active engine
 can unload while the checkpoint remains available for lazy recovery.
+Codex checkpoints also retain the acknowledged presentation-instruction
+version. The adapter publishes it after native acknowledgment, so restoring
+the same version does not insert the guidance again. It is local recovery
+metadata and never a browser transcript record.
 
 ### Browser client
 

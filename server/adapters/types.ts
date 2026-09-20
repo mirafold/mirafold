@@ -72,6 +72,10 @@ export interface AgentSession {
    * identity at the readiness boundary instead of guessing from a later
    * unrelated wire event. */
   onResumeId?(cb: (id: string) => void): void;
+  /** Application-instruction version acknowledged by the provider. Kept only
+   * in the local checkpoint to identify which guidance a resumed thread has. */
+  readonly instructionsVersion?: string;
+  onInstructionsVersion?(cb: (version: string) => void): void;
   /** An adapter whose hello-time credential kind is OPTIMISTIC
    * (OpenCode — the provider-resolved truth needs the running engine)
    * publishes the classified kind here at session start. The registry

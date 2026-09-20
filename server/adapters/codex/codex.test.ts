@@ -5,10 +5,10 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../../protocol";
-import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
+import { CODEX_DEVELOPER_INSTRUCTIONS, CODEX_INSTRUCTIONS_VERSION, CodexSession, describePermissionProfile } from "./codex";
 import { describePatchChange, normalizePatchChanges } from "./codex-patch";
 import { waitFor as waitForCond } from "../../testing/wait-for";
-import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
+import { AppServerRpcError, type AppServerClient, type AppServerSpawn, type JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP, renderMcpCommand } from "../render-mcp-cmd";
 import { codexRenderMcpConfig } from "./codex-binding";
 import { MIRAFOLD_CONTEXT } from "../../render-guidance";
@@ -107,6 +107,8 @@ function fakeAppServer(opts: {
   turnStartGate?: Promise<void>;
   omitTurnId?: boolean | "once";
   interruptCompletes?: boolean;
+  injectError?: Error;
+  killDefersExit?: boolean;
 } = {}) {
   const requests: { method: string; params: any }[] = [];
   const specs: AppServerSpawn[] = [];
@@ -179,6 +181,9 @@ function fakeAppServer(opts: {
           case "thread/resume":
             threadId = params.threadId;
             return { thread: { id: threadId }, model: opts.model ?? "gpt-test" } as any;
+          case "thread/inject_items":
+            if (opts.injectError) throw opts.injectError;
+            return {} as any;
           case "turn/start": {
             const turnId = `turn-${++turnSeq}`;
             activeTurn = turnId;
@@ -225,7 +230,7 @@ function fakeAppServer(opts: {
       },
       stderrTail: "",
       kill() {
-        client.exit();
+        if (!opts.killDefersExit) client.exit();
       },
       exit() {
         if (exited) return;
@@ -428,6 +433,8 @@ test("the render guidance rides thread/start as developerInstructions; turns car
   assert.equal(starts[0].params.sandbox, undefined);
   assert.equal(starts[0].params.approvalPolicy, undefined);
   assert.deepEqual(prompts(), ["first ask", "second ask"]);
+  assert.equal(s.instructionsVersion, CODEX_INSTRUCTIONS_VERSION);
+  assert.equal(server.requests.filter((r) => r.method === "thread/inject_items").length, 0);
   s.close();
 });
 
@@ -581,6 +588,102 @@ test("Codex announces its provider resume id when the thread starts", async () =
   assert.equal(s.resumeId, "codex-thread-new");
   s.close();
 });
+
+for (const action of ["close", "interrupt"] as const) for (const accepted of [true, false]) {
+  test(`a buffered guidance ${accepted ? "acknowledgment" : "rejection"} before ${action} cannot update a closed session`, async () => {
+    let reply: (() => void) | undefined;
+    const server = fakeAppServer({ killDefersExit: true });
+    const s = new CodexSession({ workspaceDir: tmp, resumeId: "saved-thread", makeAppServer(spec) {
+      const client = server.makeAppServer(spec);
+      const request = client.request.bind(client);
+      client.request = (method, params) => method !== "thread/inject_items" ? request(method, params) : new Promise<any>((resolve, reject) => {
+        reply = () => accepted ? resolve({}) : reject(new AppServerRpcError("Method not found", -32601));
+      });
+      return client;
+    } });
+    const seen: Any[] = [];
+    s.onMessage((msg) => seen.push(msg as Any));
+    try {
+      s.pushPrompt("continue");
+      await waitForCond(() => !!reply, "guidance request");
+      // The native reply is buffered before close; kill only signals the
+      // process, so its exit notification has not arrived yet.
+      reply!();
+      s[action]();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(seen.filter((msg) => msg.type === "notice").length, 0);
+      assert.equal(server.turnStarts().length, 0);
+      assert.equal(s.instructionsVersion, undefined);
+    } finally { reply?.(); s.close(); for (const client of server.clients) client.exit(); }
+  });
+}
+
+for (const savedVersion of [undefined, "0".repeat(64), CODEX_INSTRUCTIONS_VERSION]) {
+  test(`saved Codex guidance refreshes only when needed: ${savedVersion ?? "legacy"}`, async () => {
+    const { s, server, awaitTurnEnd } = makeSessionWithOptions({
+      resumeId: "saved-thread", instructionsVersion: savedVersion,
+    }, [DONE], [DONE], [DONE]);
+    const versions: string[] = [];
+    s.onInstructionsVersion((version) => versions.push(version));
+    try {
+      s.pushPrompt("first resumed ask");
+      await awaitTurnEnd();
+      s.pushPrompt("warm ask");
+      await awaitTurnEnd(2);
+      server.clients[0]!.exit();
+      s.pushPrompt("cold ask");
+      await awaitTurnEnd(3);
+      assert.equal(s.resumeId, "saved-thread");
+      assert.equal(s.instructionsVersion, CODEX_INSTRUCTIONS_VERSION);
+      const updates = server.requests.filter((r) => r.method === "thread/inject_items");
+      assert.equal(updates.length, savedVersion === CODEX_INSTRUCTIONS_VERSION ? 0 : 1);
+      if (updates[0]) {
+        assert.equal(updates[0].params.threadId, "saved-thread");
+        assert.equal(updates[0].params.items[0].role, "developer");
+        assert.ok(updates[0].params.items[0].content[0].text.endsWith(CODEX_DEVELOPER_INSTRUCTIONS));
+        assert.ok(server.requests.indexOf(updates[0]) < server.requests.findIndex((r) => r.method === "turn/start"));
+      }
+      assert.equal(versions.filter((v) => v === CODEX_INSTRUCTIONS_VERSION).length, 1);
+      for (const start of server.threadStarts()) {
+        assert.equal(start.method, "thread/resume");
+        assert.equal(start.params.developerInstructions, CODEX_DEVELOPER_INSTRUCTIONS);
+        assert.equal(start.params.approvalPolicy, undefined);
+        assert.equal(start.params.sandbox, undefined);
+        assert.equal(start.params.config, undefined);
+      }
+      assert.deepEqual(server.prompts(), ["first resumed ask", "warm ask", "cold ask"]);
+    } finally { s.close(); }
+  });
+}
+
+for (const [code, message, unsupported] of [
+  [-32601, "Method not found", true],
+  [-32600, "Invalid request: unknown variant `thread/inject_items`, expected one of ...", true],
+  [-32600, "Invalid request: unknown variant `different/method`, expected one of ...", false],
+  [-32600, "Invalid request: missing field `items`", false],
+  [-32603, "injected error", false],
+] as const) {
+  test(`a guidance refresh error never records success: ${message}`, async () => {
+    const server = fakeAppServer({ injectError: new AppServerRpcError(message, code) });
+    server.turns.push([DONE], [DONE]);
+    const s = new CodexSession({ workspaceDir: tmp, resumeId: "saved-thread", makeAppServer: server.makeAppServer });
+    const seen: Any[] = [];
+    s.onMessage((msg) => seen.push(msg as Any));
+    try {
+      s.pushPrompt("continue");
+      await waitForTurnEnds(seen);
+      assert.equal(s.instructionsVersion, undefined);
+      assert.equal(s.resumeId, "saved-thread");
+      assert.equal(server.turnStarts().length, unsupported ? 1 : 0);
+      if (unsupported) {
+        assert.match(seen.find((msg) => msg.type === "notice")?.text ?? "", /cannot refresh/);
+        s.pushPrompt("warm turn");
+        await waitForTurnEnds(seen, 2);
+        assert.equal(server.requests.filter((r) => r.method === "thread/inject_items").length, 1);
+      } else assert.ok((seen.find((msg) => msg.type === "error")?.message ?? "").includes(message));
+    } finally { s.close(); }
+  });
+}
 
 test("the engine's resolved model becomes the label; a configured model is never overridden", async () => {
   const unconfigured = makeSession([DONE]);
