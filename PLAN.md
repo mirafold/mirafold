@@ -4514,6 +4514,11 @@ under `/tmp/cu-lifecycle-dx4hYU/`. That probe established the native mechanism;
 the subsequent implementation and verification are recorded below.
 
 **2026-09-19 autonomous continuation — historical instruction refresh implemented.**
+Retained implementation source:
+`62da0583e3dbdf424dd1935462d5ccadaedc01cf` (signed local commit on the existing
+feature branch, including all earlier CU changes). This subsequent planning
+commit records its final identity; no remote action was taken.
+
 Kyle renewed authorization to complete CU autonomously. Codex now records
 the SHA-256 version of acknowledged Mirafold instructions in the existing
 owner-only session checkpoint. A fresh thread receives the current policy
