@@ -84,13 +84,19 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   return { s, ...attach(s) };
 }
 
-test("Gemini 0.60 headless edit shapes reuse native diff/content display without losing parameters or errors", async () => {
+test("Gemini headless edits normalize single replacements and writes while retaining multi-replacement calls", async () => {
   const inputs = [
-    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "old\n", new_string: "new\n", expected_replacements: 2 }, expected: "Edit" },
+    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "old\n", new_string: "new\n", expected_replacements: 2 }, expected: "replace" },
     { name: "write_file", params: { file_path: "/tmp/new.ts", content: "written\n" }, expected: "Write" },
     { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "bad", new_string: "good" }, expected: "Edit" },
     { name: "replace", params: { file_path: "/tmp/a.ts", old_string: 3 }, expected: "replace" },
     { name: "some_replace", params: { file_path: "/tmp/a.ts", old_string: "a", new_string: "b" }, expected: "some_replace" },
+    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "a", new_string: "b", expected_replacements: 1 }, expected: "Edit" },
+    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "a", new_string: "b", expected_replacements: "2" }, expected: "replace" },
+    // Installed 0.60 uses allow_multiple; expected_replacements above also
+    // protects older/unknown retained parameter shapes without inventing counts.
+    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "a", new_string: "b", allow_multiple: true }, expected: "replace" },
+    { name: "replace", params: { file_path: "/tmp/a.ts", old_string: "a", new_string: "b", allow_multiple: false }, expected: "Edit" },
   ];
   fixture("cu-edit-events.jsonl", inputs.flatMap((item, i) => [
     { type: "tool_use", tool_name: item.name, tool_id: `cu-${i}`, parameters: item.params },

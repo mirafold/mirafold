@@ -14189,6 +14189,7 @@ Full completed-step bodies moved from PLAN.md; the phase remains incomplete. Act
   Work: Capture or verify the exact supported `replace`/`write_file` headless shapes; implement the small adapter-local mapping. Preserve errors and IDs and reuse CU.4 where applicable.
   Check: Adapter fixtures prove replace → existing diff rendering and write → written content; unrelated tool names/inputs and failed results retain their behavior. Browser fixture verifies the resulting native row. If the supported binary cannot be inspected, mark the live provider confirmation outstanding rather than pretending the synthetic fixture establishes version compatibility.
   Status 2026-09-19: Installed Gemini 0.60.0 source confirms exact native fields; adapter and mounted browser fixtures pass. No live-model claim.
+  Correction 2026-09-20 (CU.17): 0.60 uses `allow_multiple` for repeated replacements. The initial fixture's `expected_replacements` field was not verified as a current native parameter; it is now covered only as an older/unknown input shape. Current and saved multi-replacement records no longer receive fabricated single-edit counts.
 
 - [x] **CU.6 — Recover failed same-ID components.**
   Work: Introduce the smallest content-sensitive retry mechanism at the relevant error boundaries. Preserve healthy instances and stable transcript identity.

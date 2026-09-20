@@ -51,6 +51,11 @@ export function prepareEditInput(name: string, input?: Record<string, unknown>):
     } else {
       const before = item["old_string"], after = item["new_string"];
       if (typeof before !== "string" || typeof after !== "string") return unavailable("No supported edit preview");
+      // Older saved Gemini events may already carry the canonical Edit name.
+      if ((item["allow_multiple"] !== undefined && item["allow_multiple"] !== false)
+        || (item["expected_replacements"] !== undefined && item["expected_replacements"] !== 1)) {
+        return unavailable("Preview unavailable for this replacement count");
+      }
       chars += before.length + after.length + filePath.length;
       jobs.push(() => ({ label: `Updated ${filePath}`, lines: diffLines(before, after) }));
     }

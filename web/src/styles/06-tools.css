@@ -127,6 +127,10 @@
   border-color: var(--diff-add-border);
 }
 
+.tool-patch .tool-code > div {
+  min-height: 1lh;
+}
+
 /* One block per file on an apply_patch row: "Updated server/x.ts" then the
    patch as diff rows. */
 .tool-patch + .tool-patch {

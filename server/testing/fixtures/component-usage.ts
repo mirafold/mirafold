@@ -21,13 +21,21 @@ export function componentUsageMessages(): SessionMsg[] {
   const handle = (event: Record<string, unknown>) => (gemini as unknown as { handleEvent: (event: Record<string, unknown>) => void }).handleEvent(event);
   for (const [id, name, parameters, status] of [
     ["gemini-edit", "replace", { file_path: "gemini.ts", old_string: "before\n", new_string: "after\n" }, "success"],
-    ["gemini-write", "write_file", { file_path: "written.ts", content: "written content\n" }, "success"],
+    ["gemini-write", "write_file", { file_path: "written.ts", content: "\nwritten content\n\nlast line\n\n" }, "success"],
+    ["gemini-multi", "replace", { file_path: "multiple.ts", old_string: "before\n", new_string: "after\n", allow_multiple: true }, "success"],
     ["gemini-failed", "replace", { file_path: "failed.ts", old_string: "never\n", new_string: "applied\n" }, "error"],
   ] as const) {
     handle({ type: "tool_use", tool_id: id, tool_name: name, parameters });
     handle({ type: "tool_result", tool_id: id, status, output: status === "error" ? "replacement not found" : "done" });
   }
   gemini.close();
+  // Persisted records from the earlier adapter bypass normalization on replay.
+  for (const [id, extra] of [["retained-multiple", { allow_multiple: true }], ["retained-count", { expected_replacements: 2 }]] as const) {
+    messages.push(
+      { type: "tool_use", id, name: "Edit", detail: `${id}.ts · replace`, input: { file_path: `${id}.ts`, old_string: "before\n", new_string: "after\n", ...extra } },
+      { type: "tool_result", id, output: "done", isError: false },
+    );
+  }
   messages.push(
     { type: "tool_use", id: "child", name: "Agent", detail: "child edit" },
     { type: "tool_use", id: "child-edit", name: "Edit", parentId: "child", input: { file_path: "child.ts", old_string: "child old\n", new_string: "child new\n" } },

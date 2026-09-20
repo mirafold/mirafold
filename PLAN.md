@@ -4408,6 +4408,9 @@ with retention. This is a targeted improvement, not a general accuracy or
 component-selection guarantee. Local build, typecheck and 1,464 permitted
 unit cases pass on the exact measured source. Full CI and automated review
 must run on the new published head; PR #130 stays open and unmerged.
+CU.17 records the two subsequent presentation corrections from automated
+review, including saved-session coverage. Their local gates pass; the final
+PR description records remote validation of the resulting commit.
 
 **Historical disposition, 2026-09-19 — original candidate discarded.**
 The retained production source is `ca71a44bc75f6cb5bc797b34b58b269b739974dd`;
@@ -5062,6 +5065,65 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
   must complete full CI and automated review before delivery is closed;
   final remote results belong in PR #130 to avoid a validation-only commit
   retriggering the same workflow. Untracked user decks remain untouched.
+
+- [x] **CU.17 — Correct two reproduced automated-review findings.**
+  Review of published head `1f7d478` identified blank written-content rows
+  collapsing and multi-occurrence Gemini replacements receiving a single-edit
+  count. A browser probe on the unchanged source measured zero height for
+  leading, internal and trailing blank rows in compact and expanded writes;
+  adapter-to-display probing showed `expected_replacements: 2` becoming
+  `Edit` with a +1/−1 count. Evidence: `/tmp/cu-review-7cgm4pcv/`.
+  Give written-content rows a line box and retain native presentation for
+  Gemini replacement counts other than absent/one. Add regressions for
+  compact/expanded browser geometry and faithful native parameters/counts,
+  preserve the frozen guidance bytes, and rerun affected checks plus full CI.
+  Complete independent review and reread all automated review surfaces before
+  closing delivery. No merge or release.
+
+  **Completed 2026-09-20.** Written-content rows now have a minimum line
+  box. The unchanged-source probe measured 0px for all three blank rows in
+  compact and expanded views; the corrected browser measures approximately
+  19.19px for every row, including the blank rows. Original text is retained.
+  Desktop and phone tests cover leading, internal and trailing blank lines
+  through both the built daemon and mounted transcript, with full expansion.
+
+  Gemini's current installed **0.60.0** source uses `allow_multiple`, not
+  `expected_replacements`: its bundled `chunk-M6NSK26M.js` schema around
+  line 281965 and occurrence validation around line 308682 establish this.
+  The earlier fixture's numeric count was not a verified 0.60 field. The
+  corrected fixture tests the actual boolean flag; numeric/unknown count
+  shapes remain conservative compatibility cases. New multi-occurrence
+  calls retain their native name and full parameters without a fabricated
+  single-edit diff/count. The shared display boundary also declines derived
+  counts for already-saved canonical `Edit` records carrying either shape.
+  A replay probe independently reproduced that earlier-record gap before
+  correction, and explicit stored-event fixtures now cover it.
+
+  The adapter and blank-row regressions failed against the original source
+  and pass after correction. Final build/typecheck pass; **1,465 permitted
+  units pass**, zero failed/skipped. The six component browser cases pass:
+  MCP/chart and recovery cases passed, then all four affected desktop/phone
+  native/mounted preview cases passed after the final test-selector correction.
+  That correction distinguishes `multiple.ts` from `retained-multiple.ts`;
+  the browser's strict-selector error proved the collision. The first unit
+  run's sole failure was the disposable checkout lacking the Git index used
+  by `release-workflow.test.ts`; creating that index made the focused check
+  pass without changing production or test logic, then the full suite passed.
+
+  Isolated final source/artifact manifest:
+  `/tmp/cu-review-7cgm4pcv/final-identity.json`; all 457 source hashes match
+  the retained checkout. Source SHA-256:
+  `d2ab5887747b980ff8850ca248ac8c8897a62b727ff7e3f60c24676ce21e993e`.
+  Executable changes are limited to Gemini normalization, shared edit
+  preparation and written-row CSS. Test changes add one unit regression and
+  extend adapter, replay-fixture and existing browser cases. Documentation
+  records the evidence and corrects the earlier fixture attribution.
+  Independent review closed the implementation/replay gap; no remaining
+  material implementation finding. The exact CU.16 guidance bytes remain
+  unchanged. Its Codex edit/report comparison did not exercise Gemini or
+  blank whole-file writes, so these separate presentation corrections do not
+  alter those stimuli or require another hosted study. Full remote checks
+  and automated review must pass on the final commit; PR #130 stays open.
 
 ## Known commands and acceptance coverage
 

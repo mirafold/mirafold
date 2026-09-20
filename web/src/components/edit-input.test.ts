@@ -55,6 +55,22 @@ test("expanded pending and failed edits label input without claiming completion"
   }
 });
 
+test("retained multi-replacement edits omit invented counts and keep original parameters inspectable", () => {
+  for (const extra of [{ allow_multiple: true }, { expected_replacements: 2 }, { expected_replacements: "2" }]) {
+    const input = { file_path: "many.ts", old_string: "old\n", new_string: "new\n", ...extra };
+    for (const [name, parameters] of [["Edit", input], ["MultiEdit", { edits: [input] }]] as const) {
+      const prepared = prepareEditInput(name, parameters)!;
+      assert.equal(prepared.counts, undefined);
+      assert.deepEqual(prepared.files, []);
+      assert.ok(prepared.unavailable);
+      const html = renderToStaticMarkup(createElement(ToolBlock, { name, input: parameters, output: "done", toggleKey: "multiple", expanded: true, onToggle() {} }));
+      assert.match(html, /many\.ts/);
+      assert.doesNotMatch(html, /tool-change|tool-diff/);
+    }
+  }
+  assert.deepEqual(prepareEditInput("Edit", { old_string: "old\n", new_string: "new\n", allow_multiple: false, expected_replacements: 1 })?.counts, { added: 1, removed: 1 });
+});
+
 test("malformed and aggregate oversized inputs decline preparation but retain expansion", () => {
   for (const input of [
     { edits: [null, { old_string: "a", new_string: "b" }] },

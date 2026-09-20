@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
-import { type Browser } from "playwright-core";
+import { type Browser, type Page } from "playwright-core";
 import { startDaemon, createSession } from "../itest-harness";
 import { SessionCheckpointStore } from "../../sessions/persistence/session-store";
 import { componentUsageMessages } from "../fixtures/component-usage";
@@ -14,6 +14,32 @@ import { launchChrome, noSideScroll, assertAxeClean, PHONE_CONTEXT } from "./e2e
 let browser: Browser;
 before(async () => { browser = await launchChrome(); });
 after(async () => { await browser?.close(); });
+
+async function assertFaithfulWritesAndReplacements(page: Page) {
+  const written = page.locator(".tool-block", { hasText: "written.ts" });
+  for (const expanded of [false, true]) {
+    if (expanded) await written.getByRole("button", { name: "Show full details" }).click();
+    const rows = await written.locator(".tool-patch .tool-code > div").evaluateAll((elements) => elements.map((element) => ({ text: element.textContent, height: element.getBoundingClientRect().height })));
+    assert.deepEqual(rows.map((row) => row.text), ["", "written content", "", "last line", ""]);
+    assert.ok(rows.every((row) => row.height > 0), `blank written rows occupy a line in ${expanded ? "expanded" : "compact"} mode`);
+    assert.equal(await written.locator(".tool-change, .diff-add").count(), 0, "a write has no known before/after count");
+  }
+  await written.locator(".tool-head").click();
+  const multiple = page.locator(".tool-block", { has: page.locator(".tool-detail", { hasText: /^multiple\.ts$/ }) });
+  assert.equal(await multiple.locator(".tool-name").innerText(), "replace");
+  assert.equal(await multiple.locator(".tool-change, .tool-edit-preview").count(), 0, "one snippet cannot count multiple replacements");
+  await multiple.locator(".tool-head").click();
+  assert.deepEqual(JSON.parse(await multiple.locator(".tool-input .tool-code").innerText()), { file_path: "multiple.ts", old_string: "before\n", new_string: "after\n", allow_multiple: true });
+  await multiple.locator(".tool-head").click();
+  for (const [file, extra] of [["retained-multiple.ts", { allow_multiple: true }], ["retained-count.ts", { expected_replacements: 2 }]] as const) {
+    const retained = page.locator(".tool-block", { has: page.locator(".tool-detail", { hasText: file }) });
+    assert.equal(await retained.locator(".tool-change, .tool-diff").count(), 0);
+    assert.match(await retained.innerText(), /Preview unavailable for this replacement count/);
+    await retained.getByRole("button", { name: "Show full details" }).click();
+    assert.deepEqual(JSON.parse(await retained.locator(".tool-input .tool-code").innerText()), { file_path: file, old_string: "before\n", new_string: "after\n", ...extra });
+    await retained.locator(".tool-head").click();
+  }
+}
 
 test("CU compiled MCP through Codex and browser: rejected update preserves a chart, correction replaces it, replay stays singular", async () => {
   const dir = mkdtempSync("/tmp/cu-chart-browser-");
@@ -82,6 +108,7 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
     const gemini = page.locator(".tool-block", { hasText: "gemini.ts" });
     assert.match(await gemini.locator(".tool-edit-preview").innerText(), /- before[\s\S]*\+ after/);
     assert.match(await page.locator(".tool-block", { hasText: "written.ts" }).innerText(), /Written content/);
+    await assertFaithfulWritesAndReplacements(page);
     const failed = page.locator(".tool-block", { hasText: "failed.ts" });
     assert.equal(await failed.locator(".tool-edit-preview").count(), 0);
     assert.match(await failed.innerText(), /replacement not found/);
@@ -203,6 +230,7 @@ for (const phone of [false, true]) test(`CU mounted native preview: ${phone ? "p
     assert.match(await page.locator(".tool-block", { hasText: "gemini.ts" }).locator(".tool-edit-preview").innerText(), /- before[\s\S]*\+ after/);
     assert.equal(await page.locator(".tool-block", { hasText: "written.ts" }).locator(".diff-add").count(), 0);
     assert.equal(await page.locator(".tool-block", { hasText: "written.ts" }).locator(".tool-change").count(), 0);
+    await assertFaithfulWritesAndReplacements(page);
     assert.equal(await page.locator(".tool-block", { hasText: "pending.ts" }).locator(".tool-edit-preview").count(), 0);
     assert.equal(await page.locator(".tool-block", { hasText: "failed.ts" }).locator(".tool-edit-preview").count(), 0);
     await page.locator(".subagent-deck-head").click();

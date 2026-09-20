@@ -707,8 +707,11 @@ export class GeminiCliSession implements AgentSession {
           const actions = routineActions("gemini-cli", name, params);
           // Gemini CLI 0.60.0's headless stream forwards these native args
           // verbatim. Keep them intact; only canonicalize confirmed edit names.
+          // A repeated replacement has no complete per-occurrence diff.
+          const singleReplacement = (params["allow_multiple"] === undefined || params["allow_multiple"] === false)
+            && (params["expected_replacements"] === undefined || params["expected_replacements"] === 1);
           const editName = typeof params["file_path"] === "string"
-            ? name === "replace" && typeof params["old_string"] === "string" && typeof params["new_string"] === "string"
+            ? name === "replace" && singleReplacement && typeof params["old_string"] === "string" && typeof params["new_string"] === "string"
               ? "Edit"
               : name === "write_file" && typeof params["content"] === "string" ? "Write" : undefined
             : undefined;
