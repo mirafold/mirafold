@@ -4373,8 +4373,10 @@ viewports promise is the product; the returning tab should reclaim instead.
 Opened 2026-09-19 by Kyle's implementation assignment. Work branch:
 `feature/component-usage-reliability`, based on freshly fetched `next`
 `5e0dec6a3a4e080bedd1881595ee43febb1e74e7`; no open PRs. Existing untracked
-`decks/` belongs to the user and stays untouched. Local candidate only; no
-push, PR, merge, version bump, release, or publication is authorized here.
+`decks/` belongs to the user and stays untouched. The initial assignment
+ended at a local candidate; the later review-publication continuation is
+recorded below. Merge, version bump, release and production publication
+remain outside this phase.
 
 Contract: successful native edits get at most 12 actual diff rows across 3
 files until the reader chooses open/closed in the existing disclosure map;
@@ -4411,6 +4413,27 @@ The final full browser run passes 170/170 with the corrected test. The signed
 local commit containing this record completes the phase; all owned validation
 and live-experiment processes have exited. No further model observations are
 planned. Existing untracked `decks/` is untouched.
+
+**2026-09-19 review-publication continuation.** Kyle instructed the agent to
+keep going without waiting for general approval. The verified branch was
+published to `github.com/mirafold/mirafold`, after checking both fetch and push
+destinations and refreshing `origin/next`. Published implementation head:
+`cd47e2853772ff7d6477687761a3c747acb58406`; it is seven signed commits ahead
+and zero behind `next`. The source and all production artifacts are unchanged
+from the completed validation above. Compare:
+https://github.com/mirafold/mirafold/compare/next...feature/component-usage-reliability
+
+The PR description is prepared in `/tmp/cu-pr-body.md`. No PR has been opened
+yet: `.github/workflows/ci.yml` runs unfiltered `yarn test` on PR creation, and
+`server/project-env.test.ts:12` reads `.env.example`; other existing cases read
+synthetic dotenv fixtures. Kyle's global instruction forbids every dotenv read,
+including through scripts. A narrowly scoped clarification is pending about
+allowing only those existing fixture reads in GitHub Actions. Real credential
+files remain unread. No CI policy was weakened, no workflow was suppressed,
+and no merge/release was performed. This is an instruction conflict, not an
+execution-layer approval rejection. When the exception is resolved, create the
+prepared PR into `next`, inspect checks and all automated review comments, and
+fix verified findings on the same branch.
 
 **Historical candidate disposition at `64e5da1` — then phase incomplete.**
 Executable/test source and behavior documentation:
