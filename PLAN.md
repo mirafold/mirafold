@@ -4397,7 +4397,22 @@ separately. Repair resume only with effective-instruction evidence. Add a
 complete-Mermaid-fence fallback only after an observed need and parser proof.
 Unavailable live work is blocked, never a passed/no-change selection result.
 
-**2026-09-19 candidate disposition at `64e5da1` — phase incomplete.**
+**Current disposition, 2026-09-19 — Phase CU complete; verified local candidate.**
+The retained production source is `ca71a44bc75f6cb5bc797b34b58b269b739974dd`;
+this final record also contains the test-only streaming-wait correction below.
+Before that test correction, all 457 source files and 12 rebuilt artifacts
+matched the fully tested unchanged-guidance arm exactly (hashes below). Native previews, provider normalization,
+component recovery, chart/XY correctness and the proven Codex instruction
+refresh are retained. The one guidance candidate was tested on all 16 targets
+and discarded for observed content errors; selection redundancy remains
+unresolved on this model. No Mermaid-fence fallback was justified. The notes
+below preserve earlier checkpoints; they are historical, not current blockers.
+The final full browser run passes 170/170 with the corrected test. The signed
+local commit containing this record completes the phase; all owned validation
+and live-experiment processes have exited. No further model observations are
+planned. Existing untracked `decks/` is untouched.
+
+**Historical candidate disposition at `64e5da1` — then phase incomplete.**
 Executable/test source and behavior documentation:
 `89e5fa0240a99c959673753593f63fc4fa90f0fd` on the branch above. The following
 planning-only commit records this evidence. No remote
@@ -4444,8 +4459,9 @@ the phone case's Playwright `colorScheme: "light"` does not select Mirafold's
 stored theme. The test now selects Standard under Light themes through the
 visible phone Settings controls, asserts `data-theme` before checking the
 preview and after reload, and awaits execution. The desktop screenshot is
-`/tmp/cu-evidence/native-desktop.png`; `native-phone.png` is phone DARK
-evidence, not light evidence. The earlier mounted-source light check below
+`/tmp/cu-evidence/native-desktop.png`. At that checkpoint `native-phone.png`
+was phone DARK evidence; renewed validation below replaced that path with the
+corrected, inspected phone LIGHT screenshot. The earlier mounted-source light check below
 remains valid. At `64e5da1`, production code had not changed since `89e5fa0`.
 
 The original-repository daemon harness invokes the project dotenv loader,
@@ -4567,7 +4583,7 @@ Final isolated `yarn test:server` passes 199/199
 all permitted deterministic checks; the browser/live limits below remain
 separate. Owned validation and probe processes have exited.
 
-**Blocked acceptance gates.** The initial sandboxed browser navigation failed
+**Historical blocked acceptance gates — resolved by renewed validation below.** The initial sandboxed browser navigation failed
 with `net::ERR_ACCESS_DENIED`. Kyle's subsequent approval allowed the two
 built native-preview cases above and the interrupted full run. After moving
 validation away from dotenv files, the execution layer rejected the elevated
@@ -4637,14 +4653,143 @@ and every unchanged visual baseline; `/tmp/cu-ui-final.log`.
 Latest permitted units: 1,464/1,464,
 `/tmp/cu-browser-final-unit.log`; six dotenv-consuming cases remain excluded.
 
-**Next unfinished work:** rerun the complete end-to-end suite with the
-corrected cockpit assertion and added chart case, run CU.10's authorized
-matched matrix on the common lifecycle implementation, and make CU.11's
-conditional decision. The live runner in `/tmp/cu-selection-run.mts` uses
-independent disposable workspaces, the actual adapter and browser, fixed
-model/effort, native-call tracing, and actual source/artifact identity.
-No scored hosted observations have run yet. Do not mark selection or the
-overall phase complete from deterministic results.
+**Experiment and final verification complete.** The temporary runner
+`/tmp/cu-selection-run.mts` drove independent disposable workspaces through
+the actual adapter and browser. Its completed 32 targets are classified below;
+no confirmations are needed after the candidate failed the correctness gate.
+
+**2026-09-19 final browser gates at `ca71a44`:** `yarn test:e2e` passes
+170/170 in the isolated checkout; `/tmp/cu-e2e-final.log`. `yarn test:ui`
+passes 11/11; `/tmp/cu-ui-final.log`. All deterministic gates permitted by
+the dotenv rule now pass. The completed live baseline used this common
+implementation, Codex 0.154.0, ChatGPT subscription, `gpt-6-astra`/`xhigh`.
+All 16 baseline targets used the expected component or appropriate prose,
+including all four cold-resumed threads. The 12 substantive targets had the
+intended visible component; all four short judgments stayed prose. Native-call records, wire events,
+browser DOM/screenshots, source/artifact hashes and setup/target usage live
+under `/tmp/cu-selection-baseline/`. Trials overlapped browser validation,
+so latency is descriptive rather than a controlled causal comparison.
+Observed remaining problem: voluntary duplicate diffs after native edits,
+and target prose repeating component rows. The independent reviewer agrees
+that a single redundancy-focused guidance candidate is within CU.10's
+evidence gate, after all 16 baseline cases are classified; setup-only gains
+cannot replace the required repeated target improvements.
+
+**CU.10 bounded comparison identity and classification, 2026-09-19.**
+Both arms use the same implementation at `ca71a44`, installed Codex 0.154.0,
+ChatGPT subscription, `gpt-6-astra` and `xhigh`. Baseline source digest:
+`72210b32cdc54fbad34aa988c164b94636ba121841c02a943562ef74f3183119`;
+built artifact digest:
+`40022e6710fc531d8e5b9986f1325d2340a50d46aa65f3f69ecfb82c2520055f`.
+The sole candidate changes only shared guidance, Codex's discovery addendum
+policy paragraph, and both tool-description maps. Discovery routes, schemas,
+rendering and lifecycle implementation are identical. Candidate source digest:
+`f50013491394131622c3748ce84adbfb372f0f56a963b6e715696fc4ecf71da3`;
+built artifact digest:
+`432cf47a18ebcbebaece1fcfa5504ea848e3ffda49d38fb5facdb957dfb54c87`.
+Each observation embeds its exact file/artifact hashes, revision, model,
+setup and target usage, native tool results, wire events and browser evidence.
+The isolated checkout's Git snapshot is not the feature revision.
+
+Baseline redundant row recaps occurred in fresh comparison/verification,
+advisory verification, coding comparison/verification and cold comparison.
+Aggregate verdicts and supporting interpretation are not scored as full-row
+repetition. All eight coding setups completed the same rename/check; their
+voluntary duplicate diffs are accounted separately from target selection.
+Cold architecture corrected its own unsupported milliseconds assumption with
+one same-ID update, leaving one correct diagram, not two paintings.
+The completed baseline's owned engine rollouts were inspected only at paths
+returned for these synthetic threads. This adds direct discovery evidence:
+no target repeatedly searched for tools, and no resource-list API was used
+for discovery. Counts separate setup from target turns. No personal history
+or credentials were inspected. Local classification and traces:
+`/tmp/cu-selection-baseline/{classified,discovery}.json`.
+The candidate's 16 targets are now classified in
+`/tmp/cu-selection-candidate/{classified,discovery}.json`; its original source
+and exact manifest remain in `/tmp/cu-guidance-candidate/` and
+`/tmp/cu-selection-candidate/identity.json` for local review.
+
+**CU.10 final decision — discard the sole candidate.** Both matrices delivered
+12 visible structured targets and four appropriate prose controls; all eight
+cold resumes preserved their provider thread while restarting its process.
+Candidate full-row recaps fell from six to zero, and voluntary duplicate edit
+diffs fell from eight coding setups to zero. Those gains did not satisfy the
+correctness gate: fresh- and advisory-verification described numeric callback
+arguments `[100, 200]` as milliseconds. `checks.mjs` only records those arguments;
+`worker.mjs` defines no time units. Matching baseline cards stated the numeric
+facts correctly. Statuses themselves were correct, but these two candidate
+answers are not scored as fully correct improvements. This observation does
+not establish that the wording caused every model error; it does establish
+that this bounded candidate failed the required evidence gate.
+
+Independent review recommended discarding rather than selecting different
+confirmation pairs to conceal the regressions. No confirmation observations
+were spent, no second candidate was attempted, and no per-turn reminder or
+classification service was added. All four edited guidance/description files
+were restored byte-for-byte from the baseline and the server rebuilt; source
+and artifact digests exactly match the tested retained arm. There were zero
+early diagnostic target observations, 16 baseline and 16 candidate targets,
+24 fixed setup turns per arm, and zero confirmations, plus the separately
+recorded native lifecycle probes.
+
+Each arm made 13 target MCP calls for 12 distinct target paintings: one
+same-ID diagram correction in each arm is not an additional painting. Neither
+arm showed repeated target discovery or an unavailable/failed render tool.
+Native setup edits remain separate from voluntary target calls. Target shell
+commands were 41 baseline / 35 candidate, and web searches 1 / 3. Recorded
+aggregate target usage was 1,945,885 input and 16,078 output tokens baseline,
+1,732,030 input and 17,352 output candidate. These are reported request usage,
+not independent context-length measurements. Median target duration was
+34.3 / 39.9 seconds; suites overlapped both arms, so these descriptive timings
+are not a controlled latency result. No population-wide rate is inferred.
+One candidate setup completion had empty native/wire stdout and exit zero;
+the owned rollout's tool result contained `scratch check passed`. Its result
+was checked by execution ID/exit and the original tool result, not invented
+from missing output. All fixture fact hashes match across the two arms.
+
+**CU.11 final decision — no Mermaid-fence fallback.** All four relationship
+tasks in the retained arm used an actual visible diagram. The candidate did
+too. No complete Mermaid relationship fence remained stranded as code under
+the retained configuration, so the optional fallback was not added.
+
+**Final verification boundary.** Retained source at `ca71a44` has passing
+build/typecheck, 1,464 permitted unit tests, 199 server tests, 170 end-to-end
+tests and all 11 cross-browser/visual cases. Six dotenv-consuming unit cases
+remain deliberately excluded; this is not a claim that unfiltered `yarn test`
+was rerun safely. Baseline logs are named above. The discarded candidate also
+passed typecheck, 1,464 units, 199 server cases and 11 UI cases in a separate
+isolated checkout. Its supplementary full browser run finished 169/170;
+the existing noisy-process test missed a briefly visible output line. That
+failure is diagnosed below, not hidden by the discarded-guidance decision. No visual
+baseline was changed and no dependency or wire-shape change was introduced.
+Compaction and a live hosted Gemini turn remain unobserved; installed Codex
+0.154.0 and Gemini CLI 0.60.0 compatibility evidence is recorded above.
+
+**Final browser-wait correction (test only).** The supplementary run failed
+`TF5.1 noisy process` waiting for `módulo 30`; an unchanged focused run failed
+the same way. Before any edit, a browser MutationObserver probe recorded that
+line visibly in the three-line tail at 2,535.3–2,745.2 milliseconds while the
+locator still timed out. The fixture advances every 70 milliseconds, leaving
+a 210-millisecond window that locator retry backoff can miss. Evidence:
+`/tmp/cu-candidate-e2e-tail.log` and `/tmp/cu-noisy-probe.json`.
+The test now observes each animation frame for the same exact text and checks
+visibility. Its later head/tail, omission, UTF-8, bounded-size, silent-running
+and exit assertions are unchanged. No production code changed. Three focused
+runs passed (one isolated, two concurrent), and the independent reviewer
+accepted the causal diagnosis and correction. Final typecheck and all 1,464
+permitted units pass (`/tmp/cu-retained-final-unit.log`). The final full
+`yarn test:e2e` run passes 170/170 in 737.7 seconds:
+`/tmp/cu-retained-e2e-final.log`. This run includes the corrected wait and
+unchanged guidance. Final source digest:
+`913db03bfee5602bd4f5caa4bcc920f298363142efdd85f4cc6dcb778ee2982f`;
+all 12 production artifacts still have the baseline digest
+`40022e6710fc531d8e5b9986f1325d2340a50d46aa65f3f69ecfb82c2520055f`.
+The final commit adds only this test-wait correction and the planning evidence
+to production implementation `ca71a44`; no experimental guidance survives.
+All 72 recorded experiment engine/wrapper processes have exited, as have the
+owned check/probe processes. Temporary evidence remains local for review.
+The independent cold review covered both complete matrices, the restored
+source and evidence, and the final test correction; no material findings remain.
 
 ### Stage A — Establish the current behavior
 
@@ -4683,31 +4828,31 @@ Prerequisites: the implementation assignment explicitly starts Phase CU; the loc
 
 - [x] **CU.9 — Repair a proven lifecycle gap, if present.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 
-- [ ] **CU.10 — Evaluate one task-focused guidance revision.**
+- [x] **CU.10 — Evaluate one task-focused guidance revision.**
   Work: Run the 16-observation unchanged-guidance baseline on the common post-fix implementation. If it demonstrates an available-tool choice gap, implement the concise candidate in the existing guidance and reconcile contradictory descriptions. Run the matching candidate matrix and targeted confirmations with identical implementation and settings apart from guidance. Keep or discard it according to the repeated-usefulness gate above.
   Check: Evidence distinguishes post-work improvements from initial advisory use, and voluntary calls from native/Markdown rendering. No improvement is credited to guidance when the two arms differ in visibility, recovery, validation, or lifecycle code. The prose control remains prose, content is correct, and tool activity does not become repeated discovery. When the candidate fails, remove it and report the remaining limitation; do not substitute a second unmeasured reminder.
-  Status 2026-09-19: Browser execution is now available under renewed authorization. The reviewed manual recorder is prepared; baseline follows the remaining deterministic gates. No guidance candidate or scored hosted observations yet; selection remains unresolved.
+  Status 2026-09-19: Both 16-target matrices complete. The single candidate reduced repetition but introduced two unsupported unit claims; independent review agreed it fails the correctness gate. All guidance/description edits restored exactly. Zero confirmation observations and no second candidate. Discretionary redundancy remains unresolved; no selection-improvement claim.
 
-- [ ] **CU.11 — Close an observed Mermaid-fence miss, if present.**
+- [x] **CU.11 — Close an observed Mermaid-fence miss, if present.**
   Work: If authorized evidence establishes this miss, prove the complete-fence/intent boundary and reuse the existing sandboxed renderer. Otherwise record why this optional fallback was not needed.
   Check: Real browser tests cover complete, partial, invalid, intentionally raw, and replayed fences; source copy remains exact; no duplicate rendering; no agent markup enters the shell origin. Treat this result as automatic presentation, separately from CU.10.
-  Status 2026-09-19: Evidence-dependent decision pending CU.10. No fallback added and no claim that a completed experiment ruled it unnecessary.
+  Status 2026-09-19: Completed evidence supports no change. All four retained-arm architecture targets rendered visible relationship diagrams; no relevant complete-fence miss was observed. No fallback added.
 
 **Checkpoint D — A justified selection decision.** Record retained code, rejected experiments, tested model/version, and what remains uncertain. A valid “unchanged” decision is allowed for conditional steps. An unavailable live trial is blocked rather than an evidenced no-change decision. Do not mark the overall discretionary-selection goal achieved without actual improvement evidence.
 
 ### Stage E — Verify and hand off the actual candidate
 
-- [ ] **CU.12 — Verify integrated behavior and compatibility.**
+- [x] **CU.12 — Verify integrated behavior and compatibility.**
   Work: Run the complete required checks on final source, inspect changed visual baselines, and correct observed regressions. Update documentation and active plan only where behavior changed. Preserve all four provider paths and existing event shapes.
   Check: Commands below pass on the identified revision. Built frontend and `dist-server/render-mcp.js` are exercised, not just source imports. Inspect desktop/phone, dark/light, keyboard, reattachment, same-ID updates, and long input behavior in relevant browser tests. Keep provider-live limitations separate from deterministic browser results.
-  Status 2026-09-19: Final build/typecheck, 1,464 permitted unit cases, all 199 isolated server cases, and all 11 UI cases pass, with native engine proof for the lifecycle repair. Built phone-light/desktop-dark previews, same-ID recovery, and the compiled chart update path pass. Initial full end-to-end run passed 168/169; the isolated-checkout-sensitive cockpit assertion is corrected and its focused rerun passes. Complete end-to-end rerun pending. Six dotenv-consuming unit cases remain deliberately excluded; see renewed-validation evidence above.
+  Status 2026-09-19: Complete. Retained production source ca71a44 passed all permitted gates; the final test-only polling correction also passes three focused runs, typecheck, 1,464 units and the full 170-case browser suite. All 199 server and 11 UI cases passed on identical production artifacts. Final source/artifact digests and logs are above. Six dotenv-consuming cases remain excluded; no visual baseline changed.
 
 - [x] **CU.13 — Conduct a cold correctness and simplification review.** Completed 2026-09-19; full body and outcome → PLAN-ARCHIVE.md, “Phase CU — completed steps (2026-09-19).”
 
-- [ ] **CU.14 — Deliver the verified candidate and honest disposition.**
+- [x] **CU.14 — Deliver the verified candidate and honest disposition.**
   Work: Record the final source identity, checks, screenshot/evidence locations, supported provider versions, retained selection changes, and unverified limits in the project's existing records. Stop only owned test processes and remove owned temporary fixtures that are no longer needed.
   Check: The handoff separately states implemented, deterministically verified, live-observed, reviewed, committed, and any authorized remote state. If a PR is authorized, target `next`, read automated review findings, fix verified issues, and leave merge approval to the owner. No version bump, tag, main merge, or publication is implied.
-  Status 2026-09-19: Local signed implementation candidate delivered with evidence and explicit blockers. Full verified-phase disposition awaits the open integration/lifecycle/selection gates; no push/PR/release.
+  Status 2026-09-19: Complete in the signed local commit containing this record. All retained implementation gates pass; 32 live targets support rejecting the one guidance candidate and omitting the unnecessary Mermaid fallback. Evidence and limits are recorded, independent review is closed, owned processes exited, and user decks are untouched. No push/PR/release.
 
 **Checkpoint E — Ready for review.** All unconditional steps have passing evidence or an explicitly identified blocker; conditional steps have a passed or evidenced no-change disposition. Delivery must not conceal a missing browser or live-selection gate behind a green unit count.
 
