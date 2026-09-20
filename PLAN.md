@@ -4372,7 +4372,7 @@ viewports promise is the product; the returning tab should reclaim instead.
 
 Opened 2026-09-19 by Kyle's implementation assignment. Work branch:
 `feature/component-usage-reliability`, based on freshly fetched `next`
-`5e0dec6a3a4e080bedd1881595ee43febb1e74e7`; no open PRs. Existing untracked
+`5e0dec6a3a4e080bedd1881595ee43febb1e74e7`; no open PRs at kickoff. Existing untracked
 `decks/` belongs to the user and stays untouched. The initial assignment
 ended at a local candidate; the later review-publication continuation is
 recorded below. Merge, version bump, release and production publication
@@ -4399,7 +4399,7 @@ separately. Repair resume only with effective-instruction evidence. Add a
 complete-Mermaid-fence fallback only after an observed need and parser proof.
 Unavailable live work is blocked, never a passed/no-change selection result.
 
-**Current disposition, 2026-09-19 — Phase CU complete; verified local candidate.**
+**Current disposition, 2026-09-19 — Phase CU implemented; PR #130 open.**
 The retained production source is `ca71a44bc75f6cb5bc797b34b58b269b739974dd`;
 this final record also contains the test-only streaming-wait correction below.
 Before that test correction, all 457 source files and 12 rebuilt artifacts
@@ -4423,17 +4423,22 @@ and zero behind `next`. The source and all production artifacts are unchanged
 from the completed validation above. Compare:
 https://github.com/mirafold/mirafold/compare/next...feature/component-usage-reliability
 
-The PR description is prepared in `/tmp/cu-pr-body.md`. No PR has been opened
-yet: `.github/workflows/ci.yml` runs unfiltered `yarn test` on PR creation, and
-`server/project-env.test.ts:12` reads `.env.example`; other existing cases read
-synthetic dotenv fixtures. Kyle's global instruction forbids every dotenv read,
-including through scripts. A narrowly scoped clarification is pending about
-allowing only those existing fixture reads in GitHub Actions. Real credential
-files remain unread. No CI policy was weakened, no workflow was suppressed,
-and no merge/release was performed. This is an instruction conflict, not an
-execution-layer approval rejection. When the exception is resolved, create the
-prepared PR into `next`, inspect checks and all automated review comments, and
-fix verified findings on the same branch.
+Kyle explicitly authorized “allow fixture-only CI reads”: the existing
+GitHub Actions tests may read `.env.example` and synthetic dotenv fixtures.
+This exception is scoped to CI fixtures; real credential files and local
+dotenv inspection remain prohibited. The normal CI workflow runs without
+exclusions or suppression. Local validation still excludes the six cases
+recorded above.
+
+PR #130 is open into `next`:
+https://github.com/mirafold/mirafold/pull/130
+The initial published head is `eb9146ee177a2d165d03a27dc8e3e3f0f16605f3`;
+its DCO and Cloudflare preview checks passed, while typecheck/unit and
+integration/browser checks started. This follow-up commit only updates the
+planning record. Production source/artifacts remain the verified candidate.
+Next: inspect final CI results and every automated review comment, reproduce
+any claimed failure before changing code, and fix verified findings on this
+same branch. Keep the feature PR open; merge and release are separate actions.
 
 **Historical candidate disposition at `64e5da1` — then phase incomplete.**
 Executable/test source and behavior documentation:
