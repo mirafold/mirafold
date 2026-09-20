@@ -314,27 +314,3 @@
     display: none;
   }
 }
-
-/* The transcript's detail-mode toggle (Phase TF R6): a quiet press button
-   in the status bar's control cluster; lit while details are shown. */
-.sb-details {
-  height: 34px;
-  padding: 0 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: 7px;
-  color: var(--fg-dimmer);
-  font: inherit;
-  font-size: 0.85em;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.sb-details:hover {
-  color: var(--fg-mid);
-}
-
-.sb-details.is-active {
-  color: var(--fg);
-  background: var(--surface-hover);
-}

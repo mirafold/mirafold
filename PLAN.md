@@ -5162,6 +5162,48 @@ yarn test:ui
 | Candidate is reviewable and release boundaries preserved | CU.12–CU.14 | Final source identity, required gates, review disposition, explicit limits |
 
 
+## Follow-up: remove the global details mode (2026-09-20)
+
+Kyle explicitly requested removal of the status bar's `show details` button.
+The original goal is better use of existing components, especially code diffs;
+an additional global disclosure mode was not part of that request. This
+follow-up removes the unwanted mode and preserves the fixes from PR #130.
+
+- [x] Remove the status-bar control, Shell state/props, storage helpers, CSS,
+  and mode-dependent defaults in OutputZone. Old `mirafold-details-*` values
+  are ignored; no migration or replacement control is needed.
+- [x] Keep each item's expand/collapse control, stored per-item choices,
+  native edit previews, error defaults, and open-descendant visibility.
+  Keep component recovery, chart validation, adapter normalization, and
+  Codex guidance-refresh fixes from PR #130 unchanged.
+- [x] Adapt the existing desktop/phone and moving-transcript regressions to
+  use individual controls. Verify an old enabled preference cannot suppress
+  previews or expand everything, and choices survive replay/session changes.
+- [x] Prepare the removal for review into `next`, with the verification and
+  remaining gate limits below. Merging and releasing still require Kyle's
+  approval under `docs/RELEASING.md`.
+
+Verification: full source typecheck and production build pass. The permitted
+unit subset has 1,463 passes and one existing skip, with the same six dotenv
+cases excluded as above. All 14 component-usage/transcript-fidelity browser
+cases pass, including desktop dark and phone light. All eight visual tests
+pass under revision-matched Chromium 149 on Ubuntu 24.04. Five baselines were
+updated after inspection; every changed pixel above the comparison threshold
+is confined to the status-bar controls affected by removing the button.
+The picker, phone settings, and submitted-input navigation baselines remain
+unchanged. Daemon tests use a disposable copy without dotenv files.
+
+Broader local gates are not all green: the server run has 197 passes and two
+environment failures (missing optional Claude native binary; sandbox denial
+of `os.networkInterfaces()`). Installing the missing optional binary and
+rerunning that one test passes. The full browser run has 169 passes and one
+existing cockpit spacing failure, reproduced on unchanged `5fc905b` production source with the
+same ~20.55px result against a ~24px assertion. The Chromium compatibility
+case passes; Firefox times out and WebKit lacks host libraries here. CI must
+supply the complete gate result before merge. No server or unrelated layout
+change is included in this removal, and it does not establish improvement in
+the remaining component-selection issue.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentCapabilities, AgentName, PromptOption } from "@protocol";
-import { loadDetailsMode, saveDetailsMode } from "../transcript/disclosure-store";
 import { taskNoteFor } from "../transcript/task-notes";
 import { ActivityLine, activityLabel } from "./ActivityLine";
 import { BangBar } from "./BangBar";
@@ -112,17 +111,6 @@ export function Shell() {
     demo?: boolean;
     capabilities?: AgentCapabilities;
   }>({});
-  // The transcript's detail mode (Phase TF R6): viewport-local, per
-  // session, restored from this tab's storage on attach and never sent
-  // anywhere. Compact until the reader asks for details.
-  const [detailsMode, setDetailsMode] = useState(false);
-  const toggleDetails = useCallback(() => {
-    setDetailsMode((on) => {
-      const next = !on;
-      if (meta.sessionId) saveDetailsMode(meta.sessionId, next);
-      return next;
-    });
-  }, [meta.sessionId]);
   // A task the engine reported finished while the reader may be looking
   // elsewhere: a compact note in the current-activity area for a moment,
   // never a repaint of the deck above (Phase TF R5).
@@ -356,7 +344,6 @@ export function Shell() {
             demo: m.demo,
             capabilities: m.capabilities,
           });
-          setDetailsMode(loadDetailsMode(m.sessionId));
           // The daemon's word on a still-running `!`. Claim its controls when
           // it is news (a cockpit switch back, a reload, a second tab — the
           // replayed bang_output frames refill the prompt-detection tail);
@@ -685,7 +672,6 @@ export function Shell() {
                 sessionKey={meta.sessionId}
                 onOpenWorkspaceFile={openTranscriptFile}
                 onInputNavigationChange={updateInputNavigationState}
-                details={detailsMode}
                 capabilities={meta.capabilities}
                 agent={meta.agent}
               />
@@ -774,8 +760,6 @@ export function Shell() {
               workspaceOpen={folderTreeOpen || diffPanelOpen}
               workspaceDisabled={!meta.sessionId}
               onToggleWorkspace={toggleWorkspace}
-              details={detailsMode}
-              onToggleDetails={meta.sessionId ? toggleDetails : undefined}
             />
           </div>
         </div>

@@ -2,9 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DISCLOSURE_MAX_ENTRIES,
-  loadDetailsMode,
   loadDisclosure,
-  saveDetailsMode,
   saveDisclosure,
   withChoice,
 } from "./disclosure-store";
@@ -18,17 +16,6 @@ function memoryStorage() {
     map,
   };
 }
-
-test("R6: the details mode is per session and per storage; absent reads compact", () => {
-  const storage = memoryStorage();
-  assert.equal(loadDetailsMode("s1", storage), false);
-  saveDetailsMode("s1", true, storage);
-  assert.equal(loadDetailsMode("s1", storage), true);
-  assert.equal(loadDetailsMode("s2", storage), false, "another session keeps its own mode");
-  saveDetailsMode("s1", false, storage);
-  assert.equal(loadDetailsMode("s1", storage), false);
-  assert.equal(storage.map.size, 0, "compact is the absence of a record");
-});
 
 test("R6: explicit choices round-trip by wire key and survive a reload of the same tab", () => {
   const storage = memoryStorage();
@@ -58,6 +45,5 @@ test("R6: choices are bounded and the stored value is read back as untrusted", (
   assert.deepEqual([...loadDisclosure("s1", storage)], []);
   const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => {} };
   assert.deepEqual([...loadDisclosure("s1", throwing)], []);
-  assert.equal(loadDetailsMode("s1", throwing), false);
   assert.doesNotThrow(() => saveDisclosure("s1", choices, throwing));
 });

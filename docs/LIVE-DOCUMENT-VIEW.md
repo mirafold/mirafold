@@ -28,8 +28,9 @@ product and implementation specification for Phase LD in `PLAN.md`.
 >   stated state plus the retained report.
 > - **`OutputZone` ownership** (§ 5): it still calls the grouping helper, and
 >   it now also owns the disclosure layer (expand/collapse keyed by wire
->   identity, kept per session in `sessionStorage`, and the status bar's
->   `show details` mode).
+>   identity, kept per session in `sessionStorage`). The global
+>   `show details` mode added in Phase TF was removed on 2026-09-20;
+>   individual expand/collapse controls remain.
 >
 > The "no projection or protocol change expected" statements were true of
 > Phase LD's own scope; Phase TF added wire types and rewrote the projection
