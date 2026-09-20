@@ -91,8 +91,9 @@ Inside a session:
   durations, a preview of the last lines), routine reads and searches group
   into one line, reasoning collapses to a single "Thinking" control, and a
   subagent or background task shows its state and its retained report.
-  `show details` in the status bar opens everything — reasoning, each
-  routine call, inputs, and the retained output — for this browser tab only.
+  Supported successful edits show a bounded native preview. Expand any individual
+  item to inspect its reasoning, calls, inputs, or retained output; each
+  choice is remembered for this session in this browser tab.
   Large outputs keep their beginning and end; the transcript says how much
   fell between them rather than implying it kept it all. If you reattach after
   the daemon's replay buffer has dropped older history, the transcript says

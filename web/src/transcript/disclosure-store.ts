@@ -1,7 +1,6 @@
 /**
- * Viewport-local transcript disclosure (Phase TF R6): the session's
- * "details" mode and the reader's explicit open/closed choices, keyed by
- * wire identity (a tool's id, a thinking row's seq) so they survive a row
+ * Viewport-local transcript disclosure: the reader's explicit open/closed
+ * choices, keyed by wire identity (a tool's id, a thinking row's seq), survive a row
  * moving into a group, a replay, and a switch away and back in this tab —
  * and never reach other viewers or the daemon's checkpoints. sessionStorage
  * is tab-scoped, which is exactly the boundary wanted; a reload keeps it,
@@ -10,7 +9,6 @@
  */
 type DisclosureStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const modeKey = (sessionId: string) => `mirafold-details-${sessionId}`;
 const choicesKey = (sessionId: string) => `mirafold-disclosure-${sessionId}`;
 
 /** Explicit per-item choices retained per session — newest kept when full. */
@@ -24,23 +22,6 @@ const storageOrNull = (): DisclosureStorage | null => {
     return null;
   }
 };
-
-export function loadDetailsMode(sessionId: string, storage: DisclosureStorage | null = storageOrNull()): boolean {
-  try {
-    return storage?.getItem(modeKey(sessionId)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function saveDetailsMode(sessionId: string, on: boolean, storage: DisclosureStorage | null = storageOrNull()): void {
-  try {
-    if (on) storage?.setItem(modeKey(sessionId), "1");
-    else storage?.removeItem(modeKey(sessionId));
-  } catch {
-    // Storage unavailable (private mode): the mode stays component state.
-  }
-}
 
 export function loadDisclosure(
   sessionId: string,

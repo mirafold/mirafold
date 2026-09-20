@@ -167,7 +167,7 @@ test("TF5.1 noisy process: the tail advances past the cap, silence stays 'runnin
   });
 });
 
-test("TF5.1 inspection during movement: an open call stays open as neighbours group; details and choices survive a session switch", async () => {
+test("TF5.1 inspection during movement: an open call stays open as neighbours group; per-item choices survive a session switch", async () => {
   await withFreshMockSession(browser, "tf-inspect-9c0d", async (page) => {
     await page.setViewportSize({ width: 900, height: 520 });
     await typePrompt(page, MOCK_PROMPTS["tool-activity"]);
@@ -185,27 +185,31 @@ test("TF5.1 inspection during movement: an open call stays open as neighbours gr
     assert.equal(await page.locator(".tool-activity-group").count(), 1);
     assert.match(await page.locator(".tool-activity-summary").innerText(), /Read 2 files · 1 search/);
     assert.equal(await page.locator(".thinking-block").count(), 0, "interior reasoning rides inside the group");
-    // Details mode: everything opens; explicit choices still win.
-    await page.locator(".sb-details").click();
-    assert.equal(await page.locator(".sb-details").getAttribute("aria-pressed"), "true");
+    // Each item opens independently, including reasoning inside a group.
+    await page.locator(".tool-activity-head").click();
     assert.equal(await page.locator(".tool-activity-calls .tool-block").count(), 3);
+    assert.equal(await page.locator(".tool-activity-calls .thinking-text").count(), 0);
+    await page.locator(".tool-activity-calls .thinking-head").click();
     assert.equal(await page.locator(".tool-activity-calls .thinking-text").count(), 1);
     const typecheck = page.locator(".tool-block", { hasText: "yarn typecheck" });
+    assert.equal(await typecheck.locator(".tool-body").count(), 0);
+    await typecheck.locator(".tool-head").click();
     assert.equal(await typecheck.locator(".tool-body").count(), 1);
     await typecheck.locator(".tool-head").click();
-    assert.equal(await typecheck.locator(".tool-body").count(), 0, "an explicit close wins over the mode");
-    // Away and back in the same tab: the mode and the choice persist.
+    assert.equal(await typecheck.locator(".tool-body").count(), 0);
+    // Away and back in the same tab: both open and closed choices persist.
     const url = page.url();
     await page.goto(url.replace(/\/s\/.*$/, "/"));
     await page.locator(".fleet, .agent-picker-card, .cockpit").first().waitFor({ timeout: 10_000 }).catch(() => {});
     await page.goto(url);
     await page.locator(".prompt-box textarea").waitFor();
     await page.locator(".tool-activity-group").waitFor({ timeout: 10_000 });
-    assert.equal(await page.locator(".sb-details").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator(".tool-activity-calls .tool-block").count(), 3);
+    assert.equal(await page.locator(".tool-activity-calls .thinking-text").count(), 1);
     assert.equal(await page.locator(".tool-block", { hasText: "yarn typecheck" }).locator(".tool-body").count(), 0);
     assert.equal(await page.locator(".tool-block", { hasText: "yarn lint" }).locator(".tool-body").count(), 1);
-    await page.locator(".sb-details").click();
-    assert.equal(await page.locator(".tool-activity-calls .tool-block").count(), 0, "compact again — the group closes");
+    await page.locator(".tool-activity-head").click();
+    assert.equal(await page.locator(".tool-activity-calls .tool-block").count(), 0, "the group can close even with an explicitly open descendant");
     await assertAxeClean(page, "inspection during movement");
   });
 });

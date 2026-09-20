@@ -19,6 +19,6 @@ Object.defineProperty(registry, "progress", { configurable: true, get() {
 let listener: ((message: ZoneMsg) => void) | undefined;
 const subscribe = (next: (message: ZoneMsg) => void) => { listener = next; return () => { listener = undefined; }; };
 const root = createRoot(document.getElementById("root")!);
-const show = (sessionKey = "recovery-fixture", details = false) => root.render(<OutputZone subscribe={subscribe} sendAction={() => {}} busy={false} focusPrompt={() => {}} sessionKey={sessionKey} details={details} />);
+const show = (sessionKey = "recovery-fixture") => root.render(<OutputZone subscribe={subscribe} sendAction={() => {}} busy={false} focusPrompt={() => {}} sessionKey={sessionKey} />);
 show();
 Object.assign(window, { cu: { attempts, emit: (m: ZoneMsg) => listener?.(m), show, setOuter: (value: boolean) => { outer = value; }, ready: () => !!listener } });
