@@ -91,6 +91,11 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
   const context = await browser.newContext(phone ? { ...PHONE_CONTEXT, colorScheme: "light" } : { viewport: { width: 1280, height: 850 }, colorScheme: "dark" });
   try {
     const page = await context.newPage();
+    // Old tabs may retain this preference after upgrading. It must not
+    // expand every row or suppress the normal native edit previews.
+    await page.addInitScript(() => {
+      for (const id of ["cu-one", "cu-two"]) sessionStorage.setItem(`mirafold-details-${id}`, "1");
+    });
     await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-one?token=cu-browser`);
     if (phone) {
       await page.locator(".sb-settings").tap();
@@ -101,6 +106,8 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
     assert.equal(await page.locator("html").getAttribute("data-theme"), phone ? "light" : "dark");
     const patch = page.locator(".tool-block", { has: page.locator(".tool-name", { hasText: "apply_patch" }) });
     await patch.locator(".tool-edit-preview").waitFor();
+    assert.equal(await page.getByRole("button", { name: /^(show|hide) details$/i }).count(), 0);
+    assert.equal(await patch.locator(".tool-body").count(), 0, "the obsolete mode preference has no effect");
     assert.match(await patch.locator(".tool-edit-preview").innerText(), /- const retries = 2;[\s\S]*\+ const retries = 4;/);
     assert.ok(await patch.locator(".tool-edit-preview .tool-patch").count() <= 3);
     assert.ok(await patch.locator(".tool-edit-preview .tool-diff > div").count() <= 12);
@@ -134,12 +141,13 @@ for (const phone of [false, true]) test(`CU native preview: ${phone ? "phone lig
     assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
     await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-two`);
     await patch.locator(".tool-edit-preview").waitFor();
-    await page.locator(".sb-details").click();
+    assert.equal(await page.getByRole("button", { name: /^(show|hide) details$/i }).count(), 0);
+    await patch.getByRole("button", { name: "Show full details" }).click();
     await patch.locator(".tool-input").waitFor();
-    await page.locator(".sb-details").click();
     await page.goto(`http://127.0.0.1:${daemon.port}/s/cu-one`);
     await patch.waitFor();
     assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
+    assert.equal(await page.getByRole("button", { name: /^(show|hide) details$/i }).count(), 0);
     await noSideScroll(page);
   } finally { await context.close(); await daemon.stop(); rmSync(dir, { recursive: true, force: true }); }
 });
@@ -250,11 +258,13 @@ for (const phone of [false, true]) test(`CU mounted native preview: ${phone ? "p
     await replay();
     await patch.waitFor();
     assert.equal(await patch.locator(".tool-edit-preview, .tool-body").count(), 0);
-    await page.evaluate(() => (window as any).cu.show("another-session", true));
+    await page.evaluate(() => (window as any).cu.show("another-session"));
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     await replay();
+    await patch.locator(".tool-edit-preview").waitFor();
+    await patch.getByRole("button", { name: "Show full details" }).click();
     await patch.locator(".tool-body").waitFor();
-    await page.evaluate(() => (window as any).cu.show("recovery-fixture", false));
+    await page.evaluate(() => (window as any).cu.show("recovery-fixture"));
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     await replay();
     await patch.waitFor();

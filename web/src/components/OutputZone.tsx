@@ -50,18 +50,15 @@ import {
 /** One explicit open/closed choice, keyed by wire identity (Phase TF R6). */
 type Toggle = (key: string, expanded: boolean) => void;
 
-/** The reader's disclosure, resolved per item: an explicit choice wins;
- *  otherwise the mode decides (details opens everything; compact opens
- *  only what its own default says). */
+/** The reader's explicit choice overrides each item's default. */
 type Disclosure = {
   choices: ReadonlyMap<string, boolean>;
-  details: boolean;
   toggle: Toggle;
   capabilities?: AgentCapabilities;
 };
 
-const isOpen = (d: Disclosure, key: string, compactDefault = false): boolean =>
-  d.choices.get(key) ?? (d.details ? true : compactDefault);
+const isOpen = (d: Disclosure, key: string, defaultOpen = false): boolean =>
+  d.choices.get(key) ?? defaultOpen;
 
 /** Stable disclosure keys — wire identity, never mount position. */
 const toolKey = (toolId: string) => `tool:${toolId}`;
@@ -105,15 +102,14 @@ const toolBlockProps = (call: {
   orphaned: call.orphaned,
 });
 
-/** One tool row under the reader's disclosure: errors open by default in
- *  compact mode; everything opens in details mode; an explicit choice wins. */
+/** Errors open by default; an explicit choice wins. */
 function DisclosedTool({ row, d }: { row: ToolRow; d: Disclosure }) {
   const key = toolKey(row.toolId);
   return (
     <ToolBlock
       toggleKey={key}
       expanded={isOpen(d, key, row.output !== undefined && row.isError === true)}
-      previewDefault={!d.details && !d.choices.has(key)}
+      previewDefault={!d.choices.has(key)}
       onToggle={d.toggle}
       liveOutputAvailable={d.capabilities?.liveOutput}
       {...toolBlockProps(row)}
@@ -244,7 +240,7 @@ const SubagentDeck = memo(function SubagentDeck({
   // An explicitly opened descendant keeps its deck open until the reader
   // closes the deck itself (R6).
   const childOpen = items.some((item) => item.kind === "tool" && d.choices.get(toolKey(item.toolId)) === true);
-  const open = d.choices.get(key) ?? (d.details || childOpen);
+  const open = d.choices.get(key) ?? childOpen;
   const running = s.state === "running";
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -337,7 +333,7 @@ function ToolActivityGroup({ row, d }: { row: ToolFoldRow; d: Disclosure }) {
       (item.kind === "tool" && d.choices.get(toolKey(item.tool.toolId)) === true) ||
       (item.kind === "thinking" && d.choices.get(thinkKey(item.thinking)) === true),
   );
-  const open = d.choices.get(key) ?? (d.details || childOpen);
+  const open = d.choices.get(key) ?? childOpen;
   const label = `${row.live ? "working" : "worked"} · ${row.actionCount} action${row.actionCount === 1 ? "" : "s"}`;
   return (
     <div className={"tool-activity-group" + (row.live ? " tool-activity-live" : "")}>
@@ -393,8 +389,6 @@ type OutputZoneProps = {
   onInputNavigationChange?: (state: InputNavigationState) => void;
   /** Session identity for per-session viewer state (pins); absent = don't persist. */
   sessionKey?: string;
-  /** The transcript's detail mode (Phase TF R6): compact by default. */
-  details?: boolean;
   /** What this session's agent can report — decides what silence means. */
   capabilities?: AgentCapabilities;
   /** The agent's display name, for honest capability notes in shell chrome. */
@@ -415,7 +409,6 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   onOpenWorkspaceFile,
   onInputNavigationChange,
   sessionKey,
-  details = false,
   capabilities,
   agent,
 }, navigationRef) {
@@ -502,7 +495,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   // later, so a session switch's whole-buffer replay painted top-anchored
   // for a frame and the reader saw the transcript flash-scroll to the
   // bottom (cockpit follow-up, 2026-08-31; pinned in follow-tail.e2e.ts).
-  useLayoutEffect(tail.followTail, [transcript, choices, details]);
+  useLayoutEffect(tail.followTail, [transcript, choices]);
 
   const togglePin = useCallback(
     (renderId: string) =>
@@ -535,8 +528,8 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
     [sessionKey],
   );
   const disclosure = useMemo<Disclosure>(
-    () => ({ choices: choices.map, details, toggle, capabilities }),
-    [choices, details, toggle, capabilities],
+    () => ({ choices: choices.map, toggle, capabilities }),
+    [choices, toggle, capabilities],
   );
 
   // Dock items reference the same painting objects the transcript holds, so an

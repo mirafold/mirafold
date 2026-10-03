@@ -260,8 +260,8 @@ deliberately narrow:
 - **Disclosure is the viewer's.** Expand/collapse choices are keyed by wire
   identity (`tool:<id>`, `think:seq:<n>`, `fold:<anchor>`, `deck:<id>`) and
   kept per session in `sessionStorage`
-  ([`disclosure-store.ts`](../web/src/transcript/disclosure-store.ts)); the
-  status bar's `show details` mode opens everything for that tab only.
+  ([`disclosure-store.ts`](../web/src/transcript/disclosure-store.ts)). Each
+  item's own default applies until the reader opens or closes it.
   Nothing about disclosure reaches other viewers or the daemon.
 
 Browser modules follow the same ownership boundaries:
